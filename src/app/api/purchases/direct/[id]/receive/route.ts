@@ -1,7 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getAuth } from "@/lib/auth";
-import { getActiveBrandProfile } from "@/lib/brand";
+import { getActiveBrandProfile, resolveAllowedBrandIds } from "@/lib/brand";
 import { logActivity } from "@/lib/activity";
 
 export async function POST(req: NextRequest, { params }: { params: { id: string } }) {
@@ -10,6 +10,11 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
   const brand = await getActiveBrandProfile();
   const purchase = await prisma.purchaseDirect.findFirst({ where: { id }, include: { items: true } });
   if (!purchase) return NextResponse.json({ success: false, message: "Not found" }, { status: 404 });
+  // Brand guard: ensure the purchase belongs to allowed brand scope
+  const allowedBrandIds = await resolveAllowedBrandIds(auth?.userId ?? null, (auth?.roles as string[]) ?? [], []);
+  if (purchase.brandProfileId != null && !allowedBrandIds.includes(purchase.brandProfileId)) {
+    return NextResponse.json({ success: false, message: "Forbidden: brand scope" }, { status: 403 });
+  }
   if (purchase.status === "Received") return NextResponse.json({ success: true, data: purchase });
 
   try {

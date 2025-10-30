@@ -1,6 +1,8 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { getActiveBrandProfile } from "@/lib/brand";
+import { getActiveBrandProfile, resolveAllowedBrandIds } from "@/lib/brand";
+import { getAuth } from "@/lib/auth";
+import { logActivity } from "@/lib/activity";
 
 function genInvoiceNumberBase() {
   const now = new Date();
@@ -100,6 +102,13 @@ export async function POST(req: NextRequest) {
       }
     }
 
+    // Guard brand berdasarkan izin
+    const auth = await getAuth();
+    const brand = await getActiveBrandProfile();
+    if (!brand?.id) return NextResponse.json({ success: false, message: "Brand aktif tidak ditemukan" }, { status: 400 });
+    const allowedBrandIds = await resolveAllowedBrandIds(auth?.userId ?? null, (auth?.roles as string[]) ?? [], []);
+    if (!allowedBrandIds.includes(brand.id)) return NextResponse.json({ success: false, message: "Forbidden: brand scope" }, { status: 403 });
+
     const inv = await prisma.invoice.create({
       data: {
         invoiceNumber: number,
@@ -110,7 +119,7 @@ export async function POST(req: NextRequest) {
         terms: terms ? String(terms).slice(0, 191) : null,
         customerId: Number(customerId),
         quotationId: quotationId != null ? Number(quotationId) : undefined,
-        brandProfileId: (await getActiveBrandProfile())?.id,
+        brandProfileId: brand.id,
         subtotal,
         lineDiscount,
         extraDiscountType,
@@ -135,6 +144,24 @@ export async function POST(req: NextRequest) {
       },
       include: { customer: true, items: true },
     });
+    // Catat aktivitas pembuatan invoice
+    try {
+      await logActivity(req, {
+        userId: auth?.userId || null,
+        action: "INVOICE_CREATE",
+        entity: "invoice",
+        entityId: inv.id,
+        metadata: {
+          brandProfileId: brand.id,
+          invoiceNumber: inv.invoiceNumber,
+          total: inv.total,
+          customerId: inv.customerId,
+          quotationId: inv.quotationId || null,
+          taxMode,
+          downPayment: Number(downPayment) || 0,
+        },
+      });
+    } catch {}
 
     return NextResponse.json({ success: true, data: inv });
   } catch (e: any) {

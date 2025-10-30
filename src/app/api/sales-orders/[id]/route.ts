@@ -1,6 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { getActiveBrandProfile } from "@/lib/brand";
+import { getActiveBrandProfile, resolveAllowedBrandIds } from "@/lib/brand";
 import { getAuth } from "@/lib/auth";
 export const runtime = "nodejs";
 
@@ -126,9 +126,14 @@ export async function GET(
         { status: 400 }
       );
     }
-
-    const order = await prisma.salesOrder.findUnique({
-      where: { id },
+    const auth = await getAuth();
+    const allowedBrandIds = await resolveAllowedBrandIds(
+      auth?.userId ?? null,
+      (auth?.roles as string[]) ?? [],
+      []
+    );
+    const order = await prisma.salesOrder.findFirst({
+      where: { id, brandProfileId: { in: allowedBrandIds } },
       include: { customer: true, items: true, quotation: true },
     });
 
@@ -167,6 +172,24 @@ export async function PUT(
       return NextResponse.json(
         { success: false, message: "ID Sales Order tidak valid" },
         { status: 400 }
+      );
+    }
+
+    // Brand guard: ensure this SO belongs to allowed brands
+    const authGuard = await getAuth();
+    const allowedBrandIdsGuard = await resolveAllowedBrandIds(
+      authGuard?.userId ?? null,
+      (authGuard?.roles as string[]) ?? [],
+      []
+    );
+    const existsInScope = await prisma.salesOrder.findFirst({
+      where: { id, brandProfileId: { in: allowedBrandIdsGuard } },
+      select: { id: true, brandProfileId: true },
+    });
+    if (!existsInScope) {
+      return NextResponse.json(
+        { success: false, message: "Forbidden: brand scope" },
+        { status: 403 }
       );
     }
 
@@ -462,6 +485,24 @@ export async function DELETE(
       return NextResponse.json(
         { success: false, message: "ID Sales Order tidak valid" },
         { status: 400 }
+      );
+    }
+
+    // Brand guard before deletion
+    const auth = await getAuth();
+    const allowedBrandIds = await resolveAllowedBrandIds(
+      auth?.userId ?? null,
+      (auth?.roles as string[]) ?? [],
+      []
+    );
+    const inScope = await prisma.salesOrder.findFirst({
+      where: { id, brandProfileId: { in: allowedBrandIds } },
+      select: { id: true },
+    });
+    if (!inScope) {
+      return NextResponse.json(
+        { success: false, message: "Forbidden: brand scope" },
+        { status: 403 }
       );
     }
 

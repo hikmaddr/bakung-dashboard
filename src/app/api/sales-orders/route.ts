@@ -1,6 +1,8 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { getActiveBrandProfile } from "@/lib/brand";
+import { getActiveBrandProfile, resolveAllowedBrandIds } from "@/lib/brand";
+import { getAuth } from "@/lib/auth";
+import { logActivity } from "@/lib/activity";
 export const runtime = "nodejs";
 
 function generateOrderNumber() {
@@ -222,6 +224,13 @@ export async function POST(req: NextRequest, _ctx: { params: Promise<{}> }) {
         ? orderNumber.trim()
         : generateOrderNumber();
 
+    // Gunakan brand aktif dan batasi sesuai izin pengguna
+    const auth = await getAuth();
+    const brand = await getActiveBrandProfile();
+    if (!brand?.id) return NextResponse.json({ success: false, message: "Brand aktif tidak ditemukan" }, { status: 400 });
+    const allowedBrandIds = await resolveAllowedBrandIds(auth?.userId ?? null, (auth?.roles as string[]) ?? [], []);
+    if (!allowedBrandIds.includes(brand.id)) return NextResponse.json({ success: false, message: "Forbidden: brand scope" }, { status: 403 });
+
   const order = await prisma.salesOrder.create({
     data: {
       orderNumber: finalOrderNumber,
@@ -233,7 +242,7 @@ export async function POST(req: NextRequest, _ctx: { params: Promise<{}> }) {
           : null,
       customerId: parsedCustomerId,
       quotationId: resolvedQuotationId,
-      brandProfileId: (await getActiveBrandProfile())?.id,
+      brandProfileId: brand.id,
       subtotal: totals.subtotal,
       lineDiscount: totals.lineDiscount,
       extraDiscount: totals.extraDiscount,
@@ -259,6 +268,24 @@ export async function POST(req: NextRequest, _ctx: { params: Promise<{}> }) {
       quotation: true,
     },
   });
+
+    // Catat aktivitas pembuatan sales order
+    try {
+      await logActivity(req, {
+        userId: auth?.userId || null,
+        action: "SALES_ORDER_CREATE",
+        entity: "sales_order",
+        entityId: order.id,
+        metadata: {
+          brandProfileId: brand.id,
+          orderNumber: order.orderNumber,
+          totalAmount: order.totalAmount,
+          customerId: order.customerId,
+          quotationId: order.quotationId || null,
+          status: order.status,
+        },
+      });
+    } catch {}
 
     return NextResponse.json({
       success: true,

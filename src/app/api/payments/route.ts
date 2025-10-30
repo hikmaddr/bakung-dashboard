@@ -1,6 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { getActiveBrandProfile } from "@/lib/brand";
+import { getActiveBrandProfile, resolveAllowedBrandIds } from "@/lib/brand";
 import { getAuth } from "@/lib/auth";
 import { logActivity } from "@/lib/activity";
 
@@ -132,16 +132,30 @@ export async function POST(req: NextRequest) {
   try {
     const body = (await req.json()) as CreatePaymentBody;
     const auth = await getAuth();
-    let brandId = body.brandProfileId || null;
-    if (!brandId) {
-      const brand = await getActiveBrandProfile();
-      if (!brand?.id) return NextResponse.json({ success: false, message: "Brand aktif tidak ditemukan" }, { status: 400 });
-      brandId = brand.id;
-    }
+    const brand = await getActiveBrandProfile();
+    if (!brand?.id) return NextResponse.json({ success: false, message: "Brand aktif tidak ditemukan" }, { status: 400 });
+    const brandId = brand.id;
+    const allowedBrandIds = await resolveAllowedBrandIds(auth?.userId ?? null, (auth?.roles as string[]) ?? [], []);
+    if (!allowedBrandIds.includes(brandId)) return NextResponse.json({ success: false, message: "Forbidden: brand scope" }, { status: 403 });
 
     const paidAt = body.paidAt ? new Date(body.paidAt) : new Date();
     const amount = Number(body.amount) || 0;
     if (!(amount > 0)) return NextResponse.json({ success: false, message: "Jumlah pembayaran harus > 0" }, { status: 400 });
+
+    // Validasi referensi berdasarkan refType dan brand
+    if (body.refType === "SALES_ORDER") {
+      const so = await prisma.salesOrder.findFirst({ where: { id: body.refId, brandProfileId: brandId } });
+      if (!so) return NextResponse.json({ success: false, message: "Referensi Sales Order tidak ditemukan atau beda brand" }, { status: 400 });
+    } else if (body.refType === "INVOICE") {
+      const inv = await prisma.invoice.findFirst({ where: { id: body.refId, brandProfileId: brandId } });
+      if (!inv) return NextResponse.json({ success: false, message: "Referensi Invoice tidak ditemukan atau beda brand" }, { status: 400 });
+    } else if (body.refType === "PURCHASE") {
+      const pd = await prisma.purchaseDirect.findFirst({ where: { id: body.refId, brandProfileId: brandId } });
+      if (!pd) return NextResponse.json({ success: false, message: "Referensi Purchase tidak ditemukan atau beda brand" }, { status: 400 });
+    } else if (body.refType === "EXPENSE") {
+      const ex = await prisma.expense.findFirst({ where: { id: body.refId, brandProfileId: brandId } });
+      if (!ex) return NextResponse.json({ success: false, message: "Referensi Expense tidak ditemukan atau beda brand" }, { status: 400 });
+    }
 
     const created = await prisma.$transaction(async (db) => {
       const payment = await db.payment.create({

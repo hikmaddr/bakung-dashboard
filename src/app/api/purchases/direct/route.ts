@@ -1,7 +1,8 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getAuth } from "@/lib/auth";
-import { getActiveBrandProfile } from "@/lib/brand";
+import { getActiveBrandProfile, resolveAllowedBrandIds } from "@/lib/brand";
+import { logActivity } from "@/lib/activity";
 
 async function saveAttachments(formData: FormData) {
   const files: File[] = [];
@@ -82,6 +83,11 @@ export async function POST(req: NextRequest) {
     const auth = await getAuth();
     const brand = await getActiveBrandProfile();
 
+    // Guard brand berdasarkan izin pengguna
+    if (!brand?.id) return NextResponse.json({ success: false, message: "Brand aktif tidak ditemukan" }, { status: 400 });
+    const allowedBrandIds = await resolveAllowedBrandIds(auth?.userId ?? null, (auth?.roles as string[]) ?? [], []);
+    if (!allowedBrandIds.includes(brand.id)) return NextResponse.json({ success: false, message: "Forbidden: brand scope" }, { status: 403 });
+
     let payload: any = {};
     let attachments: any[] = [];
     if (req.headers.get("content-type")?.includes("multipart/form-data")) {
@@ -136,12 +142,28 @@ export async function POST(req: NextRequest) {
         fee,
         tax,
         total,
-        brandProfileId: brand?.id || null,
+        brandProfileId: brand.id,
         createdByUserId: auth?.userId || null,
         items: { create: itemsNormalized },
       },
       include: { items: true },
     });
+    // Catat aktivitas pembuatan purchase direct
+    try {
+      await logActivity(req, {
+        userId: auth?.userId || null,
+        action: "PURCHASE_CREATE",
+        entity: "purchase_direct",
+        entityId: created.id,
+        metadata: {
+          brandProfileId: brand.id,
+          purchaseNumber: created.purchaseNumber,
+          total: created.total,
+          supplierName: created.supplierName,
+          date: created.date,
+        },
+      });
+    } catch {}
     return NextResponse.json({ success: true, data: created });
   } catch (e: any) {
     return NextResponse.json({ success: false, message: e?.message || "Gagal membuat pembelian" }, { status: 500 });

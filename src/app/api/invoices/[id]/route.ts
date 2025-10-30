@@ -1,12 +1,16 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { getAuth } from "@/lib/auth";
+import { resolveAllowedBrandIds } from "@/lib/brand";
 
 export async function GET(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   const idNum = Number(id);
   if (Number.isNaN(idNum)) return NextResponse.json({ success: false, message: "Invalid id" }, { status: 400 });
   try {
-    const row = await prisma.invoice.findUnique({ where: { id: idNum }, include: { customer: true, items: true, quotation: true } });
+    const auth = await getAuth();
+    const allowedBrandIds = await resolveAllowedBrandIds(auth?.userId ?? null, (auth?.roles as string[]) ?? [], []);
+    const row = await prisma.invoice.findFirst({ where: { id: idNum, brandProfileId: { in: allowedBrandIds } }, include: { customer: true, items: true, quotation: true } });
     if (!row) return NextResponse.json({ success: false, message: "Not found" }, { status: 404 });
     return NextResponse.json({ success: true, data: row });
   } catch (e) {
@@ -24,6 +28,13 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     // Ambil invoice saat ini untuk menghitung total terbaru ketika DP berubah
     const existing = await prisma.invoice.findUnique({ where: { id: idNum } });
     if (!existing) return NextResponse.json({ success: false, message: "Not found" }, { status: 404 });
+
+    // Brand guard: pastikan invoice milik brand yang diizinkan
+    const auth = await getAuth();
+    const allowedBrandIds = await resolveAllowedBrandIds(auth?.userId ?? null, (auth?.roles as string[]) ?? [], []);
+    if (existing.brandProfileId != null && !allowedBrandIds.includes(existing.brandProfileId)) {
+      return NextResponse.json({ success: false, message: "Forbidden: brand scope" }, { status: 403 });
+    }
 
     const data: any = {};
     if (body.notes !== undefined) data.notes = body.notes ? String(body.notes).slice(0, 191) : null;
@@ -79,6 +90,10 @@ export async function DELETE(_req: NextRequest, { params }: { params: Promise<{ 
   const idNum = Number(id);
   if (Number.isNaN(idNum)) return NextResponse.json({ success: false, message: "Invalid id" }, { status: 400 });
   try {
+    const auth = await getAuth();
+    const allowedBrandIds = await resolveAllowedBrandIds(auth?.userId ?? null, (auth?.roles as string[]) ?? [], []);
+    const inScope = await prisma.invoice.findFirst({ where: { id: idNum, brandProfileId: { in: allowedBrandIds } }, select: { id: true } });
+    if (!inScope) return NextResponse.json({ success: false, message: "Forbidden: brand scope" }, { status: 403 });
     await prisma.invoiceItem.deleteMany({ where: { invoiceId: idNum } });
     await prisma.invoice.delete({ where: { id: idNum } });
     return NextResponse.json({ success: true });
@@ -93,6 +108,10 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
   const idNum = Number(id);
   if (Number.isNaN(idNum)) return NextResponse.json({ success: false, message: "Invalid id" }, { status: 400 });
   try {
+    const auth = await getAuth();
+    const allowedBrandIds = await resolveAllowedBrandIds(auth?.userId ?? null, (auth?.roles as string[]) ?? [], []);
+    const scopedExisting = await prisma.invoice.findFirst({ where: { id: idNum, brandProfileId: { in: allowedBrandIds } }, select: { id: true } });
+    if (!scopedExisting) return NextResponse.json({ success: false, message: "Forbidden: brand scope" }, { status: 403 });
     const body = await req.json();
     const {
       invoiceNumber,

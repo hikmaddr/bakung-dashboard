@@ -1,6 +1,8 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { getActiveBrandProfile } from "@/lib/brand";
+import { getActiveBrandProfile, resolveAllowedBrandIds } from "@/lib/brand";
+import { getAuth } from "@/lib/auth";
+import { logActivity } from "@/lib/activity";
 
 type CreateExpenseBody = {
   category: string;
@@ -63,15 +65,21 @@ export async function GET(req: NextRequest) {
 export async function POST(req: NextRequest) {
   try {
     const body = (await req.json()) as CreateExpenseBody;
-    let brandId = body.brandProfileId || null;
-    if (!brandId) {
-      const brand = await getActiveBrandProfile();
-      if (!brand?.id) return NextResponse.json({ success: false, message: "Brand aktif tidak ditemukan" }, { status: 400 });
-      brandId = brand.id;
-    }
+    const auth = await getAuth();
+    const brand = await getActiveBrandProfile();
+    if (!brand?.id) return NextResponse.json({ success: false, message: "Brand aktif tidak ditemukan" }, { status: 400 });
+    const brandId = brand.id;
+    const allowedBrandIds = await resolveAllowedBrandIds(auth?.userId ?? null, (auth?.roles as string[]) ?? [], []);
+    if (!allowedBrandIds.includes(brandId)) return NextResponse.json({ success: false, message: "Forbidden: brand scope" }, { status: 403 });
     const amount = Number(body.amount) || 0;
     if (!(amount > 0)) return NextResponse.json({ success: false, message: "Jumlah expense harus > 0" }, { status: 400 });
     const paidAt = body.paidAt ? new Date(body.paidAt) : new Date();
+
+    // Validasi paymentId jika diberikan: harus milik brand yang sama
+    if (body.paymentId) {
+      const pay = await prisma.payment.findFirst({ where: { id: body.paymentId, brandProfileId: brandId } });
+      if (!pay) return NextResponse.json({ success: false, message: "Payment tidak ditemukan atau beda brand" }, { status: 400 });
+    }
 
     const exp = await prisma.expense.create({
       data: {
@@ -85,6 +93,23 @@ export async function POST(req: NextRequest) {
         paymentId: body.paymentId || null,
       },
     });
+
+    // Log important transaction
+    try {
+      await logActivity(req, {
+        userId: auth?.userId || null,
+        action: "EXPENSE_CREATE",
+        entity: "expense",
+        entityId: exp.id,
+        metadata: {
+          brandProfileId: brandId,
+          category: body.category,
+          amount,
+          paidAt,
+          paymentId: body.paymentId || null,
+        },
+      });
+    } catch {}
 
     return NextResponse.json({ success: true, data: exp });
   } catch (e: any) {
