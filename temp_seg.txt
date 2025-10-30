@@ -1,0 +1,1 @@
+hover:text-gray-700" onClick={() =>×</button>          </div>          <div className="p-4">            <div className="flex justify-between

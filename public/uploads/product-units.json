@@ -1,0 +1,50 @@
+[
+  {
+    "id": 1,
+    "name": "pcs",
+    "symbol": "pcs",
+    "description": null
+  },
+  {
+    "id": 2,
+    "name": "Potong",
+    "symbol": "PTG",
+    "description": null
+  },
+  {
+    "id": 3,
+    "name": "Ekor",
+    "symbol": "EKOR",
+    "description": null
+  },
+  {
+    "id": 4,
+    "name": "meter",
+    "symbol": "meter",
+    "description": null
+  },
+  {
+    "id": 5,
+    "name": "GALN",
+    "symbol": "GLN",
+    "description": null
+  },
+  {
+    "id": 6,
+    "name": "TBG",
+    "symbol": "TBG",
+    "description": null
+  },
+  {
+    "id": 7,
+    "name": "GL",
+    "symbol": "GL",
+    "description": null
+  },
+  {
+    "id": 8,
+    "name": "BTNG",
+    "symbol": "BTNG",
+    "description": null
+  }
+]

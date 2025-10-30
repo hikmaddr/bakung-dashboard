@@ -1,0 +1,569 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+// =============================
+// Inventory & Purchase additions
+// =============================
+
+enum StockMutationType {
+  IN
+  OUT
+  ADJUST
+}
+
+model Customer {
+  id          Int          @id @default(autoincrement())
+  pic         String
+  company     String
+  address     String
+  phone       String
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+  email       String?
+  brandProfileId Int?
+  invoices    Invoice[]
+  quotations  Quotation[]
+  salesOrders SalesOrder[]
+  brand       BrandProfile? @relation(fields: [brandProfileId], references: [id])
+
+  @@index([brandProfileId])
+  @@map("customer")
+}
+
+model Quotation {
+  id              Int             @id @default(autoincrement())
+  quotationNumber String          @unique(map: "Quotation_quotationNumber_key")
+  date            DateTime
+  validUntil      DateTime
+  projectDesc     String
+  notes           String?
+  customerId      Int
+  brandProfileId  Int?
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+  projectFileUrl  String?
+  status          String
+  totalAmount     Float           @default(0)
+  customer        Customer        @relation(fields: [customerId], references: [id], map: "Quotation_customerId_fkey")
+  brand           BrandProfile?   @relation(fields: [brandProfileId], references: [id])
+  items           QuotationItem[]
+  salesOrders     SalesOrder[]
+  invoices        Invoice[]
+
+  @@index([customerId], map: "Quotation_customerId_fkey")
+  @@index([brandProfileId])
+  @@map("quotation")
+}
+
+model QuotationItem {
+  id          Int       @id @default(autoincrement())
+  quotationId Int
+  product     String
+  description String
+  quantity    Int
+  unit        String
+  price       Float
+  imageUrl    String?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  subtotal    Float     @default(0)
+  quotation   Quotation @relation(fields: [quotationId], references: [id], map: "QuotationItem_quotationId_fkey")
+
+  @@index([quotationId], map: "QuotationItem_quotationId_fkey")
+  @@map("quotationitem")
+}
+
+model SalesOrder {
+  id            Int              @id @default(autoincrement())
+  orderNumber   String           @unique(map: "SalesOrder_orderNumber_key")
+  date          DateTime
+  status        String
+  notes         String?
+  quotationId   Int?
+  customerId    Int
+  brandProfileId Int?
+  totalAmount   Float            @default(0)
+  paidAmount    Float            @default(0)
+  paymentStatus String           @default("UNPAID")
+  createdAt     DateTime         @default(now())
+  updatedAt     DateTime         @updatedAt
+  extraDiscount Float            @default(0)
+  lineDiscount  Float            @default(0)
+  subtotal      Float            @default(0)
+  taxAmount     Float            @default(0)
+  taxMode       String           @default("none")
+  customer      Customer         @relation(fields: [customerId], references: [id], map: "SalesOrder_customerId_fkey")
+  quotation     Quotation?       @relation(fields: [quotationId], references: [id], map: "SalesOrder_quotationId_fkey")
+  brand         BrandProfile?    @relation(fields: [brandProfileId], references: [id])
+  items         SalesOrderItem[]
+
+  @@index([customerId], map: "SalesOrder_customerId_fkey")
+  @@index([quotationId], map: "SalesOrder_quotationId_fkey")
+  @@index([brandProfileId])
+  @@map("salesorder")
+}
+
+model SalesOrderItem {
+  id           Int        @id @default(autoincrement())
+  salesOrderId Int
+  product      String
+  description  String
+  quantity     Int
+  unit         String
+  price        Float
+  imageUrl     String?
+  subtotal     Float
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+  discount     Float      @default(0)
+  salesOrder   SalesOrder @relation(fields: [salesOrderId], references: [id], map: "SalesOrderItem_salesOrderId_fkey")
+
+  @@index([salesOrderId], map: "SalesOrderItem_salesOrderId_fkey")
+  @@map("salesorderitem")
+}
+
+model Invoice {
+  id                 Int           @id @default(autoincrement())
+  invoiceNumber      String        @unique
+  issueDate          DateTime
+  dueDate            DateTime
+  status             String        @default("Draft")
+  notes              String?
+  terms              String?
+  customerId         Int
+  quotationId        Int?
+  brandProfileId     Int?
+  subtotal           Float         @default(0)
+  lineDiscount       Float         @default(0)
+  extraDiscountType  String        @default("amount")
+  extraDiscountValue Float         @default(0)
+  shippingCost       Float         @default(0)
+  taxMode            String        @default("none")
+  taxAmount          Float         @default(0)
+  downPayment        Float         @default(0)
+  total              Float         @default(0)
+  paidAmount         Float         @default(0)
+  paymentStatus      String        @default("UNPAID")
+  createdAt          DateTime      @default(now())
+  updatedAt          DateTime      @updatedAt
+  customer           Customer      @relation(fields: [customerId], references: [id])
+  quotation          Quotation?    @relation(fields: [quotationId], references: [id])
+  brand              BrandProfile? @relation(fields: [brandProfileId], references: [id])
+  items              InvoiceItem[]
+
+  @@index([customerId])
+  @@index([quotationId])
+  @@index([brandProfileId])
+  @@map("invoice")
+}
+
+model InvoiceItem {
+  id           Int      @id @default(autoincrement())
+  invoiceId    Int
+  name         String
+  description  String?
+  qty          Int
+  unit         String   @default("pcs")
+  price        Float
+  discount     Float    @default(0)
+  discountType String   @default("percent")
+  subtotal     Float    @default(0)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+  invoice      Invoice  @relation(fields: [invoiceId], references: [id])
+
+  @@index([invoiceId])
+  @@map("invoiceitem")
+}
+
+model ProductCategory {
+  id          Int               @id @default(autoincrement())
+  name        String
+  createdAt   DateTime          @default(now())
+  updatedAt   DateTime          @updatedAt
+  code        String            @unique
+  description String?
+  parentId    Int?
+  brandProfileId Int?
+  products    Product[]
+  parent      ProductCategory?  @relation("CategoryToParent", fields: [parentId], references: [id])
+  children    ProductCategory[] @relation("CategoryToParent")
+  brand       BrandProfile?     @relation(fields: [brandProfileId], references: [id])
+
+  @@index([parentId], map: "productcategory_parentId_fkey")
+  @@index([brandProfileId])
+  @@map("productcategory")
+}
+
+model Product {
+  id          Int              @id @default(autoincrement())
+  sku         String           @unique
+  name        String
+  description String?
+  categoryId  Int?
+  brandProfileId Int?
+  unit        String           @default("pcs")
+  buyPrice    Float            @default(0)
+  sellPrice   Float            @default(0)
+  trackStock  Boolean          @default(false)
+  qty         Int              @default(0)
+  imageUrl    String?
+  createdAt   DateTime         @default(now())
+  updatedAt   DateTime         @updatedAt
+  category    ProductCategory? @relation(fields: [categoryId], references: [id])
+  brand       BrandProfile?    @relation(fields: [brandProfileId], references: [id])
+  stockMutations StockMutation[]
+  purchaseItems  PurchaseDirectItem[]
+
+  @@index([categoryId])
+  @@index([brandProfileId])
+  @@map("product")
+}
+
+model BrandProfile {
+  id               Int      @id @default(autoincrement())
+  slug             String   @unique
+  name             String
+  overview         String?
+  address          String?
+  phone            String?
+  email            String?
+  website          String?
+  footerText       String?
+  paymentInfo      String?  @db.Text
+  termsConditions  String?  @db.Text
+  showBrandName    Boolean  @default(true)
+  showBrandDescription Boolean @default(true)
+  showBrandEmail   Boolean  @default(true)
+  showBrandWebsite Boolean  @default(true)
+  showBrandAddress Boolean  @default(true)
+  logoUrl          String?  @db.Text
+  templateOptionId String?
+  templateDefaults Json     @default("{}")
+  numberFormats    Json     @default("{}")
+  modules          Json     @default("{}")
+  primaryColor     String?  @default("#0EA5E9")
+  secondaryColor   String?  @default("#ECFEFF")
+  isActive         Boolean  @default(false)
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  // Back-relations
+  customers       Customer[]
+  quotations      Quotation[]
+  salesOrders     SalesOrder[]
+  invoices        Invoice[]
+  products        Product[]
+  categories      ProductCategory[]
+  purchases       PurchaseDirect[]
+  stockMutations  StockMutation[]
+  payments        Payment[]
+  receipts        Receipt[]
+  expenses        Expense[]
+  // Opposite relations for User default brand & brand scopes
+  defaultUsers    User[]           @relation("UserDefaultBrand")
+  userBrandScopes UserBrandScope[]
+
+  @@map("brand_profile")
+}
+
+model Template {
+  id           Int      @id @default(autoincrement())
+  name         String
+  description  String?
+  type         String   // invoice, quotation, sales_order, delivery_note, universal
+  category     String   @default("custom") // custom, default
+  fileUrl      String
+  thumbnailUrl String?
+  placeholders Json     @default("{}")
+  isActive     Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@map("template")
+}
+
+// =============================
+// Purchase Direct Models
+// =============================
+
+model PurchaseDirect {
+  id              Int       @id @default(autoincrement())
+  purchaseNumber  String    @unique
+  date            DateTime
+  supplierName    String
+  marketplaceOrderId String?
+  notes           String?
+  attachments     Json      @default("[]")
+  status          String    @default("Draft") // Draft | Received | Canceled
+  receivedAt      DateTime?
+  // Biaya dan total
+  subtotal        Float     @default(0)
+  shippingCost    Float     @default(0)
+  fee             Float     @default(0)
+  tax             Float     @default(0)
+  total           Float     @default(0)
+  paidAmount      Float     @default(0)
+  paymentStatus   String    @default("UNPAID")
+  proofUrl        String?
+  salesOrderId    Int?
+  brandProfileId  Int?
+  createdByUserId Int?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  items           PurchaseDirectItem[]
+  brand           BrandProfile? @relation(fields: [brandProfileId], references: [id])
+  salesOrder      SalesOrder?   @relation(fields: [salesOrderId], references: [id])
+  createdBy       User?         @relation(fields: [createdByUserId], references: [id])
+
+  @@index([brandProfileId])
+  @@index([salesOrderId])
+  @@index([createdByUserId])
+  @@map("purchasedirect")
+}
+
+model PurchaseDirectItem {
+  id               Int             @id @default(autoincrement())
+  purchaseDirectId Int
+  productId        Int?
+  name             String
+  description      String?
+  qty              Int
+  unit             String          @default("pcs")
+  unitCost         Float?          @default(0)
+  createdAt        DateTime        @default(now())
+  updatedAt        DateTime        @updatedAt
+
+  purchase         PurchaseDirect  @relation(fields: [purchaseDirectId], references: [id])
+  product          Product?        @relation(fields: [productId], references: [id])
+
+  @@index([purchaseDirectId])
+  @@index([productId])
+  @@map("purchasedirectitem")
+}
+
+model StockMutation {
+  id              Int               @id @default(autoincrement())
+  productId       Int
+  qty             Int
+  type            StockMutationType
+  refTable        String?
+  refId           Int?
+  note            String?
+  brandProfileId  Int?
+  createdByUserId Int?
+  createdAt       DateTime          @default(now())
+
+  product         Product           @relation(fields: [productId], references: [id])
+  brand           BrandProfile?     @relation(fields: [brandProfileId], references: [id])
+  createdBy       User?             @relation(fields: [createdByUserId], references: [id])
+
+  @@index([productId])
+  @@index([brandProfileId])
+  @@index([createdByUserId])
+  @@map("stockmutation")
+}
+
+// =============================
+// Finance Models
+// =============================
+
+enum PaymentType {
+  IN
+  OUT
+}
+
+enum PaymentMethod {
+  CASH
+  BCA
+  BRI
+  OTHER
+}
+
+enum PaymentRefType {
+  SALES_ORDER
+  INVOICE
+  PURCHASE
+  EXPENSE
+}
+
+model Payment {
+  id             Int            @id @default(autoincrement())
+  brandProfileId Int?
+  type           PaymentType
+  method         PaymentMethod
+  amount         Float          @default(0)
+  paidAt         DateTime
+  refType        PaymentRefType
+  refId          Int
+  notes          String?
+  createdById    Int?
+  createdAt      DateTime       @default(now())
+
+  brand          BrandProfile?  @relation(fields: [brandProfileId], references: [id])
+  createdBy      User?          @relation(fields: [createdById], references: [id])
+  receipt        Receipt?
+  expense        Expense?
+
+  @@index([brandProfileId])
+  @@index([refType, refId])
+  @@index([createdById])
+  @@map("payment")
+}
+
+model Receipt {
+  id             Int            @id @default(autoincrement())
+  brandProfileId Int?
+  paymentId      Int            @unique
+  receiptNumber  String
+  pdfUrl         String?
+  createdAt      DateTime       @default(now())
+
+  brand          BrandProfile?  @relation(fields: [brandProfileId], references: [id])
+  payment        Payment        @relation(fields: [paymentId], references: [id])
+
+  @@index([brandProfileId])
+  @@unique([brandProfileId, receiptNumber])
+  @@map("receipt")
+}
+
+model Expense {
+  id             Int            @id @default(autoincrement())
+  brandProfileId Int?
+  category       String
+  amount         Float          @default(0)
+  payee          String?
+  attachmentUrl  String?
+  paidAt         DateTime
+  notes          String?
+  paymentId      Int?
+
+  brand          BrandProfile?  @relation(fields: [brandProfileId], references: [id])
+  payment        Payment?       @relation(fields: [paymentId], references: [id])
+
+  @@index([brandProfileId])
+  @@index([paymentId])
+  @@map("expense")
+}
+
+// =============================
+// Auth & RBAC Models
+// =============================
+
+model User {
+  id           Int           @id @default(autoincrement())
+  email        String        @unique
+  name         String?
+  firstName    String?
+  lastName     String?
+  phone        String?
+  bio          String?
+  address      String?
+  city         String?
+  country      String?
+  postalCode   String?
+  taxId        String?
+  company      String?
+  website      String?
+  avatar       String?
+  facebook     String?
+  twitter      String?
+  linkedin     String?
+  instagram    String?
+  passwordHash String
+  isActive     Boolean       @default(true)
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+  defaultBrandProfileId Int?
+
+  defaultBrand BrandProfile? @relation("UserDefaultBrand", fields: [defaultBrandProfileId], references: [id])
+
+  roles        UserRole[]
+  brandScopes  UserBrandScope[]
+  activityLogs ActivityLog[]
+  notifications Notification[]
+  payments     Payment[]
+
+  @@index([defaultBrandProfileId])
+  @@map("user")
+}
+
+model Role {
+  id          Int        @id @default(autoincrement())
+  name        String     @unique
+  description String?
+  permissions Json       @default("{}")
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+
+  users       UserRole[]
+
+  @@map("role")
+}
+
+model UserRole {
+  userId    Int
+  roleId    Int
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id])
+  role Role @relation(fields: [roleId], references: [id])
+
+  @@id([userId, roleId])
+  @@index([roleId])
+  @@map("user_role")
+}
+
+// Relasi akses brand per user
+model UserBrandScope {
+  id              Int @id @default(autoincrement())
+  userId          Int
+  brandProfileId  Int
+  isBrandAdmin    Boolean @default(false)
+  createdAt       DateTime @default(now())
+
+  user   User         @relation(fields: [userId], references: [id])
+  brand  BrandProfile @relation(fields: [brandProfileId], references: [id])
+
+  @@unique([userId, brandProfileId])
+  @@index([brandProfileId])
+  @@index([userId])
+  @@map("user_brand_scope")
+}
+
+model ActivityLog {
+  id        Int       @id @default(autoincrement())
+  userId    Int?
+  action    String
+  entity    String?
+  entityId  Int?
+  metadata  Json      @default("{}")
+  createdAt DateTime  @default(now())
+
+  user User? @relation(fields: [userId], references: [id])
+
+  @@index([userId])
+  @@map("activity_log")
+}
+
+model Notification {
+  id        Int      @id @default(autoincrement())
+  userId    Int
+  title     String
+  message   String
+  type      String   @default("info")
+  read      Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id])
+
+  @@index([userId])
+  @@map("notification")
+}
