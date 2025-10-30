@@ -9,6 +9,7 @@ import { ThemeProvider } from "@/context/ThemeContext";
 
 // ✅ TAMBAHKAN: Import Provider yang sudah Anda buat
 import { ToastProvider } from "@/context/ToastContext"; 
+import { GlobalProvider } from "@/context/AppContext";
 
 
 const outfit = Outfit({
@@ -29,7 +30,9 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             
             {/* 🌟 WRAP SEMUA CHILDREN DENGAN ToastProvider 🌟 */}
             <ToastProvider>
-              {children}
+              <GlobalProvider>
+                {children}
+              </GlobalProvider>
             </ToastProvider>
 
             {/* ❌ HAPUS BAGIAN INI DARI SINI

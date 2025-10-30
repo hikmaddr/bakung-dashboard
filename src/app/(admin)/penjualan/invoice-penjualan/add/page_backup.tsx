@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { Toaster, toast } from "react-hot-toast";
+import { toast } from "react-hot-toast";
 import { useRouter } from "next/navigation";
 
 type ProductLine = {
@@ -204,7 +204,6 @@ export default function AddSalesInvoicePage() {
 
   return (
     <div className="p-4 sm:p-6">
-      <Toaster position="top-right" />
       <div className="rounded-2xl border border-gray-200 bg-white p-4 sm:p-6 shadow-sm">
         <h1 className="text-2xl font-semibold mb-6">Buat Invoice Penjualan</h1>
 

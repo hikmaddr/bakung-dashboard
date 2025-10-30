@@ -2,8 +2,9 @@ import { NextResponse, type NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getAuth } from "@/lib/auth";
 import { getActiveBrandProfile } from "@/lib/brand";
+import { logActivity } from "@/lib/activity";
 
-export async function POST(_req: NextRequest, { params }: { params: { id: string } }) {
+export async function POST(req: NextRequest, { params }: { params: { id: string } }) {
   const id = Number(params.id);
   const auth = await getAuth();
   const brand = await getActiveBrandProfile();
@@ -45,6 +46,20 @@ export async function POST(_req: NextRequest, { params }: { params: { id: string
 
       return updated;
     });
+    // Log important transaction
+    try {
+      await logActivity(req, {
+        userId: auth?.userId || null,
+        action: "PURCHASE_RECEIVE",
+        entity: "purchase_direct",
+        entityId: id,
+        metadata: {
+          brandProfileId: brand?.id || null,
+          purchaseNumber: result.purchaseNumber,
+          receivedAt: result.receivedAt,
+        },
+      });
+    } catch {}
     return NextResponse.json({ success: true, data: result });
   } catch (e: any) {
     return NextResponse.json({ success: false, message: e?.message || "Gagal tandai diterima" }, { status: 500 });

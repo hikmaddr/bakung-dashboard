@@ -1,13 +1,15 @@
 "use client";
 import Image from "next/image";
 import Link from "next/link";
-import React, { useState } from "react";
+import React, { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { Dropdown } from "../ui/dropdown/Dropdown";
 import { DropdownItem } from "../ui/dropdown/DropdownItem";
 
 export default function NotificationDropdown() {
   const [isOpen, setIsOpen] = useState(false);
   const [notifying, setNotifying] = useState(true);
+  const containerRef = useRef<HTMLDivElement | null>(null);
+  const [menuStyles, setMenuStyles] = useState<React.CSSProperties | undefined>(undefined);
 
   function toggleDropdown() {
     setIsOpen(!isOpen);
@@ -21,8 +23,55 @@ export default function NotificationDropdown() {
     toggleDropdown();
     setNotifying(false);
   };
+  useLayoutEffect(() => {
+    if (!isOpen) return;
+    const updatePosition = () => {
+      if (!containerRef.current) return;
+      const rect = containerRef.current.getBoundingClientRect();
+      const padding = 12;
+      const minWidth = 300;
+      const maxWidth = 380;
+      const available = window.innerWidth - padding * 2;
+      const width = Math.min(Math.max(minWidth, Math.min(maxWidth, available)), 400);
+
+      const viewportLeft = padding;
+      const viewportRight = window.innerWidth - padding - width;
+      // Align to the right edge of the trigger by default
+      const preferredLeft = Math.round(rect.right - width);
+      const left = Math.min(Math.max(preferredLeft, viewportLeft), viewportRight);
+
+      const estimatedHeight = Math.min(520, Math.round(window.innerHeight * 0.8));
+      const below = Math.round(rect.bottom + 8);
+      const viewportBottom = window.innerHeight - padding;
+      let top = below;
+      if (below + estimatedHeight > viewportBottom) {
+        const above = Math.round(rect.top - estimatedHeight - 8);
+        top = Math.max(above, padding);
+      }
+
+      setMenuStyles({ position: "fixed", top, left, width, zIndex: 60 });
+    };
+    updatePosition();
+    const handler = () => updatePosition();
+    window.addEventListener("resize", handler);
+    window.addEventListener("scroll", handler, true);
+    return () => {
+      window.removeEventListener("resize", handler);
+      window.removeEventListener("scroll", handler, true);
+    };
+  }, [isOpen]);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setIsOpen(false);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [isOpen]);
+
   return (
-    <div className="relative">
+    <div className="relative" ref={containerRef}>
       <button
         className="relative dropdown-toggle flex items-center justify-center text-gray-500 transition-colors bg-white border border-gray-200 rounded-full hover:text-gray-700 h-11 w-11 hover:bg-gray-100 dark:border-gray-800 dark:bg-gray-900 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-white"
         onClick={handleClick}
@@ -52,7 +101,9 @@ export default function NotificationDropdown() {
       <Dropdown
         isOpen={isOpen}
         onClose={closeDropdown}
-        className="absolute -right-[240px] mt-[17px] flex h-[480px] w-[350px] flex-col rounded-2xl border border-gray-200 bg-white p-3 shadow-theme-lg dark:border-gray-800 dark:bg-gray-dark sm:w-[361px] lg:right-0"
+        position="fixed"
+        style={menuStyles}
+        className="flex flex-col w-full max-w-[94vw] max-h-[80vh] rounded-2xl border border-gray-200 bg-white p-3 shadow-theme-lg dark:border-gray-800 dark:bg-gray-dark"
       >
         <div className="flex items-center justify-between pb-3 mb-3 border-b border-gray-100 dark:border-gray-700">
           <h5 className="text-lg font-semibold text-gray-800 dark:text-gray-200">
@@ -78,7 +129,7 @@ export default function NotificationDropdown() {
             </svg>
           </button>
         </div>
-        <ul className="flex flex-col h-auto overflow-y-auto custom-scrollbar">
+        <ul className="flex flex-col h-auto overflow-y-auto custom-scrollbar" style={{ maxHeight: "calc(80vh - 90px)" }}>
           {/* Example notification items */}
           <li>
             <DropdownItem

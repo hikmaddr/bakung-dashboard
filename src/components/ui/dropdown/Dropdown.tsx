@@ -7,6 +7,8 @@ interface DropdownProps {
   onClose: () => void;
   children: React.ReactNode;
   className?: string;
+  style?: React.CSSProperties;
+  position?: "absolute" | "fixed";
 }
 
 export const Dropdown: React.FC<DropdownProps> = ({
@@ -14,6 +16,8 @@ export const Dropdown: React.FC<DropdownProps> = ({
   onClose,
   children,
   className = "",
+  style,
+  position = "absolute",
 }) => {
   const dropdownRef = useRef<HTMLDivElement>(null);
 
@@ -40,7 +44,8 @@ export const Dropdown: React.FC<DropdownProps> = ({
   return (
     <div
       ref={dropdownRef}
-      className={`absolute z-40  right-0 mt-2  rounded-xl border border-gray-200 bg-white  shadow-theme-lg dark:border-gray-800 dark:bg-gray-dark ${className}`}
+      style={style}
+      className={`${position === "fixed" ? "fixed" : "absolute right-0 mt-2"} z-40 rounded-xl border border-gray-200 bg-white shadow-theme-lg dark:border-gray-800 dark:bg-gray-dark ${className}`}
     >
       {children}
     </div>

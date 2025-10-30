@@ -102,6 +102,7 @@ model SalesOrder {
   quotation     Quotation?       @relation(fields: [quotationId], references: [id], map: "SalesOrder_quotationId_fkey")
   brand         BrandProfile?    @relation(fields: [brandProfileId], references: [id])
   items         SalesOrderItem[]
+  paymentsIn    PaymentIn[]
   // Back-relation to purchases
   purchases     PurchaseDirect[]
 
@@ -158,6 +159,7 @@ model Invoice {
   quotation          Quotation?    @relation(fields: [quotationId], references: [id])
   brand              BrandProfile? @relation(fields: [brandProfileId], references: [id])
   items              InvoiceItem[]
+  paymentsIn         PaymentIn[]
 
   @@index([customerId])
   @@index([quotationId])
@@ -268,6 +270,10 @@ model BrandProfile {
   payments        Payment[]
   receipts        Receipt[]
   expenses        Expense[]
+  // New relations for additional finance models
+  purchaseInvoices PurchaseInvoice[]
+  paymentsIn      PaymentIn[]
+  paymentsOut     PaymentOut[]
   // Opposite relations for User default brand & brand scopes
   defaultUsers    User[]           @relation("UserDefaultBrand")
   userBrandScopes UserBrandScope[]
@@ -351,6 +357,68 @@ model PurchaseDirectItem {
   @@map("purchasedirectitem")
 }
 
+// =============================
+// Purchase Invoice Models
+// =============================
+
+enum PurchaseInvoiceStatus {
+  Draft
+  Issued
+  PartiallyPaid
+  Paid
+  Canceled
+}
+
+model PurchaseInvoice {
+  id               Int                     @id @default(autoincrement())
+  invoiceNumber    String
+  date             DateTime
+  dueDate          DateTime?
+  supplierName     String
+  notes            String?
+  subtotal         Float                    @default(0)
+  shippingCost     Float                    @default(0)
+  tax              Float                    @default(0)
+  total            Float                    @default(0)
+  paidAmount       Float                    @default(0)
+  status           PurchaseInvoiceStatus    @default(Draft)
+  brandProfileId   Int?
+  purchaseDirectId Int?
+  createdAt        DateTime                 @default(now())
+  updatedAt        DateTime                 @updatedAt
+
+  brand            BrandProfile?            @relation(fields: [brandProfileId], references: [id])
+  purchase         PurchaseDirect?          @relation(fields: [purchaseDirectId], references: [id])
+  items            PurchaseInvoiceItem[]
+  payments         PaymentOut[]
+
+  @@index([brandProfileId])
+  @@index([purchaseDirectId])
+  @@unique([brandProfileId, invoiceNumber])
+  @@map("purchaseinvoice")
+}
+
+model PurchaseInvoiceItem {
+  id                 Int               @id @default(autoincrement())
+  purchaseInvoiceId  Int
+  productId          Int?
+  name               String
+  description        String?
+  qty                Int
+  unit               String            @default("pcs")
+  unitCost           Float             @default(0)
+  subtotal           Float             @default(0)
+  createdAt          DateTime          @default(now())
+  updatedAt          DateTime          @updatedAt
+
+  invoice            PurchaseInvoice   @relation(fields: [purchaseInvoiceId], references: [id])
+  product            Product?          @relation(fields: [productId], references: [id])
+
+  @@index([purchaseInvoiceId])
+  @@index([productId])
+  @@map("purchaseinvoiceitem")
+}
+
 model StockMutation {
   id              Int               @id @default(autoincrement())
   productId       Int
@@ -362,6 +430,7 @@ model StockMutation {
   brandProfileId  Int?
   createdByUserId Int?
   createdAt       DateTime          @default(now())
+  updatedAt       DateTime          @updatedAt
 
   product         Product           @relation(fields: [productId], references: [id])
   brand           BrandProfile?     @relation(fields: [brandProfileId], references: [id])
@@ -408,6 +477,7 @@ model Payment {
   notes          String?
   createdById    Int?
   createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
 
   brand          BrandProfile?  @relation(fields: [brandProfileId], references: [id])
   createdBy      User?          @relation(fields: [createdById], references: [id])
@@ -436,6 +506,75 @@ model Receipt {
   @@map("receipt")
 }
 
+// New separated payment models
+enum PaymentInStatus {
+  Draft
+  Posted
+  Voided
+}
+
+enum PaymentOutStatus {
+  Draft
+  Posted
+  Voided
+}
+
+model PaymentIn {
+  id             Int             @id @default(autoincrement())
+  brandProfileId Int?
+  method         PaymentMethod
+  amount         Float           @default(0)
+  paidAt         DateTime
+  status         PaymentInStatus @default(Posted)
+  notes          String?
+  createdById    Int?
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+
+  // References (one of these can be set)
+  invoiceId      Int?
+  salesOrderId   Int?
+
+  brand          BrandProfile?   @relation(fields: [brandProfileId], references: [id])
+  createdBy      User?           @relation(fields: [createdById], references: [id])
+  invoice        Invoice?        @relation(fields: [invoiceId], references: [id])
+  salesOrder     SalesOrder?     @relation(fields: [salesOrderId], references: [id])
+
+  @@index([brandProfileId])
+  @@index([invoiceId])
+  @@index([salesOrderId])
+  @@index([createdById])
+  @@map("paymentin")
+}
+
+model PaymentOut {
+  id                 Int              @id @default(autoincrement())
+  brandProfileId     Int?
+  method             PaymentMethod
+  amount             Float            @default(0)
+  paidAt             DateTime
+  status             PaymentOutStatus @default(Posted)
+  notes              String?
+  createdById        Int?
+  createdAt          DateTime         @default(now())
+  updatedAt          DateTime         @updatedAt
+
+  // References (one of these can be set)
+  purchaseInvoiceId  Int?
+  expenseId          Int?
+
+  brand              BrandProfile?    @relation(fields: [brandProfileId], references: [id])
+  createdBy          User?            @relation(fields: [createdById], references: [id])
+  purchaseInvoice    PurchaseInvoice? @relation(fields: [purchaseInvoiceId], references: [id])
+  expense            Expense?         @relation(fields: [expenseId], references: [id])
+
+  @@index([brandProfileId])
+  @@index([purchaseInvoiceId])
+  @@index([expenseId])
+  @@index([createdById])
+  @@map("paymentout")
+}
+
 model Expense {
   id             Int            @id @default(autoincrement())
   brandProfileId Int?
@@ -446,12 +585,17 @@ model Expense {
   paidAt         DateTime
   notes          String?
   paymentId      Int?           @unique
+  paymentOutId   Int?           @unique
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
 
   brand          BrandProfile?  @relation(fields: [brandProfileId], references: [id])
   payment        Payment?       @relation(fields: [paymentId], references: [id])
+  paymentOut     PaymentOut?    @relation(fields: [paymentOutId], references: [id])
 
   @@index([brandProfileId])
   @@index([paymentId])
+  @@index([paymentOutId])
   @@map("expense")
 }
 
@@ -556,6 +700,22 @@ model ActivityLog {
 
   @@index([userId])
   @@map("activity_log")
+}
+
+model LoginLog {
+  id        Int       @id @default(autoincrement())
+  userId    Int?
+  action    String    // LOGIN | LOGOUT
+  success   Boolean   @default(true)
+  ip        String?
+  userAgent String?
+  message   String?
+  createdAt DateTime  @default(now())
+
+  user User? @relation(fields: [userId], references: [id])
+
+  @@index([userId])
+  @@map("login_log")
 }
 
 model Notification {

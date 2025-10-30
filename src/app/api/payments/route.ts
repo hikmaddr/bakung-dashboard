@@ -2,6 +2,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getActiveBrandProfile } from "@/lib/brand";
 import { getAuth } from "@/lib/auth";
+import { logActivity } from "@/lib/activity";
 
 type CreatePaymentBody = {
   type: "IN" | "OUT";
@@ -172,10 +173,28 @@ export async function POST(req: NextRequest) {
 
       return { payment, receipt };
     });
+    // Log important transaction
+    try {
+      await logActivity(req, {
+        userId: auth?.userId || null,
+        action: "PAYMENT_CREATE",
+        entity: "payment",
+        entityId: created.payment.id,
+        metadata: {
+          brandProfileId: brandId,
+          type: body.type,
+          method: body.method,
+          amount,
+          paidAt,
+          refType: body.refType,
+          refId: body.refId,
+          receiptNumber: created.receipt.receiptNumber,
+        },
+      });
+    } catch {}
 
     return NextResponse.json({ success: true, data: created });
   } catch (e: any) {
     return NextResponse.json({ success: false, message: e?.message || "Gagal membuat pembayaran" }, { status: 500 });
   }
 }
-

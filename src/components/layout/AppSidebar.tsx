@@ -1,9 +1,9 @@
 "use client";
-import React, { useEffect, useRef, useState, useCallback, useMemo } from "react";
+import React, { useEffect, useState, useCallback, useMemo } from "react";
 import Link from "next/link";
 import Image from "next/image";
 import { usePathname } from "next/navigation";
-import { useSidebar } from "../context/SidebarContext";
+import { useSidebar } from "@/context/SidebarContext";
 import {
   GridIcon,
   UserCircleIcon,
@@ -16,7 +16,7 @@ import {
   CalenderIcon,
   ChevronDownIcon,
   HorizontaLDots,
-} from "../icons/index";
+} from "@/icons";
 
 type FeatureKey =
   | "sales.quotation"
@@ -188,25 +188,41 @@ const AppSidebar: React.FC = () => {
 
   const fetchActiveBrandModules = useCallback(async () => {
     try {
-      const response = await fetch("/api/brand-profiles");
-      if (!response.ok) {
-        throw new Error("Failed to fetch brand profiles");
-      }
-      const data = await response.json();
-      let profiles: any[] = [];
-
-      if (Array.isArray(data)) {
-        profiles = data;
-      } else if (Array.isArray(data?.profiles)) {
-        profiles = data.profiles;
-      } else if (Array.isArray(data?.data)) {
-        profiles = data.data;
-      } else if (data) {
-        profiles = [data];
+      // 1) Try the dedicated active-brand endpoint first
+      let activeProfile: any | null = null;
+      try {
+        const activeRes = await fetch("/api/brand-profiles/active", { cache: "no-store" });
+        if (activeRes.ok) {
+          activeProfile = await activeRes.json();
+        } else {
+          // Log status/text for debugging but do not throw – we will fallback
+          const text = await activeRes.text().catch(() => "");
+          console.warn("[AppSidebar] /api/brand-profiles/active non-OK:", activeRes.status, text);
+        }
+      } catch (e) {
+        console.warn("[AppSidebar] /api/brand-profiles/active request error", e);
       }
 
-      const activeProfile =
-        profiles.find((profile) => profile?.isActive) ?? profiles[0] ?? null;
+      // 2) If not found, fallback to the list endpoint and pick the active (or first)
+      if (!activeProfile) {
+        try {
+          const res = await fetch("/api/brand-profiles", { cache: "no-store" });
+          let profiles: any[] = [];
+          if (res.ok) {
+            const data = await res.json();
+            if (Array.isArray(data)) profiles = data;
+            else if (Array.isArray(data?.profiles)) profiles = data.profiles;
+            else if (Array.isArray(data?.data)) profiles = data.data;
+            else if (data) profiles = [data];
+          } else {
+            const text = await res.text().catch(() => "");
+            console.warn("[AppSidebar] /api/brand-profiles non-OK:", res.status, text);
+          }
+          activeProfile = profiles.find((p) => p?.isActive) ?? profiles[0] ?? null;
+        } catch (e) {
+          console.warn("[AppSidebar] /api/brand-profiles request error", e);
+        }
+      }
 
       if (activeProfile) {
         const raw: Record<string, boolean> =
@@ -240,6 +256,7 @@ const AppSidebar: React.FC = () => {
         };
         setBrandInfo(normalizedBrand);
       } else {
+        // No brand info available – use defaults so the menu remains usable
         setModulesEnabled(defaultModulesAll);
         setBrandInfo(null);
       }
@@ -277,26 +294,10 @@ const AppSidebar: React.FC = () => {
     index: number;
   } | null>(null);
 
-  const [subMenuHeight, setSubMenuHeight] = useState<Record<string, number>>({});
-  const subMenuRefs = useRef<Record<string, HTMLDivElement | null>>({});
-
   const isActive = useCallback((path: string) => path === pathname, [pathname]);
 
-  useEffect(() => {
-    if (openSubmenu !== null) {
-      const key = `main-${openSubmenu.index}`;
-      if (subMenuRefs.current[key]) {
-        const newHeight = subMenuRefs.current[key]?.scrollHeight || 0;
-        setSubMenuHeight((prevHeights) => {
-          if (prevHeights[key] === newHeight) return prevHeights;
-          return {
-            ...prevHeights,
-            [key]: newHeight,
-          };
-        });
-      }
-    }
-  }, [openSubmenu]);
+
+  
 
   const handleSubmenuToggle = (index: number) => {
     setOpenSubmenu((prev) =>
@@ -362,7 +363,9 @@ const AppSidebar: React.FC = () => {
     [gatedByModules, isOwner, isAdmin, isFinance, isWarehouse]
   );
 
-  // Ensure the correct submenu opens based on the actually rendered navItems (after role/module gating)
+  // Grid-based submenu animation removes need to pre-compute heights
+
+  // Auto-open submenu when navigating to a page within it, but don't auto-close manual toggles
   useEffect(() => {
     let matchedIndex: number | null = null;
     for (let index = 0; index < navItems.length; index++) {
@@ -377,18 +380,15 @@ const AppSidebar: React.FC = () => {
       if (matchedIndex !== null) break;
     }
 
-    if (matchedIndex !== null) {
-      if (openSubmenu?.index !== matchedIndex) {
-        setOpenSubmenu({ index: matchedIndex });
-      }
-    } else if (openSubmenu !== null) {
-      setOpenSubmenu(null);
+    // Only auto-open when there's a pathname match, don't auto-close manual toggles
+    if (matchedIndex !== null && openSubmenu?.index !== matchedIndex) {
+      setOpenSubmenu({ index: matchedIndex });
     }
   }, [pathname, isActive, navItems, openSubmenu]);
 
   return (
     <aside
-      className={`fixed mt-16 flex flex-col lg:mt-0 top-0 px-5 left-0 bg-white dark:bg-gray-900 dark:border-gray-800 text-gray-900 h-screen transition-all duration-300 ease-in-out z-50 border-r border-gray-200 
+      className={`fixed mt-16 flex flex-col lg:mt-0 top-0 px-5 left-0 bg-white dark:bg-gray-900 dark:border-gray-800 text-gray-900 h-screen transition-all duration-300 ease-in-out z-[60] border-r border-gray-200 pointer-events-auto
         ${
           isExpanded || isMobileOpen
             ? "w-[290px]"
@@ -471,6 +471,7 @@ const AppSidebar: React.FC = () => {
                     {nav.subItems ? (
                       <button
                         onClick={() => handleSubmenuToggle(index)}
+                        aria-expanded={openSubmenu?.index === index}
                         className={`menu-item group ${
                           openSubmenu?.index === index
                             ? "menu-item-active"
@@ -532,33 +533,29 @@ const AppSidebar: React.FC = () => {
                     {/* Submenu */}
                     {nav.subItems && (isExpanded || isHovered || isMobileOpen) && (
                       <div
-                        ref={(el) => {
-                          subMenuRefs.current[`main-${index}`] = el;
-                        }}
-                        className="overflow-hidden transition-all duration-300"
-                        style={{
-                          height:
-                            openSubmenu?.index === index
-                              ? `${subMenuHeight[`main-${index}`]}px`
-                              : "0px",
-                        }}
+                        className={`grid transition-[grid-template-rows] duration-300 ${
+                          openSubmenu?.index === index ? "grid-rows-[1fr]" : "grid-rows-[0fr]"
+                        }`}
+                        aria-hidden={openSubmenu?.index === index ? "false" : "true"}
                       >
-                        <ul className="mt-2 space-y-1 ml-9">
-                          {nav.subItems.map((subItem) => (
-                            <li key={subItem.name}>
-                              <Link
-                                href={subItem.path}
-                                className={`menu-dropdown-item ${
-                                  isActive(subItem.path)
-                                    ? "menu-dropdown-item-active"
-                                    : "menu-dropdown-item-inactive"
-                                }`}
-                              >
-                                {subItem.name}
-                              </Link>
-                            </li>
-                          ))}
-                        </ul>
+                        <div className="overflow-hidden">
+                          <ul className="mt-2 space-y-1 ml-9">
+                            {nav.subItems.map((subItem) => (
+                              <li key={subItem.name}>
+                                <Link
+                                  href={subItem.path}
+                                  className={`menu-dropdown-item ${
+                                    isActive(subItem.path)
+                                      ? "menu-dropdown-item-active"
+                                      : "menu-dropdown-item-inactive"
+                                  }`}
+                                >
+                                  {subItem.name}
+                                </Link>
+                              </li>
+                            ))}
+                          </ul>
+                        </div>
                       </div>
                     )}
                   </li>

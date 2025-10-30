@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { signToken, setAuthCookie, verifyPassword } from "@/lib/auth";
+import { logActivity, logLogin } from "@/lib/activity";
 
 export async function POST(req: NextRequest) {
   try {
@@ -27,14 +28,9 @@ export async function POST(req: NextRequest) {
     const token = signToken({ userId: user.id, email: user.email, roles: roleNames });
     setAuthCookie(token);
 
-    const ip =
-      req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ||
-      (req as any).ip ||
-      null;
-    const userAgent = req.headers.get("user-agent") || null;
-    await prisma.activityLog.create({
-      data: { userId: user.id, action: "LOGIN", entity: "auth", metadata: { ip, userAgent } },
-    });
+    // Log to ActivityLog and LoginLog
+    await logActivity(req, { userId: user.id, action: "LOGIN", entity: "auth" });
+    await logLogin(req, { userId: user.id, action: "LOGIN", success: true });
 
     return NextResponse.json({ success: true, data: { id: user.id, email: user.email, name: user.name, roles: roleNames } });
   } catch (err: any) {
