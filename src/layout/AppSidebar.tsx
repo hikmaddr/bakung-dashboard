@@ -1,5 +1,5 @@
 "use client";
-import React, { useEffect, useRef, useState, useCallback } from "react";
+import React, { useEffect, useRef, useState, useCallback, useMemo } from "react";
 import Link from "next/link";
 import Image from "next/image";
 import { usePathname } from "next/navigation";
@@ -283,37 +283,17 @@ const AppSidebar: React.FC = () => {
   const isActive = useCallback((path: string) => path === pathname, [pathname]);
 
   useEffect(() => {
-    let submenuMatched = false;
-    const filteredNav = staticNavItems
-      .filter((nav) => !nav.moduleKey || modulesEnabled[nav.moduleKey])
-      .map((nav) => ({
-        ...nav,
-        subItems: nav.subItems?.filter(
-          (si) => !si.featureKey || modulesEnabled[si.featureKey]
-        ),
-      }));
-
-    filteredNav.forEach((nav, index) => {
-      if (nav.subItems) {
-        nav.subItems.forEach((subItem) => {
-          if (isActive(subItem.path)) {
-            setOpenSubmenu({ index });
-            submenuMatched = true;
-          }
-        });
-      }
-    });
-    if (!submenuMatched) setOpenSubmenu(null);
-  }, [pathname, isActive, modulesEnabled]);
-
-  useEffect(() => {
     if (openSubmenu !== null) {
       const key = `main-${openSubmenu.index}`;
       if (subMenuRefs.current[key]) {
-        setSubMenuHeight((prevHeights) => ({
-          ...prevHeights,
-          [key]: subMenuRefs.current[key]?.scrollHeight || 0,
-        }));
+        const newHeight = subMenuRefs.current[key]?.scrollHeight || 0;
+        setSubMenuHeight((prevHeights) => {
+          if (prevHeights[key] === newHeight) return prevHeights;
+          return {
+            ...prevHeights,
+            [key]: newHeight,
+          };
+        });
       }
     }
   }, [openSubmenu]);
@@ -324,14 +304,16 @@ const AppSidebar: React.FC = () => {
     );
   };
 
-  const gatedByModules = staticNavItems
-    .filter((nav) => !nav.moduleKey || modulesEnabled[nav.moduleKey])
-    .map((nav) => ({
-      ...nav,
-      subItems: nav.subItems?.filter(
-        (si) => !si.featureKey || modulesEnabled[si.featureKey]
-      ),
-    }));
+  const gatedByModules = useMemo(() => (
+    staticNavItems
+      .filter((nav) => !nav.moduleKey || modulesEnabled[nav.moduleKey])
+      .map((nav) => ({
+        ...nav,
+        subItems: nav.subItems?.filter(
+          (si) => !si.featureKey || modulesEnabled[si.featureKey]
+        ),
+      }))
+  ), [modulesEnabled]);
 
   const rolesLower = userRoles.map((r) => String(r).toLowerCase());
   const isOwner = rolesLower.includes("owner");
@@ -375,7 +357,34 @@ const AppSidebar: React.FC = () => {
       });
   };
 
-  const navItems = filterByRole(gatedByModules);
+  const navItems = useMemo(
+    () => filterByRole(gatedByModules),
+    [gatedByModules, isOwner, isAdmin, isFinance, isWarehouse]
+  );
+
+  // Ensure the correct submenu opens based on the actually rendered navItems (after role/module gating)
+  useEffect(() => {
+    let matchedIndex: number | null = null;
+    for (let index = 0; index < navItems.length; index++) {
+      const nav = navItems[index];
+      if (!nav.subItems) continue;
+      for (const subItem of nav.subItems) {
+        if (isActive(subItem.path)) {
+          matchedIndex = index;
+          break;
+        }
+      }
+      if (matchedIndex !== null) break;
+    }
+
+    if (matchedIndex !== null) {
+      if (openSubmenu?.index !== matchedIndex) {
+        setOpenSubmenu({ index: matchedIndex });
+      }
+    } else if (openSubmenu !== null) {
+      setOpenSubmenu(null);
+    }
+  }, [pathname, isActive, navItems, openSubmenu]);
 
   return (
     <aside

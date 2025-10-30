@@ -614,14 +614,15 @@ export const revalidate = 60;
 export default async function DashboardPage({
   searchParams,
 }: {
-  searchParams?: Record<string, string | string[] | undefined>;
+  searchParams?: Promise<Record<string, string | string[] | undefined>>;
 }) {
+  const sp = (await searchParams) ?? {};
   const auth = await getAuth();
   if (!auth?.userId) {
     return redirect(`/signin?redirect=/`);
   }
   const activeBrand = await getActiveBrandProfile();
-  const rangeParamRaw = searchParams?.range;
+  const rangeParamRaw = sp?.range;
   const rangeParam = Array.isArray(rangeParamRaw)
     ? String(rangeParamRaw[0])
     : String(rangeParamRaw ?? "30d");

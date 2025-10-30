@@ -102,6 +102,8 @@ model SalesOrder {
   quotation     Quotation?       @relation(fields: [quotationId], references: [id], map: "SalesOrder_quotationId_fkey")
   brand         BrandProfile?    @relation(fields: [brandProfileId], references: [id])
   items         SalesOrderItem[]
+  // Back-relation to purchases
+  purchases     PurchaseDirect[]
 
   @@index([customerId], map: "SalesOrder_customerId_fkey")
   @@index([quotationId], map: "SalesOrder_quotationId_fkey")
@@ -443,7 +445,7 @@ model Expense {
   attachmentUrl  String?
   paidAt         DateTime
   notes          String?
-  paymentId      Int?
+  paymentId      Int?           @unique
 
   brand          BrandProfile?  @relation(fields: [brandProfileId], references: [id])
   payment        Payment?       @relation(fields: [paymentId], references: [id])
@@ -490,6 +492,9 @@ model User {
   activityLogs ActivityLog[]
   notifications Notification[]
   payments     Payment[]
+  // Back-relations for createdBy on purchases and stock mutations
+  createdPurchases PurchaseDirect[]
+  createdStockMutations StockMutation[]
 
   @@index([defaultBrandProfileId])
   @@map("user")
