@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { hashPassword } from "@/lib/auth";
 import { getAuth } from "@/lib/auth";
+import { sendNotificationToUser } from "@/lib/notification";
 
 export async function GET(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -86,6 +87,15 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
       const foundRoles = await prisma.role.findMany({ where: { name: { in: body.roles } } });
       await prisma.userRole.deleteMany({ where: { userId } });
       await prisma.userRole.createMany({ data: foundRoles.map((r) => ({ userId, roleId: r.id })) });
+      // Notify user about role changes
+      try {
+        await sendNotificationToUser(
+          userId,
+          "Perubahan peran",
+          `Peran Anda diperbarui: ${body.roles.join(", ")}`,
+          "info"
+        );
+      } catch {}
     }
 
     const ip =
@@ -119,6 +129,18 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
         },
       },
     });
+
+    // Notify user if activation status changed
+    if (typeof body.isActive === "boolean" && before && before.isActive !== body.isActive) {
+      try {
+        await sendNotificationToUser(
+          userId,
+          body.isActive ? "Akun diaktifkan" : "Akun dinonaktifkan",
+          body.isActive ? "Akun Anda telah diaktifkan." : "Akun Anda telah dinonaktifkan.",
+          body.isActive ? "success" : "warning"
+        );
+      } catch {}
+    }
 
     return NextResponse.json({ 
       success: true, 

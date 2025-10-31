@@ -7,7 +7,7 @@ import { Edit, Copy, Send, X, ArrowLeft } from "lucide-react";
 import html2canvas from "html2canvas";
 import jsPDF from "jspdf";
 import PageBreadcrumb from "@/components/common/PageBreadCrumb";
-import { toast } from "react-hot-toast";
+import toast from "react-hot-toast";
 import { resolveTheme, resolveThankYou, resolvePaymentLines, DEFAULT_TERMS } from "@/lib/quotationTheme";
 
 

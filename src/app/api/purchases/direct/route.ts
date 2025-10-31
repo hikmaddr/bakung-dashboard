@@ -28,6 +28,12 @@ async function saveAttachments(formData: FormData) {
 
 export async function GET(req: NextRequest) {
   try {
+    const auth = await getAuth();
+    const allowedBrandIds = await resolveAllowedBrandIds(
+      auth?.userId ?? null,
+      (auth?.roles as string[]) ?? [],
+      []
+    );
     const search = req.nextUrl.searchParams;
     const q = search.get("q")?.trim();
     const status = search.get("status")?.trim() || undefined;
@@ -44,11 +50,24 @@ export async function GET(req: NextRequest) {
       const parsed = Number(brandIdStr);
       if (!Number.isNaN(parsed)) brandId = parsed;
     }
-    if (!brandId) {
-      const brand = await getActiveBrandProfile();
-      if (brand?.id) brandId = brand.id;
+    if (brandId != null) {
+      // If brandId specified, enforce it is within allowed scope
+      if (allowedBrandIds.length && !allowedBrandIds.includes(brandId)) {
+        return NextResponse.json(
+          { success: false, message: "Forbidden: brand scope" },
+          { status: 403 }
+        );
+      }
+      where.brandProfileId = brandId;
+    } else {
+      // No brandId specified: restrict by allowed brands or active brand fallback
+      if (allowedBrandIds.length) {
+        where.brandProfileId = { in: allowedBrandIds };
+      } else {
+        const brand = await getActiveBrandProfile();
+        if (brand?.id) where.brandProfileId = brand.id;
+      }
     }
-    if (brandId) where.brandProfileId = brandId;
 
     if (q) where.OR = [{ purchaseNumber: { contains: q } }, { supplierName: { contains: q } }];
     if (status) where.status = status;

@@ -4,6 +4,7 @@
   "private": true,
   "scripts": {
     "dev": "next dev -p 3000",
+    "dev:clean": "node -e \"require('fs').rmSync('.next',{recursive:true,force:true});\" && next dev -p 3000",
     "build": "next build",
     "build:prod": "npx prisma migrate deploy && next build",
     "start": "next start -p 3000",
@@ -46,6 +47,7 @@
     "jspdf": "^3.0.3",
     "lucide-react": "^0.545.0",
     "next": "^15.5.6",
+    "nextjs-toploader": "^3.9.17",
     "pdf-lib": "^1.17.1",
     "pdfjs-dist": "^5.4.296",
     "react": "18.2.0",

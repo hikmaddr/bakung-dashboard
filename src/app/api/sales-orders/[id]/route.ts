@@ -2,6 +2,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getActiveBrandProfile, resolveAllowedBrandIds } from "@/lib/brand";
 import { getAuth } from "@/lib/auth";
+import { logActivity } from "@/lib/activity";
 export const runtime = "nodejs";
 
 type NormalizedItem = {
@@ -340,6 +341,15 @@ export async function PUT(
 
           return updated;
         });
+        try {
+          await logActivity(req, {
+            userId: auth?.userId || null,
+            action: "SALES_ORDER_UPDATE",
+            entity: "sales_order",
+            entityId: id,
+            metadata: { status: String(status), orderNumber: (result as any)?.orderNumber }
+          });
+        } catch {}
         return NextResponse.json({ success: true, message: "Sales order berhasil diperbarui", data: result });
       }
 
@@ -349,7 +359,16 @@ export async function PUT(
         data: dataToUpdate,
         include: { customer: true, items: true, quotation: true },
       });
-
+      try {
+        const auth = await getAuth();
+        await logActivity(req, {
+          userId: auth?.userId || null,
+          action: "SALES_ORDER_UPDATE",
+          entity: "sales_order",
+          entityId: id,
+          metadata: { orderNumber: updated.orderNumber, status: String(updated.status || "") }
+        });
+      } catch {}
       return NextResponse.json({
         success: true,
         message: "Sales order berhasil diperbarui",
@@ -452,7 +471,16 @@ export async function PUT(
         include: { customer: true, items: true, quotation: true },
       }),
     ]);
-
+    try {
+      const auth = await getAuth();
+      await logActivity(req, {
+        userId: auth?.userId || null,
+        action: "SALES_ORDER_UPDATE",
+        entity: "sales_order",
+        entityId: id,
+        metadata: { orderNumber: updated.orderNumber, totalAmount: updated.totalAmount }
+      });
+    } catch {}
     return NextResponse.json({
       success: true,
       message: "Sales order berhasil diperbarui",
@@ -506,8 +534,19 @@ export async function DELETE(
       );
     }
 
+    const deletedOrder = await prisma.salesOrder.findUnique({ where: { id }, select: { orderNumber: true } });
     await prisma.salesOrderItem.deleteMany({ where: { salesOrderId: id } });
     await prisma.salesOrder.delete({ where: { id } });
+
+    try {
+      await logActivity(_req, {
+        userId: auth?.userId || null,
+        action: "SALES_ORDER_DELETE",
+        entity: "sales_order",
+        entityId: id,
+        metadata: { orderNumber: deletedOrder?.orderNumber }
+      });
+    } catch {}
 
     return NextResponse.json({
       success: true,

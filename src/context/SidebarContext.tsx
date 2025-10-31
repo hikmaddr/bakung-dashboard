@@ -7,12 +7,15 @@ type SidebarContextType = {
   isMobileOpen: boolean;
   isHovered: boolean;
   activeItem: string | null;
-  openSubmenu: string | null;
+  // Map state: key (parent menu name) -> open/closed
+  openMap: Record<string, boolean>;
   toggleSidebar: () => void;
   toggleMobileSidebar: () => void;
   setIsHovered: (isHovered: boolean) => void;
   setActiveItem: (item: string | null) => void;
-  toggleSubmenu: (item: string) => void;
+  toggleGroup: (key: string) => void;
+  setGroupOpen: (key: string, open: boolean) => void;
+  setOnlyOpen: (key: string) => void;
 };
 
 const SidebarContext = createContext<SidebarContextType | undefined>(undefined);
@@ -33,7 +36,7 @@ export const SidebarProvider: React.FC<{ children: React.ReactNode }> = ({
   const [isMobile, setIsMobile] = useState(false);
   const [isHovered, setIsHovered] = useState(false);
   const [activeItem, setActiveItem] = useState<string | null>(null);
-  const [openSubmenu, setOpenSubmenu] = useState<string | null>(null);
+  const [openMap, setOpenMap] = useState<Record<string, boolean>>({});
   const pathname = usePathname();
 
   useEffect(() => {
@@ -55,6 +58,8 @@ export const SidebarProvider: React.FC<{ children: React.ReactNode }> = ({
 
   // Always close mobile sidebar when route changes to avoid lingering backdrop
   useEffect(() => {
+    // Logging untuk verifikasi konsistensi sidebar lintas route
+    console.log("[SidebarContext] route changed:", pathname);
     setIsMobileOpen(false);
   }, [pathname]);
 
@@ -66,8 +71,35 @@ export const SidebarProvider: React.FC<{ children: React.ReactNode }> = ({
     setIsMobileOpen((prev) => !prev);
   };
 
-  const toggleSubmenu = (item: string) => {
-    setOpenSubmenu((prev) => (prev === item ? null : item));
+  const toggleGroup = (key: string) => {
+    setOpenMap((prev) => {
+      const next = { ...prev, [key]: !prev[key] };
+      console.log("[SidebarContext] toggleGroup", key, "->", next[key]);
+      return next;
+    });
+  };
+
+  const setGroupOpen = (key: string, open: boolean) => {
+    setOpenMap((prev) => {
+      if (prev[key] === open) return prev;
+      const next = { ...prev, [key]: open };
+      console.log("[SidebarContext] setGroupOpen", key, "->", open);
+      return next;
+    });
+  };
+
+  // Exclusively open one group and close others (accordion behavior)
+  const setOnlyOpen = (key: string) => {
+    setOpenMap((prev) => {
+      const next: Record<string, boolean> = {};
+      // ensure we keep known keys but mark all closed
+      Object.keys(prev).forEach((k) => {
+        next[k] = false;
+      });
+      next[key] = true;
+      console.log("[SidebarContext] setOnlyOpen", key);
+      return next;
+    });
   };
 
   return (
@@ -77,12 +109,14 @@ export const SidebarProvider: React.FC<{ children: React.ReactNode }> = ({
         isMobileOpen,
         isHovered,
         activeItem,
-        openSubmenu,
+        openMap,
         toggleSidebar,
         toggleMobileSidebar,
         setIsHovered,
         setActiveItem,
-        toggleSubmenu,
+        toggleGroup,
+        setGroupOpen,
+        setOnlyOpen,
       }}
     >
       {children}

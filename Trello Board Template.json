@@ -1,0 +1,54 @@
+{
+  "name": "Bakung Dashboard – UI Polish",
+  "lists": [
+    { "name": "📥 Backlog" },
+    { "name": "🚧 To Build" },
+    { "name": "⚙️ In Progress" },
+    { "name": "🧪 Review" },
+    { "name": "✅ Done" }
+  ],
+  "labels": [
+    { "name": "Trae", "color": "blue" },
+    { "name": "UI", "color": "green" },
+    { "name": "System", "color": "orange" },
+    { "name": "High Priority", "color": "red" }
+  ],
+  "cards": [
+    {
+      "name": "Layout & Navigation Polish",
+      "desc": "Refactor header, sidebar, and breadcrumb for consistent brand context.\n- Add brand switcher\n- Add user profile avatar & role\n- Add breadcrumb navigation\n- Implement dark/light toggle\nBatch: 1",
+      "idList": "Backlog",
+      "idLabels": ["Trae", "UI"]
+    },
+    {
+      "name": "Reusable Components Standardization",
+      "desc": "Standardize all buttons, inputs, and modal components.\n- Sizes sm/md/lg\n- Consistent states (hover/active/loading)\n- Modal structure header/body/footer\nBatch: 2",
+      "idList": "Backlog",
+      "idLabels": ["Trae", "UI"]
+    },
+    {
+      "name": "Implement Notification System",
+      "desc": "Create Notification model + API.\n- Add bell icon with badge in header\n- Dropdown list for 5 recent notifications\n- Trigger events: user signup, approval, stock low, invoice due\n- Global toast system\nBatch: 3",
+      "idList": "Backlog",
+      "idLabels": ["Trae", "System"]
+    },
+    {
+      "name": "User Sign-Up & Approval Flow",
+      "desc": "Add sign-up form (without role selection).\n- Pending users stored with isActive=false\n- User Approval page for Owner/Admin\n- Waiting approval page for user\n- Redirects and guard middleware\nBatch: 4",
+      "idList": "Backlog",
+      "idLabels": ["Trae", "System"]
+    },
+    {
+      "name": "Operational Module Polish",
+      "desc": "Refine all main business modules (Sales, Purchase, Stock, Branding).\n- Consistent tables, filters, actions\n- Status color logic\nBatch: 5",
+      "idList": "Backlog",
+      "idLabels": ["Trae", "UI"]
+    },
+    {
+      "name": "Error & Responsive Polish",
+      "desc": "Add 404, 403, and empty-state pages.\n- Error boundary\n- Responsive layout for mobile/tablet\nBatch: 6",
+      "idList": "Backlog",
+      "idLabels": ["Trae"]
+    }
+  ]
+}

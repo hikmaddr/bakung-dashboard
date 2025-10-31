@@ -7,6 +7,9 @@ type UserInfo = {
   id: number;
   email: string;
   name: string | null;
+  firstName?: string | null;
+  lastName?: string | null;
+  avatar?: string | null;
   roles: string[];
 };
 
@@ -33,7 +36,15 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       const profileRes = await api.get<{ success: boolean; data?: any }>("/api/profile");
       if (profileRes?.success && profileRes.data) {
         const d = profileRes.data;
-        setUser({ id: d.id, email: d.email, name: d.name ?? null, roles: Array.isArray(d.roles) ? d.roles : [] });
+        setUser({
+          id: d.id,
+          email: d.email,
+          name: d.name ?? null,
+          firstName: d.firstName ?? null,
+          lastName: d.lastName ?? null,
+          avatar: d.avatar ?? null,
+          roles: Array.isArray(d.roles) ? d.roles : [],
+        });
       } else {
         setUser(null);
       }
@@ -82,4 +93,3 @@ export function useGlobal() {
   if (!ctx) throw new Error("useGlobal must be used within GlobalProvider");
   return ctx;
 }
-

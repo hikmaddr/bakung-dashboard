@@ -1,6 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getActiveBrandProfile } from "@/lib/brand";
+import { sendNotificationToRole } from "@/lib/notification";
 import { writeFile } from "fs/promises";
 import path from "path";
 import crypto from "crypto";
@@ -161,6 +162,18 @@ export async function POST(req: NextRequest, _ctx: { params: Promise<{}> }) {
     },
     include: { customer: true, items: true },
   });
+
+    // Notify brand Admins about new quotation
+    try {
+      const brandId = quotation.brandProfileId ?? null;
+      await sendNotificationToRole(
+        "Admin",
+        "Quotation baru",
+        `Quotation ${quotation.quotationNumber} dibuat dengan total ${totalAmount.toLocaleString()}`,
+        "info",
+        brandId ?? undefined
+      );
+    } catch {}
 
     return NextResponse.json({ success: true, message: "Quotation berhasil disimpan", data: quotation });
   } catch (err: any) {

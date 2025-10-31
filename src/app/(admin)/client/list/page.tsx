@@ -2,9 +2,10 @@
 
 import PageBreadcrumb from "@/components/common/PageBreadCrumb";
 import { Modal } from "@/components/ui/modal";
-import { toast } from "react-hot-toast";
+import toast from "react-hot-toast";
 import { useEffect, useMemo, useState } from "react";
 import { Pencil, Trash2 } from "lucide-react";
+import FeatureIf from "@/components/FeatureIf";
 import Pagination from "@/components/tables/Pagination";
 
 type Customer = {
@@ -265,8 +266,10 @@ export default function ClientListPageWithTemplate() {
                     <td className="border-b px-4 py-2">{client.address}</td>
                     <td className="border-b px-4 py-2">{client.phone}</td>
                     <td className="flex gap-2 border-b px-4 py-2">
-                      <button onClick={() => openEdit(client)} title="Edit" className="rounded-full p-1 text-blue-600 hover:bg-blue-50"><Pencil className="h-4 w-4" /></button>
-                      <button onClick={() => handleDelete(client.id)} title="Hapus" className="rounded-full p-1 text-red-600 hover:bg-red-50"><Trash2 className="h-4 w-4" /></button>
+                      <FeatureIf feature="system.user">
+                        <button onClick={() => openEdit(client)} title="Edit" className="rounded-full p-1 text-blue-600 hover:bg-blue-50"><Pencil className="h-4 w-4" /></button>
+                        <button onClick={() => handleDelete(client.id)} title="Hapus" className="rounded-full p-1 text-red-600 hover:bg-red-50"><Trash2 className="h-4 w-4" /></button>
+                      </FeatureIf>
                     </td>
                   </tr>
                 ))

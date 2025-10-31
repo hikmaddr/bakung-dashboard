@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState, useCallback } from "react";
 import Link from "next/link";
 import { useParams, useSearchParams } from "next/navigation";
 import { Truck } from "lucide-react";
-import { toast } from "react-hot-toast";
+import toast from "react-hot-toast";
 import PageBreadcrumb from "@/components/common/PageBreadCrumb";
 import LoadingSpinner from "@/components/common/LoadingSpinner";
 import FeatureGuard from "@/components/FeatureGuard";

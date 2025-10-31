@@ -1,7 +1,8 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { getActiveBrandProfile } from "@/lib/brand";
+import { getActiveBrandProfile, resolveAllowedBrandIds } from "@/lib/brand";
 import { getAuth } from "@/lib/auth";
+import { logActivity } from "@/lib/activity";
 
 async function saveAttachments(formData: FormData) {
   const files: File[] = [];
@@ -28,7 +29,13 @@ async function saveAttachments(formData: FormData) {
 export async function GET(_req: NextRequest, { params }: { params: { id: string } }) {
   try {
     const id = Number(params.id);
-    const data = await prisma.purchaseDirect.findFirst({ where: { id }, include: { items: true } });
+    const auth = await getAuth();
+    const allowedBrandIds = await resolveAllowedBrandIds(
+      auth?.userId ?? null,
+      (auth?.roles as string[]) ?? [],
+      []
+    );
+    const data = await prisma.purchaseDirect.findFirst({ where: { id, brandProfileId: allowedBrandIds.length ? { in: allowedBrandIds } : undefined }, include: { items: true } });
     if (!data) return NextResponse.json({ success: false, message: "Not found" }, { status: 404 });
     return NextResponse.json({ success: true, data });
   } catch (e: any) {
@@ -36,11 +43,20 @@ export async function GET(_req: NextRequest, { params }: { params: { id: string 
   }
 }
 
-export async function DELETE(_req: NextRequest, { params }: { params: { id: string } }) {
+export async function DELETE(req: NextRequest, { params }: { params: { id: string } }) {
   const id = Number(params.id);
   try {
     const auth = await getAuth();
     const brand = await getActiveBrandProfile();
+    const allowedBrandIds = await resolveAllowedBrandIds(
+      auth?.userId ?? null,
+      (auth?.roles as string[]) ?? [],
+      []
+    );
+    const inScope = await prisma.purchaseDirect.findFirst({ where: { id, brandProfileId: allowedBrandIds.length ? { in: allowedBrandIds } : undefined }, select: { id: true, brandProfileId: true, purchaseNumber: true } });
+    if (!inScope) {
+      return NextResponse.json({ success: false, message: "Forbidden: brand scope" }, { status: 403 });
+    }
     await prisma.$transaction(async (tx) => {
       const purchase = await tx.purchaseDirect.findUnique({ where: { id }, include: { items: true } });
       if (!purchase) return;
@@ -73,6 +89,15 @@ export async function DELETE(_req: NextRequest, { params }: { params: { id: stri
       await tx.purchaseDirectItem.deleteMany({ where: { purchaseDirectId: id } });
       await tx.purchaseDirect.delete({ where: { id } });
     });
+    try {
+      await logActivity(req, {
+        userId: auth?.userId || null,
+        action: "PURCHASE_DELETE",
+        entity: "purchase_direct",
+        entityId: id,
+        metadata: { brandProfileId: brand?.id || null }
+      });
+    } catch {}
     return NextResponse.json({ success: true });
   } catch (e: any) {
     return NextResponse.json({ success: false, message: e?.message || "Gagal hapus" }, { status: 500 });
@@ -82,6 +107,16 @@ export async function DELETE(_req: NextRequest, { params }: { params: { id: stri
 export async function PUT(req: NextRequest, { params }: { params: { id: string } }) {
   const id = Number(params.id);
   try {
+    const auth = await getAuth();
+    const allowedBrandIds = await resolveAllowedBrandIds(
+      auth?.userId ?? null,
+      (auth?.roles as string[]) ?? [],
+      []
+    );
+    const inScope = await prisma.purchaseDirect.findFirst({ where: { id, brandProfileId: allowedBrandIds.length ? { in: allowedBrandIds } : undefined }, select: { id: true, brandProfileId: true } });
+    if (!inScope) {
+      return NextResponse.json({ success: false, message: "Forbidden: brand scope" }, { status: 403 });
+    }
     let payload: any = {};
     let attachments: any[] | undefined;
 
@@ -153,6 +188,17 @@ export async function PUT(req: NextRequest, { params }: { params: { id: string }
         include: { items: true },
       });
     });
+
+    // Log update activity
+    try {
+      await logActivity(req, {
+        userId: auth?.userId || null,
+        action: "PURCHASE_UPDATE",
+        entity: "purchase_direct",
+        entityId: id,
+        metadata: { total: updated.total, supplierName: updated.supplierName }
+      });
+    } catch {}
 
     return NextResponse.json({ success: true, data: updated });
   } catch (e: any) {

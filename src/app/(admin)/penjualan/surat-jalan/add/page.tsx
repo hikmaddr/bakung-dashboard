@@ -5,7 +5,7 @@ import { useSearchParams } from "next/navigation";
 import PageBreadcrumb from "@/components/common/PageBreadCrumb";
 import DatePicker from "@/components/DatePicker";
 // Hapus html2canvas & jsPDF; gunakan endpoint server-side untuk PDF
-import { toast } from "react-hot-toast";
+import toast from "react-hot-toast";
 import FeatureGuard from "@/components/FeatureGuard";
 
 type Item = { id: number; name: string; qty: number; unit: string };

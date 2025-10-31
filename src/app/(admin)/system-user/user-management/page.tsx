@@ -9,6 +9,7 @@ import Input from "@/components/form/input/InputField";
 import Checkbox from "@/components/form/input/Checkbox";
 import MultiSelect from "@/components/form/MultiSelect";
 import { Badge } from "@/components/ui/badge";
+import { Table, TableHeader, TableBody, TableRow, TableCell } from "@/components/ui/table";
 
 type UserItem = { id: number; email: string; name: string | null; isActive: boolean; roles: string[] };
 type RoleItem = { id: number; name: string };
@@ -131,8 +132,9 @@ export default function Page() {
       const json = await res.json();
       if (!json.success) throw new Error(json.message || "Gagal membuat user");
       const createdUser = json.data;
-      // Assign brand scopes jika ada pilihan
-      if (createdUser?.id && Array.isArray(form.brandSlugs) && form.brandSlugs.length > 0) {
+      // Assign brand scopes jika ada pilihan dan bukan Owner
+      const isOwnerAdd = (form.roles || []).some((r) => r.toLowerCase() === "owner");
+      if (!isOwnerAdd && createdUser?.id && Array.isArray(form.brandSlugs) && form.brandSlugs.length > 0) {
         await fetch("/api/user-brand-scopes", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -220,8 +222,9 @@ export default function Page() {
       });
       const json = await res.json();
       if (!json.success) throw new Error(json.message || "Gagal memperbarui user");
-      // Replace brand scopes sesuai pilihan edit
-      if (Array.isArray(editForm.brandSlugs)) {
+      // Replace brand scopes sesuai pilihan edit (kecuali Owner yang otomatis semua brand)
+      const isOwnerEdit = (editForm.roles || []).some((r) => r.toLowerCase() === "owner");
+      if (!isOwnerEdit && Array.isArray(editForm.brandSlugs)) {
         await fetch("/api/user-brand-scopes", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -321,72 +324,78 @@ export default function Page() {
 
       {error && <div className="rounded-lg bg-red-50 p-3 text-red-600">{error}</div>}
 
-      <div className="overflow-x-auto rounded-lg border border-gray-200 dark:border-gray-800">
-        <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-800">
-          <thead className="bg-gray-50 dark:bg-gray-900">
-            <tr>
-              <th className="px-4 py-3 text-left text-sm font-semibold">Name</th>
-              <th className="px-4 py-3 text-left text-sm font-semibold">Email</th>
-              <th className="px-4 py-3 text-left text-sm font-semibold">Roles</th>
-              <th className="px-4 py-3 text-left text-sm font-semibold">Brands</th>
-              <th className="px-4 py-3 text-left text-sm font-semibold">Status</th>
-              <th className="px-4 py-3 text-right text-sm font-semibold">Actions</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-gray-200 dark:divide-gray-800">
-            {loading ? (
-              <tr>
-                <td className="px-4 py-4" colSpan={5}><LoadingSpinner label="Memuat data pengguna..." /></td>
-              </tr>
-            ) : items.length === 0 ? (
-              <tr>
-                <td className="px-4 py-4" colSpan={5}>Belum ada user</td>
-              </tr>
-            ) : (
-              items.map((u) => (
-                <tr key={u.id} className="hover:bg-gray-50 dark:hover:bg-gray-900">
-                  <td className="px-4 py-3">{u.name || "-"}</td>
-                  <td className="px-4 py-3">{u.email}</td>
-                  <td className="px-4 py-3">{u.roles.join(", ") || "-"}</td>
-                  <td className="px-4 py-3">
-                    {Array.isArray(userBrands[u.id]) && userBrands[u.id].length > 0 ? (
-                      <div className="flex flex-wrap gap-1">
-                        {userBrands[u.id].map((b, idx) => (
-                          <Badge key={`${u.id}-${b}-${idx}`} variant="secondary" className="bg-gray-100 text-gray-700 text-xs">
-                            {b}
-                          </Badge>
-                        ))}
-                      </div>
-                    ) : (
-                      "-"
-                    )}
-                  </td>
-                  <td className="px-4 py-3">
-                    <span className={`inline-flex items-center rounded-full px-2 py-1 text-xs ${u.isActive ? "bg-green-100 text-green-700" : "bg-gray-100 text-gray-600"}`}>
-                      {u.isActive ? "Active" : "Inactive"}
-                    </span>
-                  </td>
-                  <td className="px-4 py-3 text-right">
-                    <div className="flex gap-2 justify-end">
-                      {!u.isActive && (
-                        <Button
-                          variant="primary"
-                          size="sm"
-                          onClick={() => approveUser(u.id)}
-                          disabled={approvingId === u.id}
-                        >
-                          {approvingId === u.id ? "Menyetujui…" : "Approve"}
-                        </Button>
-                      )}
-                      <Button variant="secondary" size="sm" onClick={() => openEdit(u.id)}>Edit</Button>
-                      <Button variant="destructive" size="sm" onClick={() => setConfirmDeleteId(u.id)}>Hapus</Button>
-                    </div>
-                  </td>
-                </tr>
-              ))
-            )}
-          </tbody>
-        </table>
+      <div className="overflow-hidden rounded-xl border border-gray-200 bg-white dark:border-white/[0.05] dark:bg-white/[0.03]">
+        <div className="max-w-full overflow-x-auto">
+          <div className="min-w-[1102px]">
+            <Table>
+              <TableHeader className="border-b border-gray-100 dark:border-white/[0.05]">
+                <TableRow>
+                  <TableCell isHeader className="px-5 py-3 font-medium text-gray-500 text-start text-theme-xs dark:text-gray-400">Name</TableCell>
+                  <TableCell isHeader className="px-5 py-3 font-medium text-gray-500 text-start text-theme-xs dark:text-gray-400">Email</TableCell>
+                  <TableCell isHeader className="px-5 py-3 font-medium text-gray-500 text-start text-theme-xs dark:text-gray-400">Roles</TableCell>
+                  <TableCell isHeader className="px-5 py-3 font-medium text-gray-500 text-start text-theme-xs dark:text-gray-400">Brands</TableCell>
+                  <TableCell isHeader className="px-5 py-3 font-medium text-gray-500 text-start text-theme-xs dark:text-gray-400">Status</TableCell>
+                  <TableCell isHeader className="px-5 py-3 font-medium text-gray-500 text-end text-theme-xs dark:text-gray-400">Actions</TableCell>
+                </TableRow>
+              </TableHeader>
+              <TableBody className="divide-y divide-gray-100 dark:divide-gray-800">
+                {loading ? (
+                  <tr>
+                    <td className="px-5 py-4" colSpan={6}><LoadingSpinner label="Memuat data pengguna..." /></td>
+                  </tr>
+                ) : items.length === 0 ? (
+                  <tr>
+                    <td className="px-5 py-4" colSpan={6}>Belum ada user</td>
+                  </tr>
+                ) : (
+                  items.map((u) => (
+                    <TableRow key={u.id}>
+                      <TableCell className="px-5 py-4 text-start">{u.name || "-"}</TableCell>
+                      <TableCell className="px-5 py-4 text-start">{u.email}</TableCell>
+                      <TableCell className="px-5 py-4 text-start">{u.roles.join(", ") || "-"}</TableCell>
+                      <TableCell className="px-5 py-4 text-start">
+                        {Array.isArray(u.roles) && u.roles.some((r) => r.toLowerCase() === "owner") ? (
+                          <Badge variant="secondary" className="bg-gray-100 text-gray-700 text-theme-xs">All brands</Badge>
+                        ) : Array.isArray(userBrands[u.id]) && userBrands[u.id].length > 0 ? (
+                          <div className="flex flex-wrap gap-1">
+                            {userBrands[u.id].map((b, idx) => (
+                              <Badge key={`${u.id}-${b}-${idx}`} variant="secondary" className="bg-gray-100 text-gray-700 text-theme-xs">
+                                {b}
+                              </Badge>
+                            ))}
+                          </div>
+                        ) : (
+                          "-"
+                        )}
+                      </TableCell>
+                      <TableCell className="px-5 py-4 text-start">
+                        <span className={`inline-flex items-center rounded-full px-2 py-1 text-theme-xs ${u.isActive ? "bg-green-100 text-green-700" : "bg-gray-100 text-gray-600"}`}>
+                          {u.isActive ? "Active" : "Inactive"}
+                        </span>
+                      </TableCell>
+                      <TableCell className="px-5 py-4 text-end">
+                        <div className="flex gap-2 justify-end">
+                          {!u.isActive && (
+                            <Button
+                              variant="primary"
+                              size="sm"
+                              onClick={() => approveUser(u.id)}
+                              disabled={approvingId === u.id}
+                            >
+                              {approvingId === u.id ? "Menyetujui…" : "Approve"}
+                            </Button>
+                          )}
+                          <Button variant="secondary" size="sm" onClick={() => openEdit(u.id)}>Edit</Button>
+                          <Button variant="destructive" size="sm" onClick={() => setConfirmDeleteId(u.id)}>Hapus</Button>
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                  ))
+                )}
+              </TableBody>
+            </Table>
+          </div>
+        </div>
       </div>
 
       <Modal isOpen={addOpen} onClose={() => setAddOpen(false)} className="max-w-[700px] p-6">
@@ -410,7 +419,16 @@ export default function Page() {
               <MultiSelect label="Roles" options={roleOptions} onChange={(vals) => updateForm("roles", vals)} dropdownDarkBackground={false} />
             </div>
             <div className="md:col-span-2">
-              <MultiSelect label="Brands" options={brandOptions} onChange={(vals) => updateForm("brandSlugs", vals)} dropdownDarkBackground={false} />
+              <MultiSelect
+                label="Brands"
+                options={brandOptions}
+                onChange={(vals) => updateForm("brandSlugs", vals)}
+                dropdownDarkBackground={false}
+                disabled={(form.roles || []).some((r) => r.toLowerCase() === "owner")}
+              />
+              {(form.roles || []).some((r) => r.toLowerCase() === "owner") && (
+                <p className="mt-1 text-xs text-gray-600 dark:text-gray-400">Role Owner: akses otomatis ke semua brand.</p>
+              )}
             </div>
             <div className="md:col-span-2">
               <div className="flex items-center gap-2">
@@ -447,7 +465,16 @@ export default function Page() {
               <MultiSelect label="Roles" options={roleOptionsEdit} onChange={(vals) => updateEditForm("roles", vals)} dropdownDarkBackground={false} />
             </div>
             <div className="md:col-span-2">
-              <MultiSelect label="Brands" options={brandOptionsEdit} onChange={(vals) => updateEditForm("brandSlugs", vals)} dropdownDarkBackground={false} />
+              <MultiSelect
+                label="Brands"
+                options={brandOptionsEdit}
+                onChange={(vals) => updateEditForm("brandSlugs", vals)}
+                dropdownDarkBackground={false}
+                disabled={(editForm.roles || []).some((r) => r.toLowerCase() === "owner")}
+              />
+              {(editForm.roles || []).some((r) => r.toLowerCase() === "owner") && (
+                <p className="mt-1 text-xs text-gray-600 dark:text-gray-400">Role Owner: akses otomatis ke semua brand.</p>
+              )}
             </div>
             <div className="md:col-span-2">
               <div className="flex items-center gap-2">

@@ -2,11 +2,12 @@
 
 import PageBreadcrumb from "@/components/common/PageBreadCrumb";
 import LoadingSpinner from "@/components/common/LoadingSpinner";
+import Skeleton from "@/components/ui/skeleton";
 import Pagination from "@/components/tables/Pagination";
 import { useEffect, useState, useRef, useMemo } from "react"; 
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { toast } from "react-hot-toast";
+import toast from "react-hot-toast";
 import {
   PlusCircle,
   ChevronDown,
@@ -298,7 +299,51 @@ export default function SalesOrderListPage() {
     return (
       <FeatureGuard feature="sales.order">
         <div className="p-6 min-h-screen">
-          <LoadingSpinner label="Memuat data Sales Order..." />
+          <PageBreadcrumb
+            pageTitle="Order Penjualan"
+            items={[
+              { label: "Penjualan", href: "/penjualan" },
+              { label: "Order Penjualan", href: "/penjualan/order-penjualan" },
+            ]}
+          />
+          <div className="rounded-2xl border border-gray-200 bg-white p-6 shadow-sm mt-4">
+            {/* Toolbar skeleton */}
+            <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <Skeleton className="h-11 w-full sm:w-64 rounded-lg" />
+              <div className="flex items-center gap-3">
+                <Skeleton className="h-9 w-40 rounded-full" />
+                <Skeleton className="h-9 w-40 rounded-full" />
+              </div>
+            </div>
+
+            {/* Table skeleton */}
+            <div className="overflow-x-auto overflow-y-visible rounded-lg border bg-white shadow-sm min-h-[50vh]">
+              <table className="w-full text-sm">
+                <thead className="bg-gray-50">
+                  <tr>
+                    <th className="px-4 py-3 text-left">Customer</th>
+                    <th className="px-4 py-3 text-left">No. Order</th>
+                    <th className="px-4 py-3 text-left">Tanggal</th>
+                    <th className="px-4 py-3 text-right">Total</th>
+                    <th className="px-4 py-3 text-left">Status</th>
+                    <th className="px-4 py-3 text-right">Tindakan</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {Array.from({ length: 8 }).map((_, i) => (
+                    <tr key={i} className="border-t">
+                      <td className="px-4 py-3"><Skeleton className="h-4 w-48" /></td>
+                      <td className="px-4 py-3"><Skeleton className="h-4 w-32" /></td>
+                      <td className="px-4 py-3"><Skeleton className="h-4 w-28" /></td>
+                      <td className="px-4 py-3 text-right"><Skeleton className="ml-auto h-4 w-24" /></td>
+                      <td className="px-4 py-3"><Skeleton className="h-5 w-20 rounded-full" /></td>
+                      <td className="px-4 py-3 text-right"><Skeleton className="ml-auto h-4 w-24" /></td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
         </div>
       </FeatureGuard>
     );

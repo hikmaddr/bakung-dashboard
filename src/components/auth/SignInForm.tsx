@@ -25,8 +25,12 @@ const SignInForm: React.FC = () => {
       });
       const json = await res.json();
       if (!res.ok || !json.success) throw new Error(json.message || "Login gagal");
-      const redirect = new URLSearchParams(window.location.search).get("redirect") || "/system-user/user-management";
-      router.push(redirect);
+      const roles: string[] = Array.isArray(json?.data?.roles) ? json.data.roles : [];
+      const lower = roles.map((r) => String(r).toLowerCase());
+      const defaultRedirect = lower.includes("owner") ? "/" : "/system-user/user-management";
+      const qsRedirect = new URLSearchParams(window.location.search).get("redirect");
+      const target = qsRedirect || defaultRedirect;
+      router.push(target);
     } catch (err) {
       setError("Invalid credentials");
     } finally {

@@ -2,6 +2,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { clearAuthCookie, getAuth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { logActivity, logLogin } from "@/lib/activity";
+import { sendNotificationToUser } from "@/lib/notification";
 
 export async function POST(req: NextRequest) {
   try {
@@ -10,6 +11,14 @@ export async function POST(req: NextRequest) {
     if (auth?.userId) {
       await logActivity(req, { userId: auth.userId, action: "LOGOUT", entity: "auth" });
       await logLogin(req, { userId: auth.userId, action: "LOGOUT", success: true });
+      try {
+        await sendNotificationToUser(
+          auth.userId,
+          "Logout berhasil",
+          `Anda telah logout pada ${new Date().toLocaleString()}`,
+          "info"
+        );
+      } catch {}
     }
     return NextResponse.json({ success: true });
   } catch (err: any) {

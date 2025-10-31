@@ -2,14 +2,61 @@
 import Image from "next/image";
 import Link from "next/link";
 import React, { useEffect, useLayoutEffect, useRef, useState } from "react";
+type NotificationItem = {
+  id: number;
+  title: string;
+  message: string;
+  type: string;
+  read: boolean;
+  createdAt: string;
+};
 import { Dropdown } from "../ui/dropdown/Dropdown";
 import { DropdownItem } from "../ui/dropdown/DropdownItem";
+import { useGlobal } from "@/context/AppContext";
+import { Modal } from "@/components/ui/modal";
 
 export default function NotificationDropdown() {
+  const { hasRole } = useGlobal();
   const [isOpen, setIsOpen] = useState(false);
-  const [notifying, setNotifying] = useState(true);
+  const [notifying, setNotifying] = useState(false);
   const containerRef = useRef<HTMLDivElement | null>(null);
   const [menuStyles, setMenuStyles] = useState<React.CSSProperties | undefined>(undefined);
+  const [items, setItems] = useState<NotificationItem[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [approvingId, setApprovingId] = useState<number | null>(null);
+  const [approveError, setApproveError] = useState<string | null>(null);
+  const [decliningId, setDecliningId] = useState<number | null>(null);
+  const [declineError, setDeclineError] = useState<string | null>(null);
+  const [previewOpen, setPreviewOpen] = useState<boolean>(false);
+  const [selected, setSelected] = useState<NotificationItem | null>(null);
+  const [roleModalOpen, setRoleModalOpen] = useState<boolean>(false);
+  const [roleOptions, setRoleOptions] = useState<{ id: number; name: string }[]>([]);
+  const [selectedRole, setSelectedRole] = useState<string>("User");
+  const [pendingApproval, setPendingApproval] = useState<{ notif: NotificationItem; userId: number } | null>(null);
+
+  async function loadNotifications() {
+    try {
+      setLoading(true);
+      const res = await fetch("/api/notifications", { cache: "no-store" });
+      const json = await res.json();
+      if (json?.success && Array.isArray(json.data)) {
+        const mapped = json.data.map((n: any) => ({
+          id: n.id,
+          title: n.title,
+          message: n.message,
+          type: n.type,
+          read: n.read ?? n.isRead ?? false,
+          createdAt: n.createdAt,
+        })) as NotificationItem[];
+        setItems(mapped);
+        setNotifying(mapped.some((n: NotificationItem) => !n.read));
+      }
+    } catch (err) {
+      // silent
+    } finally {
+      setLoading(false);
+    }
+  }
 
   function toggleDropdown() {
     setIsOpen(!isOpen);
@@ -19,10 +66,139 @@ export default function NotificationDropdown() {
     setIsOpen(false);
   }
 
-  const handleClick = () => {
+  async function updateRead(ids: number[] | undefined, read: boolean = true) {
+    try {
+      await fetch("/api/notifications", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ids: Array.isArray(ids) ? ids : [], read }),
+      });
+    } catch {}
+  }
+
+  const handleClick = async () => {
     toggleDropdown();
-    setNotifying(false);
+    try {
+      // Tandai semua sebagai dibaca saat dropdown dibuka
+      await updateRead([], true);
+    } finally {
+      loadNotifications();
+    }
   };
+
+  function isApprovalNotification(n: NotificationItem): boolean {
+    const s = `${n.title} ${n.message}`.toLowerCase();
+    // deteksi sederhana untuk notifikasi signup yang butuh approval
+    return s.includes("approve") || s.includes("approval") || s.includes("mendaftar");
+  }
+
+  function extractEmailFromText(text: string): string | null {
+    const match = text.match(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i);
+    return match ? match[0] : null;
+  }
+
+  async function approveFromNotification(n: NotificationItem) {
+    setApproveError(null);
+    const email = extractEmailFromText(`${n.title} ${n.message}`);
+    if (!email) {
+      setApproveError("Email tidak ditemukan di pesan notifikasi.");
+      return;
+    }
+    try {
+      setApprovingId(n.id);
+      // Cari user pending berdasarkan email
+      const listRes = await fetch(`/api/users?status=pending`, { cache: "no-store" });
+      const listJson = await listRes.json();
+      if (!listJson?.success || !Array.isArray(listJson?.data)) {
+        throw new Error(listJson?.message || "Gagal memuat daftar user.");
+      }
+      const target = listJson.data.find((u: any) => String(u.email).toLowerCase() === email.toLowerCase());
+      if (!target?.id) {
+        throw new Error("User dengan email tersebut tidak ditemukan dalam status pending.");
+      }
+      // Load role options, lalu buka modal pemilihan role
+      const rolesRes = await fetch(`/api/roles`, { cache: "no-store" });
+      const rolesJson = await rolesRes.json();
+      const roles = Array.isArray(rolesJson?.data) ? rolesJson.data : [];
+      setRoleOptions(roles.map((r: any) => ({ id: r.id, name: r.name })));
+      setSelectedRole(roles[0]?.name || "User");
+      setPendingApproval({ notif: n, userId: Number(target.id) });
+      setRoleModalOpen(true);
+    } catch (e: any) {
+      setApproveError(e?.message || "Terjadi kesalahan saat approval.");
+    } finally {
+      setApprovingId(null);
+    }
+  }
+
+  async function confirmApproveWithRole() {
+    if (!pendingApproval) { setRoleModalOpen(false); return; }
+    const { notif, userId } = pendingApproval;
+    try {
+      const approveRes = await fetch(`/api/users/${userId}/approve`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ roleName: selectedRole }),
+      });
+      const approveJson = await approveRes.json();
+      if (!approveJson?.success) {
+        throw new Error(approveJson?.message || "Gagal melakukan approval.");
+      }
+      // Hapus notifikasi (PATCH read=true kini menghapus)
+      await updateRead([notif.id], true);
+      setItems((prev) => {
+        const next = prev.filter((it) => it.id !== notif.id);
+        setNotifying(next.some((it) => !it.read));
+        return next;
+      });
+    } catch (e: any) {
+      setApproveError(e?.message || "Terjadi kesalahan saat approval.");
+    } finally {
+      setRoleModalOpen(false);
+      setPendingApproval(null);
+    }
+  }
+
+  async function declineFromNotification(n: NotificationItem) {
+    setDeclineError(null);
+    const email = extractEmailFromText(`${n.title} ${n.message}`);
+    if (!email) {
+      setDeclineError("Email tidak ditemukan di pesan notifikasi.");
+      return;
+    }
+    try {
+      setDecliningId(n.id);
+      const listRes = await fetch(`/api/users?status=pending`, { cache: "no-store" });
+      const listJson = await listRes.json();
+      if (!listJson?.success || !Array.isArray(listJson?.data)) {
+        throw new Error(listJson?.message || "Gagal memuat daftar user.");
+      }
+      const target = listJson.data.find((u: any) => String(u.email).toLowerCase() === email.toLowerCase());
+      if (!target?.id) {
+        throw new Error("User dengan email tersebut tidak ditemukan dalam status pending.");
+      }
+      const res = await fetch(`/api/users/${target.id}`, { method: "DELETE" });
+      const json = await res.json();
+      if (!json?.success) {
+        throw new Error(json?.message || "Gagal melakukan decline.");
+      }
+      await updateRead([n.id], true);
+      setItems((prev) => {
+        const next = prev.map((it) => (it.id === n.id ? { ...it, read: true } : it));
+        setNotifying(next.some((it) => !it.read));
+        return next;
+      });
+    } catch (e: any) {
+      setDeclineError(e?.message || "Terjadi kesalahan saat decline.");
+    } finally {
+      setDecliningId(null);
+    }
+  }
+
+  function openPreview(n: NotificationItem) {
+    setSelected(n);
+    setPreviewOpen(true);
+  }
   useLayoutEffect(() => {
     if (!isOpen) return;
     const updatePosition = () => {
@@ -70,6 +246,12 @@ export default function NotificationDropdown() {
     return () => window.removeEventListener("keydown", onKey);
   }, [isOpen]);
 
+  useEffect(() => {
+    loadNotifications();
+    const t = setInterval(loadNotifications, 60000);
+    return () => clearInterval(t);
+  }, []);
+
   return (
     <div className="relative" ref={containerRef}>
       <button
@@ -77,11 +259,12 @@ export default function NotificationDropdown() {
         onClick={handleClick}
       >
         <span
-          className={`absolute right-0 top-0.5 z-10 h-2 w-2 rounded-full bg-orange-400 ${
+          className={`absolute right-0 top-0.5 z-10 h-2 w-2 rounded-full ${
             !notifying ? "hidden" : "flex"
           }`}
+          style={{ backgroundColor: "var(--brand-primary, #0EA5E9)" }}
         >
-          <span className="absolute inline-flex w-full h-full bg-orange-400 rounded-full opacity-75 animate-ping"></span>
+          <span className="absolute inline-flex w-full h-full rounded-full opacity-75 animate-ping" style={{ backgroundColor: "var(--brand-primary, #0EA5E9)" }}></span>
         </span>
         <svg
           className="fill-current"
@@ -130,7 +313,98 @@ export default function NotificationDropdown() {
           </button>
         </div>
         <ul className="flex flex-col h-auto overflow-y-auto custom-scrollbar" style={{ maxHeight: "calc(80vh - 90px)" }}>
-          {/* Example notification items */}
+          {loading && (
+            <li className="px-4 py-2 text-sm text-gray-500">Memuat...</li>
+          )}
+          {!loading && items.length > 0 && items.map((n) => (
+            <li key={n.id}>
+              <DropdownItem
+                onItemClick={async () => {
+                  await updateRead([n.id], true);
+                  setItems((prev) => {
+                    const next = prev.map((it) => (it.id === n.id ? { ...it, read: true } : it));
+                    setNotifying(next.some((it) => !it.read));
+                    return next;
+                  });
+                  closeDropdown();
+                }}
+                className="flex gap-3 rounded-lg border-b border-gray-100 p-3 px-4.5 py-3 hover:bg-gray-100 dark:border-gray-800 dark:hover:bg-white/5"
+              >
+                <span className="relative block w-full h-10 rounded-full z-1 max-w-10">
+                  <Image
+                    width={40}
+                    height={40}
+                    src="/images/user/user-02.jpg"
+                    alt="User"
+                    className="w-full overflow-hidden rounded-full"
+                  />
+                  <span className="absolute bottom-0 right-0 z-10 h-2.5 w-full max-w-2.5 rounded-full border-[1.5px] border-white dark:border-gray-900" style={{ backgroundColor: !n.read ? "var(--brand-primary, #0EA5E9)" : "#9CA3AF" }}></span>
+                </span>
+
+                <span className="block">
+                  <span className="mb-1.5 space-x-1 block text-theme-sm text-gray-700 dark:text-gray-300">
+                    <span className="font-medium text-gray-900 dark:text-white">{n.title}</span>
+                    <span className="text-gray-600 dark:text-gray-400">{n.message}</span>
+                  </span>
+                  <span className="flex items-center gap-2 text-gray-500 text-theme-xs dark:text-gray-400">
+                    <span>{new Date(n.createdAt).toLocaleString()}</span>
+                    {!n.read && (
+                      <span
+                        className="inline-block w-1.5 h-1.5 rounded-full"
+                        style={{ backgroundColor: "var(--brand-primary, #0EA5E9)" }}
+                      />
+                    )}
+                  </span>
+                  {hasRole("owner") && isApprovalNotification(n) && (
+                    <div className="mt-2 flex items-center gap-2">
+                      <span
+                        role="button"
+                        tabIndex={0}
+                        className="px-3 py-1.5 text-sm inline-flex items-center justify-center rounded-md border border-gray-300 bg-white text-gray-800 hover:bg-gray-100 disabled:opacity-60 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200 dark:hover:bg-gray-700"
+                        onClick={(e) => { e.stopPropagation(); approveFromNotification(n); }}
+                        onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.stopPropagation(); approveFromNotification(n); } }}
+                        aria-label="Approve user"
+                        aria-disabled={approvingId === n.id}
+                      >
+                        {approvingId === n.id ? "Meng-approve..." : "Approve"}
+                      </span>
+                      <span
+                        role="button"
+                        tabIndex={0}
+                        className="px-3 py-1.5 text-sm inline-flex items-center justify-center rounded-md border border-gray-300 bg-white text-gray-800 hover:bg-gray-100 disabled:opacity-60 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200 dark:hover:bg-gray-700"
+                        onClick={(e) => { e.stopPropagation(); declineFromNotification(n); }}
+                        onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.stopPropagation(); declineFromNotification(n); } }}
+                        aria-label="Decline user"
+                        aria-disabled={decliningId === n.id}
+                      >
+                        {decliningId === n.id ? "Menolak..." : "Decline"}
+                      </span>
+                      <span
+                        role="button"
+                        tabIndex={0}
+                        className="px-3 py-1.5 text-sm inline-flex items-center justify-center rounded-md border border-gray-300 bg-white text-gray-800 hover:bg-gray-100 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200 dark:hover:bg-gray-700"
+                        onClick={(e) => { e.stopPropagation(); openPreview(n); }}
+                        onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.stopPropagation(); openPreview(n); } }}
+                        aria-label="Preview notification"
+                      >
+                        Preview
+                      </span>
+                      {approveError && approvingId === null && (
+                        <span className="text-xs text-red-600">{approveError}</span>
+                      )}
+                      {declineError && decliningId === null && (
+                        <span className="text-xs text-red-600">{declineError}</span>
+                      )}
+                    </div>
+                  )}
+                </span>
+              </DropdownItem>
+            </li>
+          ))}
+          {!loading && items.length === 0 && (
+            <li className="px-4 py-2 text-sm text-gray-500">Tidak ada notifikasi</li>
+          )}
+          {/* Placeholder examples (disabled) */}{false && (<>
           <li>
             <DropdownItem
               onItemClick={closeDropdown}
@@ -421,15 +695,86 @@ export default function NotificationDropdown() {
               </span>
             </DropdownItem>
           </li>
-          {/* Add more items as needed */}
+          </>)}{/* Add more items as needed */}
         </ul>
         <Link
-          href="/"
+          href="/system-user/notifications/user"
           className="block px-4 py-2 mt-3 text-sm font-medium text-center text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-100 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-400 dark:hover:bg-gray-700"
         >
           View All Notifications
         </Link>
       </Dropdown>
+      {roleModalOpen && (
+        <Modal isOpen={roleModalOpen} onClose={() => setRoleModalOpen(false)} className="max-w-sm">
+          <div className="p-6">
+            <h2 className="text-lg font-semibold text-gray-800 dark:text-white/90 mb-3">Pilih Role untuk User</h2>
+            <div className="space-y-2">
+              <label className="text-sm text-gray-600 dark:text-gray-400">Role</label>
+              <select
+                className="w-full rounded-md border px-3 py-2 text-sm dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200"
+                value={selectedRole}
+                onChange={(e) => setSelectedRole(e.target.value)}
+              >
+                {roleOptions.map((r) => (
+                  <option key={r.id} value={r.name}>{r.name}</option>
+                ))}
+              </select>
+            </div>
+            <div className="mt-4 flex items-center gap-2">
+              <button
+                className="rounded-full bg-green-600 px-3 py-1.5 text-white text-sm hover:bg-green-700"
+                onClick={confirmApproveWithRole}
+              >
+                Konfirmasi
+              </button>
+              <button
+                className="rounded-full border px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-100 dark:text-gray-300 dark:border-gray-700 dark:hover:bg-gray-800"
+                onClick={() => setRoleModalOpen(false)}
+              >
+                Batal
+              </button>
+            </div>
+          </div>
+        </Modal>
+      )}
+      <Modal isOpen={previewOpen} onClose={() => setPreviewOpen(false)} className="max-w-xl">
+        <div className="p-6">
+          <h2 className="text-lg font-semibold text-gray-800 dark:text-white/90 mb-2">Preview Notifikasi</h2>
+          {selected ? (
+            <div className="space-y-3">
+              <div className="text-sm text-gray-500 dark:text-gray-400">{new Date(selected.createdAt).toLocaleString()}</div>
+              <div className="text-base font-medium text-gray-800 dark:text-white/90">{selected.title}</div>
+              <div className="text-gray-700 dark:text-gray-300 whitespace-pre-line">{selected.message}</div>
+              <div className="flex items-center gap-2 pt-2">
+                {hasRole("owner") && isApprovalNotification(selected) && (
+                  <>
+                    <button
+                      className="rounded-full bg-green-600 px-3 py-1.5 text-white text-sm hover:bg-green-700"
+                      onClick={() => selected && approveFromNotification(selected)}
+                    >
+                      Approve
+                    </button>
+                    <button
+                      className="rounded-full bg-red-600 px-3 py-1.5 text-white text-sm hover:bg-red-700"
+                      onClick={() => selected && declineFromNotification(selected)}
+                    >
+                      Decline
+                    </button>
+                  </>
+                )}
+                <button
+                  className="rounded-full border px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-100 dark:text-gray-300 dark:border-gray-700 dark:hover:bg-gray-800"
+                  onClick={() => setPreviewOpen(false)}
+                >
+                  Tutup
+                </button>
+              </div>
+            </div>
+          ) : (
+            <p className="text-sm text-gray-600 dark:text-gray-400">Tidak ada notifikasi dipilih.</p>
+          )}
+        </div>
+      </Modal>
     </div>
   );
 }

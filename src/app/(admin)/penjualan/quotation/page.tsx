@@ -4,7 +4,7 @@ import PageBreadcrumb from "@/components/common/PageBreadCrumb";
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation"; 
-import { toast } from "react-hot-toast"; 
+import toast from "react-hot-toast";
 import {
   PlusCircle,
   Eye,
@@ -16,6 +16,8 @@ import {
   // ChevronDown dan Copy dihapus karena tidak lagi digunakan pada Tindakan
 } from "lucide-react";
 import LoadingSpinner from "@/components/common/LoadingSpinner";
+import Skeleton from "@/components/ui/skeleton";
+import { Button } from "@/components/ui/button";
 import Pagination from "@/components/tables/Pagination";
 import FeatureGuard from "@/components/FeatureGuard";
 
@@ -421,7 +423,30 @@ export default function QuotationPageWithTemplate() {
 
         {/* Table */}
         {loading ? (
-          <LoadingSpinner label="Memuat data quotation..." minHeight="min-h-[40vh]" />
+          <div className="overflow-x-auto rounded-lg border bg-white shadow-sm">
+            <div className="p-4 space-y-4">
+              {/* Header skeleton */}
+              <div className="grid grid-cols-7 gap-3">
+                <Skeleton className="h-5 w-24 col-span-2" />
+                <Skeleton className="h-5 w-28 col-span-2" />
+                <Skeleton className="h-5 w-20 col-span-1" />
+                <Skeleton className="h-5 w-20 col-span-1" />
+                <Skeleton className="h-5 w-16 col-span-1" />
+              </div>
+              {/* Rows skeleton */}
+              <div className="space-y-2">
+                {Array.from({ length: 8 }).map((_, i) => (
+                  <div key={i} className="grid grid-cols-7 gap-3">
+                    <Skeleton className="h-4 w-full col-span-2" />
+                    <Skeleton className="h-4 w-full col-span-2" />
+                    <Skeleton className="h-4 w-full col-span-1" />
+                    <Skeleton className="h-4 w-full col-span-1" />
+                    <Skeleton className="h-4 w-full col-span-1" />
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
         ) : paginated.length === 0 ? (
           <EmptyState />
         ) : (
@@ -493,22 +518,23 @@ export default function QuotationPageWithTemplate() {
               dapat dibatalkan.
             </p>
             <div className="mt-6 flex justify-end gap-3">
-              <button
+              <Button
                 type="button"
+                variant="outline"
                 onClick={() => setDeleteTarget(null)}
-                className="rounded-lg border border-gray-300 px-4 py-2 text-sm hover:bg-gray-100"
                 disabled={deleteLoading}
               >
                 Batal
-              </button>
-              <button
+              </Button>
+              <Button
                 type="button"
+                variant="destructive"
                 onClick={confirmDelete}
-                className="rounded-lg bg-red-600 px-4 py-2 text-sm font-medium text-white shadow-sm transition hover:bg-red-700 disabled:opacity-60"
-                disabled={deleteLoading}
+                loading={deleteLoading}
+                loadingText="Menghapus..."
               >
-                {deleteLoading ? "Menghapus..." : "Hapus"}
-              </button>
+                Hapus
+              </Button>
             </div>
           </div>
         </div>

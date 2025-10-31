@@ -1,7 +1,7 @@
 "use client";
 import { useEffect, useState } from "react";
 import { useRouter, useParams } from "next/navigation";
-import { toast } from "react-hot-toast";
+import toast from "react-hot-toast";
 
 export default function EditClientPage() {
   const router = useRouter();

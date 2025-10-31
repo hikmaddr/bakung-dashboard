@@ -1,5 +1,8 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { resolveAllowedBrandIds } from "@/lib/brand";
+import { getAuth } from "@/lib/auth";
+import { logActivity } from "@/lib/activity";
 
 function generateOrderNumber() {
   const now = new Date();
@@ -16,9 +19,15 @@ export async function POST(
   try {
     const { id } = await params;
     const quotationId = Number(id);
+    const auth = await getAuth();
+    const allowedBrandIds = await resolveAllowedBrandIds(
+      auth?.userId ?? null,
+      (auth?.roles as string[]) ?? [],
+      []
+    );
 
-    const quotation = await prisma.quotation.findUnique({
-      where: { id: quotationId },
+    const quotation = await prisma.quotation.findFirst({
+      where: { id: quotationId, brandProfileId: allowedBrandIds.length ? { in: allowedBrandIds } : undefined },
       include: { items: true },
     });
 
@@ -78,6 +87,16 @@ export async function POST(
       },
       include: { items: true, customer: true },
     });
+
+    try {
+      await logActivity(_req, {
+        userId: auth?.userId || null,
+        action: "SO_CREATE_FROM_QUOTATION",
+        entity: "sales_order",
+        entityId: order.id,
+        metadata: { quotationId: quotation.id, orderNumber: order.orderNumber }
+      });
+    } catch {}
 
     return NextResponse.json({ success: true, data: order });
   } catch (error) {

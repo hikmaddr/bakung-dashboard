@@ -5,6 +5,7 @@ import "./globals.css";
 
 import { SidebarProvider } from "@/context/SidebarContext";
 import { ThemeProvider } from "@/context/ThemeContext";
+import NextTopLoader from "nextjs-toploader";
 // ❌ HAPUS: import { Toaster } from "react-hot-toast"; 
 
 // ✅ TAMBAHKAN: Import Provider yang sudah Anda buat
@@ -25,6 +26,13 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   return (
     <html lang="en">
       <body className={`${outfit.className} dark:bg-gray-900`}>
+        {/* Top progress bar for route changes */}
+        <NextTopLoader
+          color="#2563eb"
+          height={3}
+          showSpinner={false}
+          zIndex={2000}
+        />
         <ThemeProvider>
           <SidebarProvider>
             

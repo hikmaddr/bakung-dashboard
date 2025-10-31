@@ -6,7 +6,7 @@ import EmptyState from "@/components/EmptyState";
 import PageBreadcrumb from "@/components/common/PageBreadCrumb";
 import Pagination from "@/components/tables/Pagination";
 import { downloadCSV, downloadXLSX } from "@/lib/exporters";
-import { toast } from "react-hot-toast";
+import toast from "react-hot-toast";
 import FeatureGuard from "@/components/FeatureGuard";
 
 type ReceiptRow = {

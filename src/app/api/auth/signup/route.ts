@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { hashPassword } from "@/lib/auth";
+import { sendNotificationToRole, sendNotificationToUser } from "@/lib/notification";
 
 export async function POST(req: NextRequest) {
   try {
@@ -51,6 +52,25 @@ export async function POST(req: NextRequest) {
       },
     });
 
+    // Notify Owners to approve, and notify user about status
+    try {
+      await sendNotificationToRole(
+        "Owner",
+        "User baru mendaftar",
+        `User ${email} mendaftar. Mohon dilakukan approval.`,
+        "info"
+      );
+    } catch {}
+
+    try {
+      await sendNotificationToUser(
+        created.id,
+        "Pendaftaran berhasil",
+        "Akun Anda menunggu persetujuan admin.",
+        "info"
+      );
+    } catch {}
+
     return NextResponse.json({ success: true, message: "Pendaftaran berhasil. Menunggu persetujuan admin." });
   } catch (err: any) {
     console.error("[auth/signup][POST]", err);
@@ -60,4 +80,3 @@ export async function POST(req: NextRequest) {
     );
   }
 }
-

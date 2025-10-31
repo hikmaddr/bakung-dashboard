@@ -3,7 +3,7 @@
 
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import PageBreadcrumb from "@/components/common/PageBreadCrumb";
-import { toast } from "react-hot-toast";
+import toast from "react-hot-toast";
 import { Modal } from "@/components/ui/modal";
 import { Dropdown } from "@/components/ui/dropdown/Dropdown";
 import { DropdownItem } from "@/components/ui/dropdown/DropdownItem";

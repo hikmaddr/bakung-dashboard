@@ -2,7 +2,7 @@
 
 import { NextResponse, type NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { getActiveBrandProfile } from "@/lib/brand";
+import { getActiveBrandProfile, resolveAllowedBrandIds } from "@/lib/brand";
 import { PDFDocument, StandardFonts, rgb, type PDFFont, type PDFImage, type PDFPage } from "pdf-lib";
 import fontkit from "@pdf-lib/fontkit";
 import fs from "fs/promises";
@@ -693,15 +693,28 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
   try {
     const { id } = await params;
     const numericId = Number(id);
+    // Guard brand scope: hanya ambil invoice dalam brand yang diizinkan
+    const authTop = await getAuth();
+    const allowedBrandIds = await resolveAllowedBrandIds(
+      authTop?.userId ?? null,
+      (authTop?.roles as string[]) ?? [],
+      []
+    );
 
-    let invoice = await prisma.invoice.findUnique({
-      where: { id: Number.isFinite(numericId) ? numericId : -1 },
+    let invoice = await prisma.invoice.findFirst({
+      where: {
+        id: Number.isFinite(numericId) ? numericId : -1,
+        brandProfileId: allowedBrandIds.length ? { in: allowedBrandIds } : undefined,
+      },
       include: { customer: true, items: true },
     });
 
     if (!invoice && id && !Number.isFinite(numericId)) {
       invoice = await prisma.invoice.findFirst({
-        where: { invoiceNumber: String(id) },
+        where: {
+          invoiceNumber: String(id),
+          brandProfileId: allowedBrandIds.length ? { in: allowedBrandIds } : undefined,
+        },
         include: { customer: true, items: true },
       });
     }

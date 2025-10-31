@@ -1,6 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { getActiveBrandProfile } from "@/lib/brand";
+import { getActiveBrandProfile, resolveAllowedBrandIds } from "@/lib/brand";
+import { getAuth } from "@/lib/auth";
 
 function generateOrderNumber() {
   const now = new Date();
@@ -14,11 +15,20 @@ export async function POST(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const auth = await getAuth();
+    const allowedBrandIds = await resolveAllowedBrandIds(
+      auth?.userId ?? null,
+      (auth?.roles as string[]) ?? [],
+      []
+    );
     const { id } = await params;
     const qid = Number(id);
 
-    const quotation = await prisma.quotation.findUnique({
-      where: { id: qid },
+    const quotation = await prisma.quotation.findFirst({
+      where: {
+        id: qid,
+        brandProfileId: allowedBrandIds.length ? { in: allowedBrandIds } : undefined,
+      },
       include: { items: true },
     });
 

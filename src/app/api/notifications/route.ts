@@ -19,11 +19,26 @@ export async function PATCH(req: NextRequest) {
     const auth = await getAuth();
     if (!auth?.userId) return NextResponse.json({ success: false, message: "Unauthorized" }, { status: 401 });
 
-    const { ids = [], read = true } = await req.json();
-    if (Array.isArray(ids) && ids.length) {
-      await prisma.notification.updateMany({ where: { id: { in: ids }, userId: auth.userId }, data: { read } });
+    const body = await req.json().catch(() => ({}));
+    const ids: number[] = Array.isArray(body?.ids) ? body.ids : [];
+    const read: boolean = typeof body?.read === "boolean"
+      ? body.read
+      : (typeof body?.isRead === "boolean" ? body.isRead : true);
+
+    // Perubahan kebijakan: jika ditandai read=true, hapus notifikasi agar tidak disimpan lama
+    if (read === true) {
+      if (ids.length) {
+        await prisma.notification.deleteMany({ where: { id: { in: ids }, userId: auth.userId } });
+      } else {
+        await prisma.notification.deleteMany({ where: { userId: auth.userId } });
+      }
     } else {
-      await prisma.notification.updateMany({ where: { userId: auth.userId }, data: { read } });
+      // Jika read=false, tetap update status baca tanpa menghapus
+      if (ids.length) {
+        await prisma.notification.updateMany({ where: { id: { in: ids }, userId: auth.userId }, data: { read } });
+      } else {
+        await prisma.notification.updateMany({ where: { userId: auth.userId }, data: { read } });
+      }
     }
     return NextResponse.json({ success: true });
   } catch (err: any) {

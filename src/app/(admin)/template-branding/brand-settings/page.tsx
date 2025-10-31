@@ -368,15 +368,29 @@ const buildPayloadFromProfile = (profile: BrandProfile) => {
     signatureImageUrl: profile.signatureImageUrl ?? "",
   });
 
-  return {
+  const sanitizedProfile: BrandProfile = {
     ...profile,
+    // Perlakuan seragam pada semua field saat submit: tanpa normalisasi
+    name: profile.name ?? "",
+    description: profile.description ?? "",
+    footerText: profile.footerText ?? "",
+    website: profile.website ?? "",
+    email: profile.email ?? "",
+    phone: profile.phone ?? "",
+    address: profile.address ?? "",
     paymentInfo: profile.paymentInfo ?? "",
     termsConditions: profile.termsConditions ?? "",
-    showBrandName: profile.showBrandName ?? true,
-    showBrandDescription: profile.showBrandDescription ?? true,
-    showBrandEmail: profile.showBrandEmail ?? true,
-    showBrandWebsite: profile.showBrandWebsite ?? true,
-    showBrandAddress: profile.showBrandAddress ?? true,
+  };
+
+  return {
+    ...sanitizedProfile,
+    paymentInfo: sanitizedProfile.paymentInfo ?? "",
+    termsConditions: sanitizedProfile.termsConditions ?? "",
+    showBrandName: sanitizedProfile.showBrandName ?? true,
+    showBrandDescription: sanitizedProfile.showBrandDescription ?? true,
+    showBrandEmail: sanitizedProfile.showBrandEmail ?? true,
+    showBrandWebsite: sanitizedProfile.showBrandWebsite ?? true,
+    showBrandAddress: sanitizedProfile.showBrandAddress ?? true,
     templateDefaults: templateDefaultsWithSignature,
     numberFormats: normalizeNumberFormats(profile.numberFormats),
     modules: buildModulesPayload(profile.modules),
@@ -561,7 +575,6 @@ function BrandSettingsPage() {
   }, []);
 
   // Whitespace normalization helpers
-  const normalizeSingleLine = (s: string) => s.replace(/\s+/g, " ").trim();
   const normalizeMultiline = (s: string) =>
     s
       .split(/\r?\n/)
@@ -570,25 +583,13 @@ function BrandSettingsPage() {
       .join("\n");
   const normalizeEmail = (s: string) => s.trim();
   const normalizeUrl = (s: string) => s.trim();
-  const normalizePhone = (s: string) => s.replace(/\s+/g, " ").trim();
+  const normalizePhone = (s: string) => s.replace(/\s+/g, " ").trimStart();
 
   const handleInputChange = (field: keyof BrandProfile, value: string | boolean) => {
-    const normalizedValue =
-      typeof value === "string"
-        ? field === "paymentInfo" || field === "termsConditions" || field === "address"
-          ? normalizeMultiline(value)
-          : field === "email"
-          ? normalizeEmail(value)
-          : field === "website"
-          ? normalizeUrl(value)
-          : field === "phone"
-          ? normalizePhone(value)
-          : normalizeSingleLine(value)
-        : value;
-
+    // Terapkan perlakuan seragam: tanpa normalisasi saat mengetik untuk semua field
     setFormData((prev) => ({
       ...prev,
-      [field]: normalizedValue as any,
+      [field]: value as any,
     }));
   };
 
@@ -614,7 +615,7 @@ function BrandSettingsPage() {
   };
 
   const handleNestedInputChange = (parentField: keyof BrandProfile, childField: string, value: string) => {
-    const normalizedChild = normalizeSingleLine(value);
+    const normalizedChild = value;
     setFormData((prev) => ({
       ...prev,
       [parentField]: {
@@ -2024,7 +2025,7 @@ function BrandSettingsPage() {
               <Button variant="outline" onClick={closeModal}>
                 Cancel
               </Button>
-              <Button onClick={handleSave} disabled={saving || !formData.name}>
+              <Button onClick={handleSave} disabled={saving || !formData.name.trim()}>
                 {saving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
                 {editingProfile ? "Save Changes" : "Create Profile"}
               </Button>

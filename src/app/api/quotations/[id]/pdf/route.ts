@@ -7,7 +7,7 @@ import fontkit from "@pdf-lib/fontkit";
 import fs from "fs/promises";
 import path from "path";
 import { getAuth } from "@/lib/auth";
-import { getActiveBrandProfile } from "@/lib/brand";
+import { getActiveBrandProfile, resolveAllowedBrandIds } from "@/lib/brand";
 import {
   DEFAULT_TERMS,
   type InvoiceTemplateTheme,
@@ -1318,9 +1318,17 @@ export async function GET(
         { status: 400 }
       );
     }
-
-    const quotation = await prisma.quotation.findUnique({
-      where: { id: quotationId },
+    const auth = await getAuth();
+    const allowedBrandIds = await resolveAllowedBrandIds(
+      auth?.userId ?? null,
+      (auth?.roles as string[]) ?? [],
+      []
+    );
+    const quotation = await prisma.quotation.findFirst({
+      where: {
+        id: quotationId,
+        brandProfileId: allowedBrandIds.length ? { in: allowedBrandIds } : undefined,
+      },
       select: {
         notes: true,
         customer: true,
@@ -1330,6 +1338,7 @@ export async function GET(
         validUntil: true,
         projectDesc: true,
         id: true,
+        brandProfileId: true,
       },
     });
 

@@ -4,6 +4,7 @@ import Link from "next/link";
 import { ArrowUpRight } from "lucide-react";
 import { format, startOfMonth, subMonths } from "date-fns";
 import { TrendChart } from "@/components/dashboard/TrendChart";
+import EmptyState from "@/components/EmptyState";
 import { prisma } from "@/lib/prisma";
 import { getAuth } from "@/lib/auth";
 import { getActiveBrandProfile } from "@/lib/brand";
@@ -621,14 +622,31 @@ export default async function DashboardPage({
   if (!auth?.userId) {
     return redirect(`/signin?redirect=/`);
   }
-  const activeBrand = await getActiveBrandProfile();
+  let activeBrand: Awaited<ReturnType<typeof getActiveBrandProfile>> | null = null;
+  try {
+    activeBrand = await getActiveBrandProfile();
+  } catch (err) {
+    activeBrand = null;
+  }
   const rangeParamRaw = sp?.range;
   const rangeParam = Array.isArray(rangeParamRaw)
     ? String(rangeParamRaw[0])
     : String(rangeParamRaw ?? "30d");
   const rangeDays =
     rangeParam === "90d" ? 90 : rangeParam === "180d" ? 180 : 30;
-  const data = await getDashboardData(activeBrand?.id ?? undefined, rangeDays);
+  let data: Awaited<ReturnType<typeof getDashboardData>> | null = null;
+  try {
+    data = await getDashboardData(activeBrand?.id ?? undefined, rangeDays);
+  } catch (err) {
+    console.error("Dashboard data load failed. Likely DB not reachable.", err);
+    // Render graceful fallback to avoid crash when DB connection fails
+    return (
+      <EmptyState
+        title="Database tidak terhubung"
+        description="Aplikasi tidak dapat terhubung ke server database. Pastikan MySQL/MariaDB berjalan di 127.0.0.1:3306 dan variabel .env (DATABASE_URL) telah dikonfigurasi."
+      />
+    );
+  }
 
   return (
     <div className="space-y-6">

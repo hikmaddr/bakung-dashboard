@@ -6,8 +6,9 @@ import AppHeader from "@/components/layout/AppHeader";
 import AppSidebar from "@/components/layout/AppSidebar";
 import Backdrop from "@/components/layout/Backdrop";
 import { ThemeProvider } from "@/context/ThemeContext";
-import { ToastProvider } from "@/context/ToastContext";
+import { FeedbackProvider } from "@/context/FeedbackContext";
 import IdleWatcher from "@/components/IdleWatcher";
+import BrandSelectOnLogin from "@/components/header/BrandSelectOnLogin";
 
 export default function AdminLayout({
   children,
@@ -24,7 +25,7 @@ export default function AdminLayout({
 
   return (
     <ThemeProvider>
-      <ToastProvider>
+        <FeedbackProvider>
         <div className="min-h-screen xl:flex">
           {/* Sidebar */}
           <AppSidebar />
@@ -38,6 +39,8 @@ export default function AdminLayout({
           >
             {/* Idle auto-logout watcher */}
             <IdleWatcher />
+            {/* Brand selection modal on login if multiple brands */}
+            <BrandSelectOnLogin />
             {/* Header */}
             <AppHeader />
 
@@ -47,10 +50,7 @@ export default function AdminLayout({
             </main>
           </div>
         </div>
-
-        {/* Tempat render toast */}
-        <div id="toast-root" />
-      </ToastProvider>
+        </FeedbackProvider>
     </ThemeProvider>
   );
 }

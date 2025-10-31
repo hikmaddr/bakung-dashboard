@@ -7,7 +7,7 @@ import fs from "fs/promises";
 import path from "path";
 import { resolveTheme, toRgb255, resolveThankYou, resolvePaymentLines, type InvoiceTemplateTheme, DEFAULT_TERMS } from "@/lib/quotationTheme";
 import { toRgb, isLightHex, splitTextToSize } from "@/lib/pdfCommon";
-import { getActiveBrandProfile } from "@/lib/brand";
+import { getActiveBrandProfile, resolveAllowedBrandIds } from "@/lib/brand";
 import { getAuth } from "@/lib/auth";
 
 const toRGB = ({ r, g, b }: { r:number; g:number; b:number }) => rgb(r/255,g/255,b/255);
@@ -603,8 +603,17 @@ export async function GET(
   const numericId = Number(idParam);
 
   try {
-    let order = await prisma.salesOrder.findUnique({
-      where: { id: Number.isFinite(numericId) ? numericId : -1 },
+    const auth = await getAuth();
+    const allowedBrandIds = await resolveAllowedBrandIds(
+      auth?.userId ?? null,
+      (auth?.roles as string[]) ?? [],
+      []
+    );
+    let order = await prisma.salesOrder.findFirst({
+      where: {
+        id: Number.isFinite(numericId) ? numericId : -1,
+        brandProfileId: allowedBrandIds.length ? { in: allowedBrandIds } : undefined,
+      },
       include: {
         customer: true,
         items: true,
@@ -614,7 +623,10 @@ export async function GET(
 
     if (!order && idParam && !Number.isFinite(numericId)) {
       order = await prisma.salesOrder.findFirst({
-        where: { orderNumber: String(idParam) },
+        where: {
+          orderNumber: String(idParam),
+          brandProfileId: allowedBrandIds.length ? { in: allowedBrandIds } : undefined,
+        },
         include: { customer: true, items: true, quotation: true },
       });
     }

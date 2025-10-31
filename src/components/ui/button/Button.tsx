@@ -9,6 +9,8 @@ interface ButtonProps {
   endIcon?: ReactNode;
   onClick?: () => void;
   disabled?: boolean;
+  loading?: boolean;
+  loadingText?: string;
   className?: string;
 }
 
@@ -21,6 +23,8 @@ const Button: React.FC<ButtonProps> = ({
   onClick,
   className = "",
   disabled = false,
+  loading = false,
+  loadingText,
 }) => {
   const mappedSize = size === "sm" ? "sm" : "md"; // maps to BaseButton sizes
   const mappedVariant = variant; // BaseButton understands "primary" and "outline"
@@ -30,7 +34,9 @@ const Button: React.FC<ButtonProps> = ({
       size={mappedSize as any}
       variant={mappedVariant as any}
       onClick={onClick}
-      disabled={disabled}
+      disabled={disabled || loading}
+      loading={loading}
+      loadingText={loadingText}
       className={className}
     >
       {startIcon && <span className="flex items-center">{startIcon}</span>}

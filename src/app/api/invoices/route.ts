@@ -14,6 +14,7 @@ export async function GET(req: NextRequest) {
   try {
     const active = await getActiveBrandProfile();
     const sp = req.nextUrl.searchParams;
+    const includeDeleted = sp.get("includeDeleted") === "1";
     const rangeRaw = (sp.get("range") || "").toLowerCase();
     const statusRaw = sp.get("status") || ""; // comma-separated allowed
     const days = (() => {
@@ -31,6 +32,7 @@ export async function GET(req: NextRequest) {
     if (active?.id) where.brandProfileId = active.id;
     if (start) where.issueDate = { gte: start, lt: now };
     if (statuses.length > 0) where.status = { in: statuses };
+    if (!includeDeleted) where.deletedAt = null;
 
     const rows = await prisma.invoice.findMany({ orderBy: { createdAt: "desc" }, where, include: { customer: true, items: true, quotation: true } });
     return NextResponse.json({ success: true, data: rows });

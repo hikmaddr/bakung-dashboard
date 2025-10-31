@@ -3,8 +3,7 @@
 import { ThemeToggleButton } from "@/components/common/ThemeToggleButton";
 import NotificationDropdown from "@/components/header/NotificationDropdown";
 import UserDropdown from "@/components/header/UserDropdown";
-import BrandSwitcher from "@/components/header/BrandSwitcher";
-import BrandDropdown from "@/components/header/BrandDropdown";
+import BrandBadge from "@/components/header/BrandBadge";
 import { useSidebar } from "@/context/SidebarContext";
 import Image from "next/image";
 import Link from "next/link";
@@ -167,9 +166,8 @@ const AppHeader: React.FC = () => {
           } items-center justify-between w-full gap-4 px-5 py-4 lg:flex lg:justify-end lg:px-0`}
         >
           <div className="flex items-center gap-3">
-            <BrandSwitcher />
+            <BrandBadge />
             <ThemeToggleButton />
-            <BrandDropdown />
             <NotificationDropdown />
           </div>
           <UserDropdown />

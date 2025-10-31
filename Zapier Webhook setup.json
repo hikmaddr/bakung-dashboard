@@ -1,0 +1,51 @@
+{
+  "name": "Trello → Trae Builder Automation",
+  "trigger": {
+    "app": "Trello",
+    "event": "new_card_in_list",
+    "params": {
+      "list_name": "🚧 To Build"
+    }
+  },
+  "actions": [
+    {
+      "type": "filter",
+      "params": {
+        "conditions": [
+          { "field": "label", "operator": "contains", "value": "Trae" }
+        ]
+      }
+    },
+    {
+      "type": "webhook",
+      "params": {
+        "method": "POST",
+        "url": "https://api.trae.ai/build",
+        "headers": {
+          "Authorization": "Bearer YOUR_TRAE_API_KEY",
+          "Content-Type": "application/json"
+        },
+        "body": {
+          "projectId": "bakung-dashboard",
+          "prompt": "{{card.desc}}",
+          "taskTitle": "{{card.name}}",
+          "source": "Trello"
+        }
+      }
+    },
+    {
+      "type": "trello_action",
+      "params": {
+        "action": "move_card",
+        "to_list": "⚙️ In Progress"
+      }
+    },
+    {
+      "type": "trello_action",
+      "params": {
+        "action": "add_comment",
+        "comment_text": "🚀 Task sent to Trae Builder successfully."
+      }
+    }
+  ]
+}

@@ -2,7 +2,7 @@
 
 import { NextResponse, type NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { getActiveBrandProfile } from "@/lib/brand";
+import { getActiveBrandProfile, resolveAllowedBrandIds } from "@/lib/brand";
 import { PDFDocument, rgb, StandardFonts, type PDFFont, type PDFPage } from "pdf-lib";
 import fontkit from "@pdf-lib/fontkit";
 import { getAuth } from "@/lib/auth";
@@ -136,6 +136,18 @@ export async function POST(req: NextRequest) {
         showBrandName: true,
         showBrandDescription: true,
       } as any;
+    }
+    // RBAC guard: jika brand memiliki ID valid, pastikan user berhak mengakses
+    if (brand?.id && brand.id > 0) {
+      const auth = await getAuth();
+      const allowedBrandIds = await resolveAllowedBrandIds(
+        auth?.userId ?? null,
+        (auth?.roles as string[]) ?? [],
+        []
+      );
+      if (allowedBrandIds.length && !allowedBrandIds.includes(brand.id)) {
+        return NextResponse.json({ success: false, message: "Forbidden: brand scope" }, { status: 403 });
+      }
     }
     const theme: InvoiceTemplateTheme = resolveTheme(brand as any);
 

@@ -2,11 +2,26 @@
 import Image from "next/image";
 import Link from "next/link";
 import React, { useState } from "react";
+import { useGlobal } from "@/context/AppContext";
+import Avatar from "@/components/ui/Avatar";
 import { Dropdown } from "../ui/dropdown/Dropdown";
 import { DropdownItem } from "../ui/dropdown/DropdownItem";
 
 export default function UserDropdown() {
   const [isOpen, setIsOpen] = useState(false);
+  const { user } = useGlobal();
+
+  const compositeName =
+    (user?.firstName && user?.lastName)
+      ? `${user.firstName} ${user.lastName}`
+      : (user?.name || null);
+  const displayName = compositeName || user?.email || "User";
+  const email = user?.email || "";
+  const roles = Array.isArray(user?.roles) ? user!.roles : [];
+  const primaryRole = roles[0] ? String(roles[0]) : "";
+  const primaryRoleLabel = primaryRole
+    ? primaryRole.charAt(0).toUpperCase() + primaryRole.slice(1)
+    : "";
 
 function toggleDropdown(e: React.MouseEvent<HTMLButtonElement, MouseEvent>) {
   e.stopPropagation();
@@ -22,16 +37,16 @@ function toggleDropdown(e: React.MouseEvent<HTMLButtonElement, MouseEvent>) {
         onClick={toggleDropdown} 
         className="flex items-center text-gray-700 dark:text-gray-400 dropdown-toggle"
       >
-        <span className="mr-3 overflow-hidden rounded-full h-11 w-11">
-          <Image
-            width={44}
-            height={44}
-            src="/images/user/owner.jpg"
-            alt="User"
-          />
-        </span>
+        <Avatar
+          src={user?.avatar || null}
+          alt={displayName}
+          name={displayName}
+          size={44}
+          className="mr-3"
+        />
 
-        <span className="block mr-1 font-medium text-theme-sm">Hikmad</span>
+        <span className="block mr-1 font-medium text-theme-sm">{displayName}</span>
+        {/* Role badge di top bar dihilangkan sesuai permintaan */}
 
         <svg
           className={`stroke-gray-500 dark:stroke-gray-400 transition-transform duration-200 ${
@@ -60,11 +75,16 @@ function toggleDropdown(e: React.MouseEvent<HTMLButtonElement, MouseEvent>) {
       >
         <div>
           <span className="block font-medium text-gray-700 text-theme-sm dark:text-gray-400">
-            Hikmad Drajat
+            {displayName}
           </span>
-          <span className="mt-0.5 block text-theme-xs text-gray-500 dark:text-gray-400">
-            hkmd.737@gmail.com
-          </span>
+          {primaryRoleLabel ? (
+            <span className="mt-0.5 inline-flex items-center gap-2">
+              <span className="text-theme-xs text-gray-500 dark:text-gray-400">{email}</span>
+              <span className="menu-dropdown-badge menu-dropdown-badge-active">{primaryRoleLabel}</span>
+            </span>
+          ) : (
+            <span className="mt-0.5 block text-theme-xs text-gray-500 dark:text-gray-400">{email}</span>
+          )}
         </div>
 
         <ul className="flex flex-col gap-1 pt-4 pb-3 border-b border-gray-200 dark:border-gray-800">

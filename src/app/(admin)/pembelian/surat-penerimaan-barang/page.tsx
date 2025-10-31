@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import DatePicker from "@/components/DatePicker";
 import { useRouter } from "next/navigation";
-import { toast } from "react-hot-toast";
+import toast from "react-hot-toast";
 
 
 type ProductLine = {

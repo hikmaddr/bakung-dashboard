@@ -2,7 +2,7 @@
 
 import { NextResponse, type NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { getActiveBrandProfile } from "@/lib/brand";
+import { getActiveBrandProfile, resolveAllowedBrandIds } from "@/lib/brand";
 import { initPdfWithBrandFonts, drawHeaderCommon, drawInfoSectionCommon, drawSignatureSectionCommon } from "@/lib/pdfCommon";
 import { resolveTheme, resolveThankYou, resolvePaymentLines, DEFAULT_TERMS, toRgb255, type InvoiceTemplateTheme } from "@/lib/quotationTheme";
 import { getAuth } from "@/lib/auth";
@@ -141,9 +141,18 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
     if (Number.isNaN(receiptId)) {
       return NextResponse.json({ success: false, message: "ID tidak valid" }, { status: 400 });
     }
-
-    const invoice = await prisma.invoice.findUnique({
-      where: { id: receiptId },
+    // Guard brand-scope: invoice harus dalam brand yang diizinkan
+    const auth = await getAuth();
+    const allowedBrandIds = await resolveAllowedBrandIds(
+      auth?.userId ?? null,
+      (auth?.roles as string[]) ?? [],
+      []
+    );
+    const invoice = await prisma.invoice.findFirst({
+      where: {
+        id: receiptId,
+        brandProfileId: allowedBrandIds.length ? { in: allowedBrandIds } : undefined,
+      },
       include: { customer: true, items: true },
     });
     if (!invoice) {
@@ -162,7 +171,6 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
       return NextResponse.json({ success: false, message: "Brand aktif tidak ditemukan" }, { status: 404 });
     }
 
-    const auth = await getAuth();
     const actorName = auth?.user?.name || brand.name || "Kasir";
     const theme = resolveTheme(brand as any);
 

@@ -5,39 +5,44 @@ import { getAuth } from "@/lib/auth";
 export const ACTIVE_BRAND_COOKIE = "active_brand_slug";
 
 export async function getActiveBrandProfile() {
-  const store = await cookies();
-  const cookieSlug = store.get(ACTIVE_BRAND_COOKIE)?.value;
-  const auth = await getAuth();
+  try {
+    const store = await cookies();
+    const cookieSlug = store.get(ACTIVE_BRAND_COOKIE)?.value;
+    const auth = await getAuth();
 
-  // 1) Cookie override (jika ada), dan user berhak akses brand tsb
-  if (cookieSlug && cookieSlug.trim()) {
-    const brand = await prisma.brandProfile.findUnique({ where: { slug: cookieSlug } });
-    if (brand) {
-      if (await userCanAccessBrand(auth?.userId ?? null, brand.id)) {
-        return brand;
+    // 1) Cookie override (jika ada), dan user berhak akses brand tsb
+    if (cookieSlug && cookieSlug.trim()) {
+      const brand = await prisma.brandProfile.findUnique({ where: { slug: cookieSlug } });
+      if (brand) {
+        if (await userCanAccessBrand(auth?.userId ?? null, brand.id)) {
+          return brand;
+        }
       }
     }
-  }
 
-  // 2) Default brand dari user (jika di-set)
-  if (auth?.userId) {
-    const user = await prisma.user.findUnique({
-      where: { id: auth.userId },
-      select: { defaultBrandProfileId: true },
-    });
-    if (user?.defaultBrandProfileId) {
-      const brand = await prisma.brandProfile.findUnique({ where: { id: user.defaultBrandProfileId } });
-      if (brand) return brand;
+    // 2) Default brand dari user (jika di-set)
+    if (auth?.userId) {
+      const user = await prisma.user.findUnique({
+        where: { id: auth.userId },
+        select: { defaultBrandProfileId: true },
+      });
+      if (user?.defaultBrandProfileId) {
+        const brand = await prisma.brandProfile.findUnique({ where: { id: user.defaultBrandProfileId } });
+        if (brand) return brand;
+      }
     }
+
+    // 3) Fallback: brand yang isActive
+    const active = await prisma.brandProfile.findFirst({ where: { isActive: true }, orderBy: { updatedAt: "desc" } });
+    if (active) return active;
+
+    // 4) Jika tidak ada yang aktif, ambil brand pertama sebagai fallback
+    const first = await prisma.brandProfile.findFirst({ orderBy: { createdAt: "asc" } });
+    return first ?? null;
+  } catch (err) {
+    console.error("getActiveBrandProfile fallback: DB error", err);
+    return null;
   }
-
-  // 3) Fallback: brand yang isActive
-  const active = await prisma.brandProfile.findFirst({ where: { isActive: true }, orderBy: { updatedAt: "desc" } });
-  if (active) return active;
-
-  // 4) Jika tidak ada yang aktif, ambil brand pertama sebagai fallback
-  const first = await prisma.brandProfile.findFirst({ orderBy: { createdAt: "asc" } });
-  return first ?? null;
 }
 
 export async function userCanAccessBrand(userId: number | null, brandId: number) {

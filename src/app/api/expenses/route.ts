@@ -17,6 +17,12 @@ type CreateExpenseBody = {
 
 export async function GET(req: NextRequest) {
   try {
+    const auth = await getAuth();
+    const allowedBrandIds = await resolveAllowedBrandIds(
+      auth?.userId ?? null,
+      (auth?.roles as string[]) ?? [],
+      []
+    );
     const search = req.nextUrl.searchParams;
     const page = Math.max(1, parseInt(search.get("page") || "1"));
     const pageSize = Math.min(100, Math.max(1, parseInt(search.get("pageSize") || "20")));
@@ -36,7 +42,14 @@ export async function GET(req: NextRequest) {
     }
 
     const where: any = {};
-    if (brandId) where.brandProfileId = brandId;
+    if (brandId != null) {
+      if (allowedBrandIds.length && !allowedBrandIds.includes(brandId)) {
+        return NextResponse.json({ success: false, message: "Forbidden: brand scope" }, { status: 403 });
+      }
+      where.brandProfileId = brandId;
+    } else if (allowedBrandIds.length) {
+      where.brandProfileId = { in: allowedBrandIds };
+    }
     if (category) where.category = { contains: category, mode: "insensitive" };
     if (dateFrom || dateTo) {
       where.paidAt = {} as any;

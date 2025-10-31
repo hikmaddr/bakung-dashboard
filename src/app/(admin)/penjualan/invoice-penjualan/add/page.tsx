@@ -4,7 +4,7 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 import ReactDOM from "react-dom";
 import DatePicker from "@/components/DatePicker";
 import { useRouter } from "next/navigation";
-import { toast } from "react-hot-toast";
+import toast from "react-hot-toast";
 import FeatureGuard from "@/components/FeatureGuard";
 import { ChevronDown, PlusCircle, Trash2 } from "lucide-react";
 import { useProductUnits } from "@/hooks/useProductUnits";

@@ -6,11 +6,14 @@ import Button from "../ui/button/Button";
 import Input from "../form/input/InputField";
 import Label from "../form/Label";
 import Image from "next/image";
+import Avatar from "@/components/ui/Avatar";
 import AvatarCropperModal from "./AvatarCropperModal";
+import { useGlobal } from "@/context/AppContext";
 
 
 export default function UserMetaCard() {
   const { isOpen, openModal, closeModal } = useModal();
+  const { refresh } = useGlobal();
   interface UserProfile {
     id: string;
     email: string;
@@ -133,6 +136,8 @@ export default function UserMetaCard() {
       const json = await res.json();
       if (json.success) {
         setProfile(json.data);
+        // Refresh global context to update header/user dropdown immediately
+        try { await refresh(); } catch {}
         closeModal();
       } else {
         console.error("Failed to update profile:", json.message);
@@ -146,14 +151,12 @@ export default function UserMetaCard() {
       <div className="p-5 border border-gray-200 rounded-2xl dark:border-gray-800 lg:p-6">
         <div className="flex flex-col gap-5 xl:flex-row xl:items-center xl:justify-between">
           <div className="flex flex-col items-center w-full gap-6 xl:flex-row">
-            <div className="w-20 h-20 overflow-hidden border border-gray-200 rounded-full dark:border-gray-800">
-              <Image
-                width={80}
-                height={80}
-                src={profile?.avatar || "/images/user/owner.jpg"}
-                alt="user"
-              />
-            </div>
+            <Avatar
+              src={profile?.avatar || null}
+              alt={profile?.name || "user"}
+              name={(profile?.firstName && profile?.lastName) ? `${profile.firstName} ${profile.lastName}` : (profile?.name || null)}
+              size={80}
+            />
             <div className="order-3 xl:order-2">
               <h4 className="mb-2 text-lg font-semibold text-center text-gray-800 dark:text-white/90 xl:text-left">
                 {profile?.firstName && profile?.lastName
@@ -278,10 +281,12 @@ export default function UserMetaCard() {
             <div className="px-2 pb-4">
               <h5 className="mb-3 text-lg font-medium text-gray-800 dark:text-white/90">Profile Photo</h5>
               <div className="flex items-center gap-4">
-                <div className="w-16 h-16 overflow-hidden rounded-full border border-gray-200 dark:border-gray-700">
-                  {/* Preview dari formData.avatar bila ada, fallback ke profile.avatar */}
-                  <Image width={64} height={64} src={formData.avatar || profile?.avatar || "/images/user/owner.jpg"} alt="avatar" />
-                </div>
+                <Avatar
+                  src={formData.avatar || profile?.avatar || null}
+                  alt={(profile?.firstName && profile?.lastName) ? `${profile.firstName} ${profile.lastName}` : (profile?.name || "avatar")}
+                  name={(profile?.firstName && profile?.lastName) ? `${profile.firstName} ${profile.lastName}` : (profile?.name || profile?.email || null)}
+                  size={64}
+                />
                 <div className="flex items-center gap-2">
                   <input
                     ref={avatarInputRef}
@@ -294,7 +299,31 @@ export default function UserMetaCard() {
                     {avatarUploading ? "Uploading..." : "Ganti Foto"}
                   </Button>
                   {formData.avatar && (
-                    <Button size="sm" variant="outline" onClick={() => setFormData((prev) => ({ ...prev, avatar: undefined }))}>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={async () => {
+                        const ok = window.confirm("Hapus foto profil saat ini?");
+                        if (!ok) return;
+                        try {
+                          setFormData((prev) => ({ ...prev, avatar: undefined }));
+                          const res = await fetch("/api/profile", {
+                            method: "PUT",
+                            headers: { "Content-Type": "application/json" },
+                            body: JSON.stringify({ avatar: null }),
+                          });
+                          const json = await res.json();
+                          if (json.success) {
+                            setProfile(json.data);
+                            try { await refresh(); } catch {}
+                          } else {
+                            console.error("Gagal menghapus avatar:", json.message);
+                          }
+                        } catch (e) {
+                          console.error("Gagal menghapus avatar", e);
+                        }
+                      }}
+                    >
                       Hapus Foto
                     </Button>
                   )}

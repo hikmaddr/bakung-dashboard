@@ -2,8 +2,9 @@
 import Link from "next/link";
 import { Suspense, useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
-import { PlusCircle, Download, ChevronDown, Eye, Edit, Send, Trash2, Receipt } from "lucide-react";
-import { toast } from "react-hot-toast";
+import { PlusCircle, Download, ChevronDown, Eye, Edit, Send, Trash2, Receipt, RotateCcw } from "lucide-react";
+import toast from "react-hot-toast";
+import Skeleton from "@/components/ui/skeleton";
 import PageBreadcrumb from "@/components/common/PageBreadCrumb";
 import EmptyState from "@/components/EmptyState";
 import Pagination from "@/components/tables/Pagination";
@@ -20,6 +21,7 @@ type InvoiceRow = {
   customer?: { company?: string; pic?: string };
   downPayment?: number;
   quotation?: { id: number; quotationNumber?: string | null } | null;
+  deletedAt?: string | null;
 };
 
 const getStatusColor = (status: string) => {
@@ -63,7 +65,7 @@ function InvoicePageInner() {
   const [page, setPage] = useState(1);
   const [limit, setLimit] = useState(10);
   const [searchTerm, setSearchTerm] = useState("");
-  const [tab, setTab] = useState<"list" | "payment">((searchParams?.get('tab') as any) === 'payment' ? 'payment' : 'list');
+  const [tab, setTab] = useState<"list" | "payment" | "deleted">((searchParams?.get('tab') as any) === 'payment' ? 'payment' : ((searchParams?.get('tab') as any) === 'deleted' ? 'deleted' : 'list'));
   const rangeParam = (searchParams?.get("range") || "").trim();
   const statusParam = (searchParams?.get("status") || "").trim();
   const activeFiltersLabel = useMemo(() => {
@@ -82,6 +84,7 @@ function InvoicePageInner() {
       const qs = new URLSearchParams();
       if (range) qs.set("range", range);
       if (status) qs.set("status", status);
+      if (tab === 'deleted') qs.set("includeDeleted", "1");
       const url = qs.toString() ? `/api/invoices?${qs.toString()}` : "/api/invoices";
       const res = await fetch(url, { cache: "no-store" });
       const json = await res.json();
@@ -97,6 +100,7 @@ function InvoicePageInner() {
         customer: r.customer,
         downPayment: r.downPayment,
         quotation: r.quotation,
+        deletedAt: r.deletedAt,
       }));
       setRows(mapped);
       setPage(1);
@@ -107,7 +111,7 @@ function InvoicePageInner() {
     }
   };
 
-  useEffect(() => { fetchRows(); }, [searchParams]);
+  useEffect(() => { fetchRows(); }, [searchParams, tab]);
 
   const fmt = (n: number) => (Number(n) || 0).toLocaleString("id-ID", { style: "currency", currency: "IDR" });
   const fmtDate = (s: string) => (s ? new Date(s).toLocaleDateString("id-ID") : "-");
@@ -116,9 +120,10 @@ function InvoicePageInner() {
     if (!q) return rows;
     return rows.filter((r) => r.invoiceNumber.toLowerCase().includes(q) || (r.customer?.company || '').toLowerCase().includes(q) || (r.customer?.pic || '').toLowerCase().includes(q));
   }, [rows, searchTerm]);
-  const filteredList = useMemo(() => filteredAll.filter(r => Number(r.downPayment || 0) <= 0 && r.status !== 'DP'), [filteredAll]);
-  const filteredDP = useMemo(() => filteredAll.filter(r => Number(r.downPayment || 0) > 0 || r.status === 'DP'), [filteredAll]);
-  const activeData = tab === "list" ? filteredList : filteredDP;
+  const filteredList = useMemo(() => filteredAll.filter(r => !r.deletedAt && Number(r.downPayment || 0) <= 0 && r.status !== 'DP'), [filteredAll]);
+  const filteredDP = useMemo(() => filteredAll.filter(r => !r.deletedAt && (Number(r.downPayment || 0) > 0 || r.status === 'DP')), [filteredAll]);
+  const filteredDeleted = useMemo(() => filteredAll.filter(r => !!r.deletedAt), [filteredAll]);
+  const activeData = tab === "list" ? filteredList : (tab === 'payment' ? filteredDP : filteredDeleted);
   const totalPages = Math.max(1, Math.ceil(activeData.length / limit));
   const start = (page - 1) * limit;
   const paged = activeData.slice(start, start + limit);
@@ -133,13 +138,23 @@ function InvoicePageInner() {
   };
 
   const deleteRow = async (id: number) => {
-    if (!confirm('Hapus invoice ini?')) return;
+    if (!confirm('Hapus invoice ini? (tersimpan 30 hari)')) return;
     try {
       const res = await fetch(`/api/invoices/${id}`, { method: 'DELETE' });
       if (!res.ok) throw new Error();
       setRows((prev) => prev.filter((r) => r.id !== id));
       toast.success('Invoice dihapus');
     } catch { toast.error('Gagal menghapus invoice'); }
+  };
+
+  const restoreRow = async (id: number) => {
+    if (!confirm('Pulihkan invoice ini?')) return;
+    try {
+      const res = await fetch(`/api/invoices/${id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ deletedAt: null }) });
+      if (!res.ok) throw new Error();
+      setRows((prev) => prev.map((r) => (r.id === id ? { ...r, deletedAt: null } : r)));
+      toast.success('Invoice dipulihkan');
+    } catch { toast.error('Gagal memulihkan invoice'); }
   };
 
   const downloadInvoice = async (row: InvoiceRow) => {
@@ -208,6 +223,13 @@ function InvoicePageInner() {
               Invoice Pembayaran
               {tab==='payment' && <span className="absolute left-0 right-0 -bottom-[1px] h-0.5 bg-blue-600" />}
             </button>
+            <button
+              className={`relative -mb-px px-1 py-3 text-sm font-medium ${tab==='deleted' ? 'text-blue-600' : 'text-gray-600 hover:text-gray-800'}`}
+              onClick={() => { setTab('deleted'); setPage(1); }}
+            >
+              Terhapus
+              {tab==='deleted' && <span className="absolute left-0 right-0 -bottom-[1px] h-0.5 bg-blue-600" />}
+            </button>
           </div>
         </div>
         {/* Toolbar */}
@@ -235,7 +257,12 @@ function InvoicePageInner() {
               {showDropdown && (
                 <div className="absolute right-0 mt-2 w-52 bg-white shadow-lg rounded-md border z-10">
                   <ul className="py-2 text-sm text-gray-700">
-                    <li className="px-4 py-2 hover:bg-gray-100 cursor-pointer">Unduh Semua Dokumen</li>
+                    <li
+                      className="px-4 py-2 hover:bg-gray-100 cursor-pointer"
+                      onClick={() => toast("Fitur unduh semua dokumen belum tersedia")}
+                    >
+                      Unduh Semua Dokumen
+                    </li>
                     <li
                       className="px-4 py-2 hover:bg-gray-100 cursor-pointer"
                       onClick={() => {
@@ -286,13 +313,49 @@ function InvoicePageInner() {
         {/* Tabel */}
         <div className="overflow-x-auto overflow-y-visible rounded-lg border bg-white shadow-sm min-h-[50vh] flex-1">
           {loading ? (
-            <div className="p-6 text-center text-gray-500">Memuat data…</div>
+            <div className="p-6">
+              {/* Toolbar skeleton */}
+              <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                <Skeleton className="h-11 w-full sm:w-64 rounded-lg" />
+                <div className="flex items-center gap-3">
+                  <Skeleton className="h-9 w-40 rounded-full" />
+                  <Skeleton className="h-9 w-40 rounded-full" />
+                </div>
+              </div>
+              {/* Table skeleton */}
+              <table className="w-full text-sm">
+                <thead className="bg-gray-50">
+                  <tr>
+                    <th className="px-4 py-3 text-left">Customer</th>
+                    <th className="px-4 py-3 text-left">No. Invoice</th>
+                    <th className="px-4 py-3 text-left">Issued</th>
+                    <th className="px-4 py-3 text-left">Status Dokumen</th>
+                    <th className="px-4 py-3 text-left">Status Invoice</th>
+                    <th className="px-4 py-3 text-right">Jumlah</th>
+                    <th className="px-4 py-3 text-right">Tindakan</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {Array.from({ length: 8 }).map((_, i) => (
+                    <tr key={i} className="border-t">
+                      <td className="px-4 py-3"><Skeleton className="h-4 w-48" /></td>
+                      <td className="px-4 py-3"><Skeleton className="h-4 w-32" /></td>
+                      <td className="px-4 py-3"><Skeleton className="h-4 w-28" /></td>
+                      <td className="px-4 py-3"><Skeleton className="h-5 w-24 rounded-full" /></td>
+                      <td className="px-4 py-3"><Skeleton className="h-5 w-24 rounded-full" /></td>
+                      <td className="px-4 py-3 text-right"><Skeleton className="ml-auto h-4 w-24" /></td>
+                      <td className="px-4 py-3 text-right"><Skeleton className="ml-auto h-4 w-24" /></td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           ) : error ? (
             <div className="p-6 text-center text-red-600">{error}</div>
           ) : activeData.length === 0 ? (
             <EmptyState
-              title={tab === 'list' ? 'Belum ada invoice' : 'Belum ada invoice dengan DP'}
-              description={tab === 'list' ? 'Buat invoice penjualan untuk menagihkan pelanggan Anda.' : 'Tambahkan DP melalui halaman detail invoice agar tampil di sini.'}
+              title={tab === 'list' ? 'Belum ada invoice' : (tab === 'payment' ? 'Belum ada invoice dengan DP' : 'Tidak ada invoice terhapus')}
+              description={tab === 'list' ? 'Buat invoice penjualan untuk menagihkan pelanggan Anda.' : (tab === 'payment' ? 'Tambahkan DP melalui halaman detail invoice agar tampil di sini.' : 'Tidak ada invoice yang dihapus dalam periode ini.')}
               actions={
                 <Link href="/penjualan/invoice-penjualan/add" className="flex items-center gap-2 rounded-full bg-blue-600 px-4 py-2 text-white shadow-sm transition hover:bg-blue-700">
                   <PlusCircle className="h-4 w-4" />
@@ -303,7 +366,7 @@ function InvoicePageInner() {
           ) : (
             <table className="w-full text-sm">
               <thead className="bg-gray-50 text-gray-700">
-                {tab === 'list' ? (
+                {tab === 'list' && (
                   <tr>
                     <th className="px-4 py-3 text-left">Customer</th>
                     <th className="px-4 py-3 text-left">No. Invoice</th>
@@ -314,7 +377,8 @@ function InvoicePageInner() {
                     <th className="px-4 py-3 text-right">Jumlah</th>
                     <th className="px-4 py-3 text-right">Tindakan</th>
                   </tr>
-                ) : (
+                )}
+                {tab === 'payment' && (
                   <tr>
                     <th className="px-4 py-3 text-left">Customer</th>
                     <th className="px-4 py-3 text-left">No. Invoice</th>
@@ -323,6 +387,18 @@ function InvoicePageInner() {
                     <th className="px-4 py-3 text-right">Sisa Tagihan</th>
                     <th className="px-4 py-3 text-left">Tgl Invoice</th>
                     <th className="px-4 py-3 text-left">Jatuh Tempo</th>
+                    <th className="px-4 py-3 text-right">Tindakan</th>
+                  </tr>
+                )}
+                {tab === 'deleted' && (
+                  <tr>
+                    <th className="px-4 py-3 text-left">Customer</th>
+                    <th className="px-4 py-3 text-left">No. Invoice</th>
+                    <th className="px-4 py-3 text-left">Tgl Dihapus</th>
+                    <th className="px-4 py-3 text-left">Issued</th>
+                    <th className="px-4 py-3 text-left">Status Dokumen</th>
+                    <th className="px-4 py-3 text-left">Status Invoice</th>
+                    <th className="px-4 py-3 text-right">Jumlah</th>
                     <th className="px-4 py-3 text-right">Tindakan</th>
                   </tr>
                 )}
@@ -335,7 +411,7 @@ function InvoicePageInner() {
                   const invStatus = r.status === 'Paid' ? 'Paid' : (paid > 0 ? 'DP' : 'Unpaid');
                   return (
                     <tr key={r.id} className="border-t hover:bg-gray-50 transition">
-                      {tab === 'list' ? (
+                      {tab === 'list' && (
                         <>
                           <td className="px-4 py-3">{r.customer?.pic ? `${r.customer.pic} - ` : ''}{r.customer?.company || '-'}</td>
                           <td className="px-4 py-3">{r.invoiceNumber}</td>
@@ -345,7 +421,8 @@ function InvoicePageInner() {
                           <td className="px-4 py-3"><span className={`px-3 py-1 rounded-full text-xs font-medium ${getStatusColor(invStatus)}`}>{invStatus}</span></td>
                           <td className="px-4 py-3 text-right">{fmt(r.total)}</td>
                         </>
-                      ) : (
+                      )}
+                      {tab === 'payment' && (
                         <>
                           <td className="px-4 py-3">{r.customer?.pic ? `${r.customer.pic} - ` : ''}{r.customer?.company || '-'}</td>
                           <td className="px-4 py-3">{r.invoiceNumber}</td>
@@ -356,9 +433,20 @@ function InvoicePageInner() {
                           <td className="px-4 py-3">{fmtDate(r.dueDate)}</td>
                         </>
                       )}
+                      {tab === 'deleted' && (
+                        <>
+                          <td className="px-4 py-3">{r.customer?.pic ? `${r.customer.pic} - ` : ''}{r.customer?.company || '-'}</td>
+                          <td className="px-4 py-3">{r.invoiceNumber}</td>
+                          <td className="px-4 py-3">{fmtDate(r.deletedAt || '')}</td>
+                          <td className="px-4 py-3">{fmtDate(r.issueDate)}</td>
+                          <td className="px-4 py-3"><span className={`px-3 py-1 rounded-full text-xs font-medium ${getDocumentStatusColor(docStatus)}`}>{docStatus}</span></td>
+                          <td className="px-4 py-3"><span className={`px-3 py-1 rounded-full text-xs font-medium ${getStatusColor(invStatus)}`}>{invStatus}</span></td>
+                          <td className="px-4 py-3 text-right">{fmt(r.total)}</td>
+                        </>
+                      )}
                       <td className="px-4 py-3 text-right">
                         <div className="inline-flex items-center justify-end gap-2">
-                          {tab === 'payment' ? (
+                          {tab === 'payment' && (
                             invStatus === 'Paid' ? (
                               <>
                                 <button onClick={() => openPdf(r)} title="Lihat PDF" className="p-2 rounded-full hover:bg-gray-100">
@@ -373,7 +461,13 @@ function InvoicePageInner() {
                                 <Eye className="h-4 w-4 text-gray-600" />
                               </button>
                             )
-                          ) : (
+                          )}
+                          {tab === 'deleted' && (
+                            <button onClick={() => restoreRow(r.id)} title="Pulihkan" className="p-2 rounded-full hover:bg-gray-100">
+                              <RotateCcw className="h-4 w-4 text-blue-600" />
+                            </button>
+                          )}
+                          {tab === 'list' && (
                             <Link
                               href={`/penjualan/invoice-penjualan/${r.id}`}
                               title="Lihat"
@@ -394,7 +488,7 @@ function InvoicePageInner() {
                           <button onClick={() => downloadInvoice(r)} title="Download PDF" className="p-2 rounded-full hover:bg-gray-100">
                             <Download className="h-4 w-4 text-emerald-600" />
                           </button>
-                          {!(tab==='payment' && invStatus==='Paid') && (
+                          {tab !== 'deleted' && !(tab==='payment' && invStatus==='Paid') && (
                             <button onClick={() => deleteRow(r.id)} title="Hapus" className="p-2 rounded-full hover:bg-gray-100">
                               <Trash2 className="h-4 w-4 text-red-600" />
                             </button>

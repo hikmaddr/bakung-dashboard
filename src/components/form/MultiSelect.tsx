@@ -98,7 +98,7 @@ const MultiSelect: React.FC<MultiSelectProps> = ({
                 ) : (
                   <input
                     placeholder="Select option"
-                    className="w-full h-full p-1 pr-2 text-sm bg-transparent border-0 outline-hidden appearance-none placeholder:text-gray-800 focus:border-0 focus:outline-hidden focus:ring-0 dark:placeholder:text-white/90"
+                    className={`w-full h-full p-1 pr-2 text-sm border-0 outline-hidden appearance-none placeholder:text-gray-800 focus:border-0 focus:outline-hidden focus:ring-0 dark:placeholder:text-white/90 ${isOpen ? 'opacity-0' : ''}`}
                     readOnly
                     value="Select option"
                   />
@@ -133,8 +133,7 @@ const MultiSelect: React.FC<MultiSelectProps> = ({
 
           {isOpen && (
             <div
-              className={`absolute left-0 top-[calc(100%+4px)] z-[100] w-full overflow-y-auto rounded-lg shadow-lg border border-gray-200 max-h-60 bg-white bg-opacity-100 opacity-100 ${dropdownDarkBackground ? "dark:bg-gray-900" : "dark:bg-white"}`}
-              style={{ backgroundColor: "#ffffff" }}
+              className={`absolute left-0 top-[calc(100%+4px)] z-[100] w-full overflow-y-auto rounded-lg shadow-theme-xs border border-gray-200 max-h-60 bg-white ${dropdownDarkBackground ? "dark:bg-gray-900" : "dark:bg-white"}`}
               onClick={(e) => e.stopPropagation()}
             >
               <ul className="flex flex-col bg-white p-0 m-0 list-none">
@@ -142,14 +141,14 @@ const MultiSelect: React.FC<MultiSelectProps> = ({
                   <li key={index} className="bg-white">
                     <button
                       type="button"
-                      className={`w-full text-left px-3 py-2 bg-white ${
+                      className={`w-full text-left px-3 py-2 bg-white hover:bg-gray-50 ${
                         selectedOptions.includes(option.value)
-                          ? "bg-primary/10"
-                          : "hover:bg-gray-50"
+                          ? "!bg-gray-100 dark:!bg-gray-800"
+                          : ""
                       }`}
                       onClick={() => handleSelect(option.value)}
                     >
-                      <span className="leading-6 text-gray-900 dark:text-gray-900">
+                      <span className="leading-6 text-gray-900 dark:text-gray-100">
                         {option.text}
                       </span>
                     </button>

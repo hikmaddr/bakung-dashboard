@@ -25,6 +25,7 @@ model Customer {
   phone       String
   createdAt   DateTime     @default(now())
   updatedAt   DateTime     @updatedAt
+  deletedAt   DateTime?
   email       String?
   brandProfileId Int?
   invoices    Invoice[]
@@ -47,6 +48,7 @@ model Quotation {
   brandProfileId  Int?
   createdAt       DateTime        @default(now())
   updatedAt       DateTime        @updatedAt
+  deletedAt       DateTime?
   projectFileUrl  String?
   status          String
   totalAmount     Float           @default(0)
@@ -93,6 +95,7 @@ model SalesOrder {
   paymentStatus String           @default("UNPAID")
   createdAt     DateTime         @default(now())
   updatedAt     DateTime         @updatedAt
+  deletedAt     DateTime?
   extraDiscount Float            @default(0)
   lineDiscount  Float            @default(0)
   subtotal      Float            @default(0)
@@ -155,6 +158,7 @@ model Invoice {
   paymentStatus      String        @default("UNPAID")
   createdAt          DateTime      @default(now())
   updatedAt          DateTime      @updatedAt
+  deletedAt          DateTime?
   customer           Customer      @relation(fields: [customerId], references: [id])
   quotation          Quotation?    @relation(fields: [quotationId], references: [id])
   brand              BrandProfile? @relation(fields: [brandProfileId], references: [id])
@@ -220,10 +224,12 @@ model Product {
   imageUrl    String?
   createdAt   DateTime         @default(now())
   updatedAt   DateTime         @updatedAt
+  deletedAt   DateTime?
   category    ProductCategory? @relation(fields: [categoryId], references: [id])
   brand       BrandProfile?    @relation(fields: [brandProfileId], references: [id])
   stockMutations StockMutation[]
   purchaseItems  PurchaseDirectItem[]
+  purchaseInvoiceItems PurchaseInvoiceItem[]
 
   @@index([categoryId])
   @@index([brandProfileId])
@@ -257,6 +263,7 @@ model BrandProfile {
   isActive         Boolean  @default(false)
   createdAt        DateTime @default(now())
   updatedAt        DateTime @updatedAt
+  deletedAt        DateTime?
 
   // Back-relations
   customers       Customer[]
@@ -325,11 +332,13 @@ model PurchaseDirect {
   createdByUserId Int?
   createdAt       DateTime  @default(now())
   updatedAt       DateTime  @updatedAt
+  deletedAt       DateTime?
 
   items           PurchaseDirectItem[]
   brand           BrandProfile? @relation(fields: [brandProfileId], references: [id])
   salesOrder      SalesOrder?   @relation(fields: [salesOrderId], references: [id])
   createdBy       User?         @relation(fields: [createdByUserId], references: [id])
+  purchaseInvoices PurchaseInvoice[]
 
   @@index([brandProfileId])
   @@index([salesOrderId])
@@ -561,16 +570,16 @@ model PaymentOut {
 
   // References (one of these can be set)
   purchaseInvoiceId  Int?
-  expenseId          Int?
+  // Expense relation is defined on Expense via paymentOutId
 
   brand              BrandProfile?    @relation(fields: [brandProfileId], references: [id])
   createdBy          User?            @relation(fields: [createdById], references: [id])
   purchaseInvoice    PurchaseInvoice? @relation(fields: [purchaseInvoiceId], references: [id])
-  expense            Expense?         @relation(fields: [expenseId], references: [id])
+  // Back relation to Expense (owned by Expense.paymentOutId)
+  expense            Expense?
 
   @@index([brandProfileId])
   @@index([purchaseInvoiceId])
-  @@index([expenseId])
   @@index([createdById])
   @@map("paymentout")
 }
@@ -634,11 +643,15 @@ model User {
   roles        UserRole[]
   brandScopes  UserBrandScope[]
   activityLogs ActivityLog[]
+  loginLogs    LoginLog[]
   notifications Notification[]
   payments     Payment[]
   // Back-relations for createdBy on purchases and stock mutations
   createdPurchases PurchaseDirect[]
   createdStockMutations StockMutation[]
+  // Back-relations for createdBy on payments
+  createdPaymentsIn PaymentIn[]
+  createdPaymentsOut PaymentOut[]
 
   @@index([defaultBrandProfileId])
   @@map("user")
@@ -719,16 +732,35 @@ model LoginLog {
 }
 
 model Notification {
-  id        Int      @id @default(autoincrement())
-  userId    Int
-  title     String
-  message   String
-  type      String   @default("info")
-  read      Boolean  @default(false)
-  createdAt DateTime @default(now())
+  id             Int       @id @default(autoincrement())
+  title          String
+  message        String
+  type           NotificationType
+  userId         Int?
+  brandProfileId Int?
+  roleTarget     NotificationRoleTarget?
+  isRead         Boolean   @default(false)
+  createdAt      DateTime  @default(now())
+  readAt         DateTime?
 
-  user User @relation(fields: [userId], references: [id])
+  user           User?         @relation(fields: [userId], references: [id])
+  brandProfile   BrandProfile? @relation(fields: [brandProfileId], references: [id])
 
   @@index([userId])
+  @@index([brandProfileId])
   @@map("notification")
+}
+
+enum NotificationType {
+  info
+  success
+  warning
+  error
+}
+
+enum NotificationRoleTarget {
+  OWNER
+  ADMIN
+  STAFF
+  ALL
 }

@@ -10,6 +10,9 @@ interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
   variant?: Variant;
   size?: Size;
   className?: string;
+  loading?: boolean;
+  loadingText?: string;
+  spinnerPosition?: "start" | "end";
 }
 
 export const Button = ({
@@ -17,6 +20,9 @@ export const Button = ({
   variant = "primary",
   size = "md",
   className = "",
+  loading = false,
+  loadingText,
+  spinnerPosition = "start",
   ...props
 }: ButtonProps) => {
   const baseClasses = "inline-flex items-center justify-center gap-2 font-medium rounded-lg transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 focus-visible:ring-offset-2 disabled:opacity-50 disabled:pointer-events-none";
@@ -42,12 +48,33 @@ export const Button = ({
   const resolvedVariant = variant === "default" ? "primary" : variant;
   const resolvedSize = size === "default" ? "md" : size;
 
+  const spinnerSize: Record<Size, string> = {
+    sm: "h-4 w-4 border-2",
+    md: "h-4 w-4 border-2",
+    lg: "h-5 w-5 border-2",
+    default: "h-4 w-4 border-2",
+  };
+
+  const spinner = (
+    <span
+      className={`inline-flex items-center ${loadingText ? "" : ""}`}
+      aria-hidden="true"
+    >
+      <span
+        className={`animate-spin rounded-full border-current border-t-transparent ${spinnerSize[resolvedSize]}`}
+      />
+    </span>
+  );
+
   return (
     <button
       className={`${baseClasses} ${variantClasses[resolvedVariant]} ${sizeClasses[resolvedSize]} ${className}`}
+      disabled={props.disabled || loading}
       {...props}
     >
-      {children}
+      {loading && spinnerPosition === "start" ? spinner : null}
+      {loading && loadingText ? loadingText : children}
+      {loading && spinnerPosition === "end" ? spinner : null}
     </button>
   );
 };

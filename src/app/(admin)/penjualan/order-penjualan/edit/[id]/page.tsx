@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import PageBreadcrumb from "@/components/common/PageBreadCrumb";
-import { toast } from "react-hot-toast";
+import toast from "react-hot-toast";
 import FeatureGuard from "@/components/FeatureGuard";
 import {
   SalesOrderForm,

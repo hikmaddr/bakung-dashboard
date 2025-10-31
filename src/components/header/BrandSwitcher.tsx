@@ -1,10 +1,9 @@
 "use client";
 
 import React, { useEffect, useMemo, useState } from "react";
-import { api } from "@/utils/api";
 import { useGlobal } from "@/context/AppContext";
 
-type BrandOption = { brandProfileId: number; brandSlug: string; brandName: string };
+type BrandOption = { id: number; slug: string; name: string };
 
 const BrandSwitcher: React.FC = () => {
   const { user, activeBrandId, setActiveBrandId, loading, refresh } = useGlobal();
@@ -17,34 +16,81 @@ const BrandSwitcher: React.FC = () => {
 
   useEffect(() => {
     const load = async () => {
-      if (!user?.id) return;
       try {
-        const res = await api.get<{ success: boolean; data: any[] }>(`/api/user-brand-scopes?userId=${user.id}`);
-        if (res?.success && Array.isArray(res.data)) {
-          const rows = res.data.map((d: any) => ({
-            brandProfileId: Number(d.brandProfileId),
-            brandSlug: String(d.brandSlug),
-            brandName: String(d.brandName),
-          }));
-          setOptions(rows);
-        }
-      } catch {}
+        const res = await fetch("/api/brand-profiles", { cache: "no-store" });
+        if (!res.ok) return;
+        const data = await res.json();
+        const list: any[] = Array.isArray(data)
+          ? data
+          : Array.isArray(data?.profiles)
+          ? data.profiles
+          : Array.isArray(data?.data)
+          ? data.data
+          : data
+          ? [data]
+          : [];
+        const rows: BrandOption[] = list.map((b: any) => ({
+          id: Number(b.id),
+          slug: String(b.slug || b.slug?.toString?.() || ""),
+          name: String(b.name || "Unnamed"),
+        }));
+        setOptions(rows);
+      } catch {
+        // ignore load errors
+      }
     };
     load();
-  }, [user?.id]);
+  }, []);
+
+  // Ensure we have current active brand id if not set yet
+  useEffect(() => {
+    const loadActive = async () => {
+      if (activeBrandId != null) return;
+      try {
+        const res = await fetch("/api/brand-profiles/active", { cache: "no-store" });
+        if (!res.ok) return;
+        const brand = await res.json();
+        if (brand?.id) setActiveBrandId(Number(brand.id));
+      } catch {
+        // ignore
+      }
+    };
+    loadActive();
+  }, [activeBrandId, setActiveBrandId]);
+
+  const applyBrandCssVars = async () => {
+    try {
+      const res = await fetch("/api/brand-profiles/active", { cache: "no-store" });
+      if (!res.ok) return;
+      const brand = await res.json();
+      const primary = brand?.primaryColor || "#0EA5E9";
+      const secondary = brand?.secondaryColor || "#ECFEFF";
+      if (typeof window !== "undefined") {
+        const root = document.documentElement;
+        root.style.setProperty("--brand-primary", primary);
+        root.style.setProperty("--brand-secondary", secondary);
+      }
+    } catch {
+      // ignore css var set failure
+    }
+  };
 
   const onChange = async (e: React.ChangeEvent<HTMLSelectElement>) => {
     const newId = Number(e.target.value);
-    const opt = options.find((o) => o.brandProfileId === newId);
-    if (!opt) return;
+    const opt = options.find((o) => o.id === newId);
+    if (!opt || !opt.slug) return;
     setBusy(true);
     try {
-      const res = await api.post<{ success: boolean; brandProfileId?: number }>("/api/auth/set-active-brand", {
-        brandId: opt.brandProfileId,
+      const res = await fetch("/api/brand-profiles/activate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ slug: opt.slug }),
       });
-      if (res?.success && typeof res.brandProfileId === "number") {
-        setActiveBrandId(res.brandProfileId);
+      if (res.ok) {
+        setActiveBrandId(newId);
         await refresh();
+        await applyBrandCssVars();
+        window.dispatchEvent(new CustomEvent("brand-modules:updated"));
       }
     } finally {
       setBusy(false);
@@ -65,8 +111,8 @@ const BrandSwitcher: React.FC = () => {
         disabled={busy}
       >
         {options.map((o) => (
-          <option key={o.brandProfileId} value={o.brandProfileId}>
-            {o.brandName}
+          <option key={o.id} value={o.id}>
+            {o.name}
           </option>
         ))}
       </select>
@@ -75,4 +121,3 @@ const BrandSwitcher: React.FC = () => {
 };
 
 export default BrandSwitcher;
-

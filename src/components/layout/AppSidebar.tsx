@@ -1,5 +1,5 @@
 "use client";
-import React, { useEffect, useState, useCallback, useMemo } from "react";
+import React, { useEffect, useState, useCallback, useMemo, useRef } from "react";
 import Link from "next/link";
 import Image from "next/image";
 import { usePathname } from "next/navigation";
@@ -166,19 +166,24 @@ const staticNavItems: NavItem[] = [
     icon: <PlugInIcon />,
     name: "System & User",
     subItems: [
-      { name: "User Management", path: "/system-user/user-management" },
       { name: "Role & Access", path: "/system-user/role-access" },
-      { name: "Activity Log / Notifications", path: "/system-user/activity-log" },
+      { name: "User Management", path: "/system-user/user-management" },
+      { name: "Activity Log", path: "/system-user/activity-log" },
+      { name: "Notifikasi User", path: "/system-user/notifications/user" },
+      { name: "Notifikasi Sistem", path: "/system-user/notifications/system" },
     ],
   },
 ];
 
 const AppSidebar: React.FC = () => {
-  const { isExpanded, isMobileOpen, isHovered, setIsHovered } = useSidebar();
+  const { isExpanded, isMobileOpen, isHovered, setIsHovered, openMap, toggleGroup, setGroupOpen, setOnlyOpen } = useSidebar();
   const pathname = usePathname();
+  const autoOpenedForPathRef = useRef<string | null>(null);
+  const touchedOnPathRef = useRef<Record<string, Set<string>>>({});
 
   const [modulesEnabled, setModulesEnabled] = useState<Record<string, boolean>>(defaultModulesAll);
   const [userRoles, setUserRoles] = useState<string[]>([]);
+  const [invoiceOpenCount, setInvoiceOpenCount] = useState<number | null>(null);
   const [brandInfo, setBrandInfo] = useState<{
     name: string;
     logo: string;
@@ -280,6 +285,20 @@ const AppSidebar: React.FC = () => {
       }
     })();
 
+    // Load count of open (unpaid) sales invoices for badge
+    (async () => {
+      try {
+        const r = await fetch("/api/reporting/piutang", { cache: "no-store" });
+        if (r.ok) {
+          const j = await r.json();
+          const c = j?.metrics?.invoiceOpen;
+          if (typeof c === "number") setInvoiceOpenCount(c);
+        }
+      } catch (e) {
+        // ignore
+      }
+    })();
+
     const handleModulesUpdated = () => {
       fetchActiveBrandModules();
     };
@@ -290,19 +309,37 @@ const AppSidebar: React.FC = () => {
     };
   }, [fetchActiveBrandModules]);
 
-  const [openSubmenu, setOpenSubmenu] = useState<{
-    index: number;
-  } | null>(null);
+  // Dropdown open state disediakan oleh SidebarContext melalui openMap
 
-  const isActive = useCallback((path: string) => path === pathname, [pathname]);
+  const isActive = useCallback(
+    (path: string) => {
+      if (!path) return false;
+      if (pathname === path) return true;
+      const normalized = path.endsWith("/") ? path.slice(0, -1) : path;
+      return pathname.startsWith(normalized + "/");
+    },
+    [pathname]
+  );
 
 
   
 
-  const handleSubmenuToggle = (index: number) => {
-    setOpenSubmenu((prev) =>
-      prev && prev.index === index ? null : { index }
-    );
+  const handleSubmenuToggle = (key: string) => {
+    // Tandai bahwa user sudah melakukan toggle pada group di rute saat ini
+    if (!touchedOnPathRef.current[pathname]) {
+      touchedOnPathRef.current[pathname] = new Set<string>();
+    }
+    touchedOnPathRef.current[pathname].add(key);
+
+    // Accordion behavior: buka satu, tutup yang lain
+    if (!openMap[key]) {
+      setOnlyOpen(key);
+      console.log("[AppSidebar] open-only", key);
+    } else {
+      // jika sudah terbuka, tutup
+      setGroupOpen(key, false);
+      console.log("[AppSidebar] close", key);
+    }
   };
 
   const gatedByModules = useMemo(() => (
@@ -344,7 +381,7 @@ const AppSidebar: React.FC = () => {
         }
         // System & User: only expose Activity Log for non-owner
         if (nav.name === "System & User" && Array.isArray(nav.subItems)) {
-          const filtered = nav.subItems.filter((si) => si.name === "Activity Log / Notifications");
+          const filtered = nav.subItems.filter((si) => si.name.startsWith("Activity Log"));
           // If nothing remains, drop the group by returning a sentinel
           return { ...nav, subItems: filtered.length ? filtered : [] } as typeof nav;
         }
@@ -367,28 +404,35 @@ const AppSidebar: React.FC = () => {
 
   // Auto-open submenu when navigating to a page within it, but don't auto-close manual toggles
   useEffect(() => {
-    let matchedIndex: number | null = null;
-    for (let index = 0; index < navItems.length; index++) {
-      const nav = navItems[index];
+    // Auto-open sekali per perubahan pathname; jangan override kalau user menutup manual
+    let matchedKey: string | null = null;
+    for (const nav of navItems) {
       if (!nav.subItems) continue;
-      for (const subItem of nav.subItems) {
-        if (isActive(subItem.path)) {
-          matchedIndex = index;
-          break;
+      if (nav.subItems.some((si) => isActive(si.path))) {
+        matchedKey = nav.name;
+        break;
+      }
+    }
+    if (matchedKey) {
+      const touched = touchedOnPathRef.current[pathname]?.has(matchedKey) ?? false;
+      const alreadyAutoOpened = autoOpenedForPathRef.current === pathname;
+      if (!touched && !alreadyAutoOpened) {
+        setOnlyOpen(matchedKey);
+        autoOpenedForPathRef.current = pathname;
+        console.log("[AppSidebar] route:", pathname, "auto-open:", matchedKey);
+      } else {
+        if (touched) {
+          console.log("[AppSidebar] route:", pathname, "auto-open suppressed due to manual toggle:", matchedKey);
+        } else {
+          console.log("[AppSidebar] route:", pathname, "auto-open skipped (already opened):", matchedKey);
         }
       }
-      if (matchedIndex !== null) break;
     }
-
-    // Only auto-open when there's a pathname match, don't auto-close manual toggles
-    if (matchedIndex !== null && openSubmenu?.index !== matchedIndex) {
-      setOpenSubmenu({ index: matchedIndex });
-    }
-  }, [pathname, isActive, navItems, openSubmenu]);
+  }, [pathname, isActive, navItems, setGroupOpen]);
 
   return (
     <aside
-      className={`fixed mt-16 flex flex-col lg:mt-0 top-0 px-5 left-0 bg-white dark:bg-gray-900 dark:border-gray-800 text-gray-900 h-screen transition-all duration-300 ease-in-out z-[60] border-r border-gray-200 pointer-events-auto
+      className={`fixed mt-16 flex flex-col lg:mt-0 top-0 px-5 left-0 bg-white dark:bg-gray-900 dark:border-gray-800 text-gray-900 h-screen transition-all duration-300 ease-in-out z-[10000] border-r border-gray-200 pointer-events-auto
         ${
           isExpanded || isMobileOpen
             ? "w-[290px]"
@@ -470,10 +514,10 @@ const AppSidebar: React.FC = () => {
                   <li key={nav.name}>
                     {nav.subItems ? (
                       <button
-                        onClick={() => handleSubmenuToggle(index)}
-                        aria-expanded={openSubmenu?.index === index}
+                        onClick={() => handleSubmenuToggle(nav.name)}
+                        aria-expanded={Boolean(openMap[nav.name])}
                         className={`menu-item group ${
-                          openSubmenu?.index === index
+                          openMap[nav.name]
                             ? "menu-item-active"
                             : "menu-item-inactive"
                         } cursor-pointer ${
@@ -484,7 +528,7 @@ const AppSidebar: React.FC = () => {
                       >
                         <span
                           className={`${
-                            openSubmenu?.index === index
+                            openMap[nav.name]
                               ? "menu-item-icon-active"
                               : "menu-item-icon-inactive"
                           }`}
@@ -497,7 +541,7 @@ const AppSidebar: React.FC = () => {
                         {(isExpanded || isHovered || isMobileOpen) && (
                           <ChevronDownIcon
                             className={`ml-auto w-5 h-5 transition-transform duration-200  ${
-                              openSubmenu?.index === index
+                              openMap[nav.name]
                                 ? "rotate-180 text-brand-500"
                                 : ""
                             }`}
@@ -534,24 +578,32 @@ const AppSidebar: React.FC = () => {
                     {nav.subItems && (isExpanded || isHovered || isMobileOpen) && (
                       <div
                         className={`grid transition-[grid-template-rows] duration-300 ${
-                          openSubmenu?.index === index ? "grid-rows-[1fr]" : "grid-rows-[0fr]"
+                          openMap[nav.name] ? "grid-rows-[1fr]" : "grid-rows-[0fr]"
                         }`}
-                        aria-hidden={openSubmenu?.index === index ? "false" : "true"}
+                        aria-hidden={openMap[nav.name] ? "false" : "true"}
                       >
                         <div className="overflow-hidden">
                           <ul className="mt-2 space-y-1 ml-9">
                             {nav.subItems.map((subItem) => (
                               <li key={subItem.name}>
-                                <Link
-                                  href={subItem.path}
-                                  className={`menu-dropdown-item ${
-                                    isActive(subItem.path)
-                                      ? "menu-dropdown-item-active"
-                                      : "menu-dropdown-item-inactive"
-                                  }`}
-                                >
-                                  {subItem.name}
-                                </Link>
+                                {(() => {
+                                  const active = isActive(subItem.path);
+                                  const baseCls = `menu-dropdown-item ${
+                                    active ? "menu-dropdown-item-active" : "menu-dropdown-item-inactive"
+                                  }`;
+                                  const showInvoiceBadge =
+                                    subItem.name === "Invoice Penjualan" && typeof invoiceOpenCount === "number" && invoiceOpenCount > 0;
+                                  return (
+                                    <Link href={subItem.path} className={baseCls}>
+                                      <span className="flex-1">{subItem.name}</span>
+                                      {showInvoiceBadge && (
+                                        <span className={`menu-dropdown-badge ${
+                                          active ? "menu-dropdown-badge-active" : "menu-dropdown-badge-inactive"
+                                        }`}>{invoiceOpenCount}</span>
+                                      )}
+                                    </Link>
+                                  );
+                                })()}
                               </li>
                             ))}
                           </ul>
@@ -563,8 +615,9 @@ const AppSidebar: React.FC = () => {
               </ul>
             </div>
           </div>
-        </nav>
+    </nav>
       </div>
+
     </aside>
   );
 };

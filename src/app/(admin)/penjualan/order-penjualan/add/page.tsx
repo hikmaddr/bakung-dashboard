@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import PageBreadcrumb from "@/components/common/PageBreadCrumb";
-import { toast } from "react-hot-toast";
+import toast from "react-hot-toast";
 import {
   SalesOrderForm,
   type SalesOrderSavePayload,

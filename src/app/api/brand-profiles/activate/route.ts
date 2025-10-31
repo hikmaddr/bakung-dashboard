@@ -17,13 +17,15 @@ export async function POST(req: NextRequest) {
     const auth = await getAuth();
     if (!auth?.userId) return NextResponse.json({ success: false, message: "Unauthorized" }, { status: 401 });
 
-    // Admin sistem bebas akses; selain itu cek scope user-brand
+    // Admin sistem dan Owner bebas akses; selain itu cek scope user-brand
     const user = await prisma.user.findUnique({
       where: { id: auth.userId },
       include: { roles: { include: { role: true } } },
     });
-    const isSystemAdmin = (user?.roles || []).some((ur) => ur.role.name.toLowerCase() === "admin");
-    if (!isSystemAdmin) {
+    const roleNames = (user?.roles || []).map((ur) => ur.role.name.toLowerCase());
+    const isSystemAdmin = roleNames.includes("admin");
+    const isOwner = roleNames.includes("owner");
+    if (!isSystemAdmin && !isOwner) {
       const scope = await prisma.userBrandScope.findUnique({
         where: { userId_brandProfileId: { userId: auth.userId, brandProfileId: brand.id } },
       });
@@ -48,4 +50,3 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ success: false, message: err?.message || "Gagal mengaktifkan brand" }, { status: 500 });
   }
 }
-

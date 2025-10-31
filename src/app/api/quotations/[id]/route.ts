@@ -1,9 +1,13 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { resolveAllowedBrandIds } from "@/lib/brand";
+import { getAuth } from "@/lib/auth";
+import { logActivity } from "@/lib/activity";
 import { Prisma } from "@prisma/client"; // untuk tangani error
 import { writeFile } from "fs/promises";
 import path from "path";
 import crypto from "crypto";
+import { sendNotificationToRole } from "@/lib/notification";
 
 // Helper upload file
 async function saveUpload(file: File, baseName: string) {
@@ -24,6 +28,12 @@ export async function GET(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const auth = await getAuth();
+    const allowedBrandIds = await resolveAllowedBrandIds(
+      auth?.userId ?? null,
+      (auth?.roles as string[]) ?? [],
+      []
+    );
     const { id: idParam } = await params;
     const id = Number(idParam);
     if (Number.isNaN(id)) {
@@ -33,8 +43,11 @@ export async function GET(
       );
     }
 
-    const quotation = await prisma.quotation.findUnique({
-      where: { id },
+    const quotation = await prisma.quotation.findFirst({
+      where: {
+        id,
+        brandProfileId: allowedBrandIds.length ? { in: allowedBrandIds } : undefined,
+      },
       include: {
         customer: true,
         items: true,
@@ -105,6 +118,22 @@ export async function PUT(
   }
 
   try {
+    const auth = await getAuth();
+    const allowedBrandIds = await resolveAllowedBrandIds(
+      auth?.userId ?? null,
+      (auth?.roles as string[]) ?? [],
+      []
+    );
+    const inScope = await prisma.quotation.findFirst({
+      where: { id, brandProfileId: allowedBrandIds.length ? { in: allowedBrandIds } : undefined },
+      select: { id: true, brandProfileId: true, quotationNumber: true },
+    });
+    if (!inScope) {
+      return NextResponse.json(
+        { success: false, message: "Forbidden: brand scope" },
+        { status: 403 }
+      );
+    }
     const formData = await req.formData();
 
     const quotationNumber = formData.get("quotationNumber") as string;
@@ -241,6 +270,32 @@ export async function PUT(
     const transactionResult = await prisma.$transaction(transactionOperations);
     const updatedQuotation = transactionResult[transactionResult.length - 1];
 
+    // Activity log untuk update quotation
+    try {
+      await logActivity(req, {
+        userId: auth?.userId || null,
+        action: "QUOTATION_UPDATE",
+        entity: "quotation",
+        entityId: id,
+        metadata: {
+          quotationNumber: updatedQuotation.quotationNumber,
+          totalAmount: updatedQuotation.totalAmount,
+        },
+      });
+    } catch {}
+
+    // Notify Admins in brand scope about the update
+    try {
+      const brandId = (updatedQuotation as any).brandProfileId ?? undefined;
+      await sendNotificationToRole(
+        "Admin",
+        "Quotation diperbarui",
+        `Quotation ${updatedQuotation.quotationNumber} diperbarui. Total: ${(updatedQuotation.totalAmount ?? 0).toLocaleString()}`,
+        "info",
+        brandId
+      );
+    } catch {}
+
     return NextResponse.json({
       success: true,
       message: "Quotation berhasil diperbarui",
@@ -266,6 +321,12 @@ export async function DELETE(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const auth = await getAuth();
+    const allowedBrandIds = await resolveAllowedBrandIds(
+      auth?.userId ?? null,
+      (auth?.roles as string[]) ?? [],
+      []
+    );
     const { id: idParam } = await params;
     const id = Number(idParam);
 
@@ -276,15 +337,46 @@ export async function DELETE(
       );
     }
 
-    // Hapus semua item terkait quotation
-    await prisma.quotationItem.deleteMany({
-      where: { quotationId: id },
+    // Pastikan dalam brand scope
+    const inScope = await prisma.quotation.findFirst({
+      where: { id, brandProfileId: allowedBrandIds.length ? { in: allowedBrandIds } : undefined },
+      select: { id: true, quotationNumber: true, brandProfileId: true },
     });
+    if (!inScope) {
+      return NextResponse.json(
+        { success: false, message: "Forbidden: brand scope" },
+        { status: 403 }
+      );
+    }
 
-    // Hapus quotation utama
-    await prisma.quotation.delete({
-      where: { id },
-    });
+    // Hapus semua item terkait quotation lalu quotation utama
+    await prisma.$transaction([
+      prisma.quotationItem.deleteMany({ where: { quotationId: id } }),
+      prisma.quotation.delete({ where: { id } }),
+    ]);
+
+    // Activity log untuk delete quotation
+    try {
+      await logActivity(_req, {
+        userId: auth?.userId || null,
+        action: "QUOTATION_DELETE",
+        entity: "quotation",
+        entityId: id,
+        metadata: { quotationNumber: inScope.quotationNumber },
+      });
+    } catch {}
+
+    // Notify Admins in brand scope about deletion
+    try {
+      const brandId = inScope.brandProfileId ?? undefined;
+      await sendNotificationToRole(
+        "Admin",
+        "Quotation dihapus",
+        `Quotation ${inScope.quotationNumber} telah dihapus`,
+        "warning",
+        brandId
+      );
+    } catch {}
 
     return NextResponse.json({
       success: true,
