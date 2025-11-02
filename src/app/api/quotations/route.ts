@@ -2,27 +2,28 @@ import { NextResponse, type NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getActiveBrandProfile } from "@/lib/brand";
 import { sendNotificationToRole } from "@/lib/notification";
-import { writeFile, mkdir } from "fs/promises";
+import { saveFile as saveFileUtil } from "@/lib/storage";
 import path from "path";
 import crypto from "crypto";
 // Ensure Node.js runtime for Prisma and fs operations
 export const runtime = "nodejs";
 
-// Helper untuk simpan file dan kembalikan URL
-async function saveFile(file: File, productName: string) {
-  const bytes = await file.arrayBuffer();
-  const buffer = Buffer.from(bytes);
-  const rawExt = file.name.split(".").pop();
-  const ext = (rawExt ? rawExt : "bin").toLowerCase();
-  const safeBase = String(productName || "file")
-    .toLowerCase()
-    .replace(/[^a-z0-9_\-]+/gi, "_");
-  const uniqueName = `${safeBase}_${crypto.randomUUID()}.${ext}`;
-  const uploadsDir = path.join(process.cwd(), "public", "uploads");
-  await mkdir(uploadsDir, { recursive: true });
-  const uploadPath = path.join(uploadsDir, uniqueName);
-  await writeFile(uploadPath, buffer);
-  return `/uploads/${uniqueName}`;
+// Gunakan util `saveFile` yang mendukung Vercel Blob dan fallback lokal
+async function saveFile(file: File) {
+  const MAX_SIZE = 5 * 1024 * 1024; // 5MB
+  const ALLOWED = [
+    "image/png",
+    "image/jpeg",
+    "image/jpg",
+    "image/webp",
+    "application/pdf",
+  ];
+  const { url } = await saveFileUtil(file, {
+    prefix: "quo/",
+    allowedContentTypes: ALLOWED,
+    maxSizeBytes: MAX_SIZE,
+  });
+  return url;
 }
 
 // ==============================
@@ -137,8 +138,7 @@ export async function POST(req: NextRequest, _ctx: { params: Promise<{}> }) {
       if (type && !ALLOWED.has(type)) {
         throw new Error("Tipe lampiran project tidak didukung.");
       }
-      const safeName = quotationNumber || `project-${Date.now()}`;
-      projectFileUrl = await saveFile(projectFile, safeName);
+      projectFileUrl = await saveFile(projectFile);
     }
 
     const processedItems = await Promise.all(
@@ -155,7 +155,7 @@ export async function POST(req: NextRequest, _ctx: { params: Promise<{}> }) {
             if (type && !ALLOWED.has(type)) {
               throw new Error(`Tipe file tidak didukung untuk item '${item.product}'`);
             }
-            imageUrl = await saveFile(file, item.product);
+            imageUrl = await saveFile(file);
           }
         }
 
