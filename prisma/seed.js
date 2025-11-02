@@ -6,31 +6,49 @@
   Run: npx prisma db seed
 */
 
-const { spawnSync } = require('child_process');
+const { spawn } = require('child_process');
+const path = require('path');
 
-function runNodeScript(scriptPath, args = []) {
-  const res = spawnSync(process.execPath, [scriptPath, ...args], {
-    stdio: 'inherit',
-    env: process.env,
+async function runNodeScript(scriptPath, args = []) {
+  return new Promise((resolve, reject) => {
+    console.log(`[prisma/seed] Running: ${scriptPath} ${args.join(' ')}`);
+    const child = spawn('node', [scriptPath, ...args], {
+      stdio: 'inherit',
+      cwd: process.cwd()
+    });
+
+    child.on('close', (code) => {
+      if (code !== 0) {
+        reject(new Error(`Seed step failed: ${scriptPath} `));
+      } else {
+        resolve();
+      }
+    });
   });
-  if (res.status !== 0) {
-    throw new Error(`Seed step failed: node ${scriptPath} ${args.join(' ')}`);
-  }
 }
 
 async function main() {
-  console.log('[prisma/seed] Seeding roles...');
-  runNodeScript('scripts/seed-roles.js');
-
-  console.log('[prisma/seed] Seeding owner user...');
-  // seed-owner-user.js reads SEED_OWNER_EMAIL and SEED_OWNER_PASSWORD from env
-  runNodeScript('scripts/seed-owner-user.js');
-
-  console.log('[prisma/seed] All seed steps completed.');
+  try {
+    console.log('[prisma/seed] Starting database seeding...');
+    
+    console.log('[prisma/seed] Creating basic brand profile...');
+    await runNodeScript('scripts/create-basic-brand.js');
+    
+    console.log('[prisma/seed] Seeding owner user...');
+    await runNodeScript('scripts/seed-owner-user.js');
+    
+    // Get owner email from environment or use default
+    const ownerEmail = process.env.SEED_OWNER_EMAIL || 'owner@example.com';
+    
+    console.log('[prisma/seed] Seeding roles...');
+    await runNodeScript('scripts/seed-roles.js', ['--email', ownerEmail]);
+    
+    console.log('[prisma/seed] Database seeding completed successfully!');
+  } catch (error) {
+    console.error('[prisma/seed] Error:', error);
+    process.exit(1);
+  }
 }
 
-main().catch((err) => {
-  console.error('[prisma/seed] Error:', err);
-  process.exitCode = 1;
-});
+main();
 

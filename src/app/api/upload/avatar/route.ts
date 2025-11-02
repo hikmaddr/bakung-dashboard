@@ -1,7 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { writeFile, mkdir } from "fs/promises";
-import { join } from "path";
-import { randomUUID } from "crypto";
+import { saveFile } from "@/lib/storage";
 
 export async function POST(request: NextRequest) {
   try {
@@ -20,32 +18,19 @@ export async function POST(request: NextRequest) {
       "image/webp",
       "image/svg+xml",
     ];
-    if (!allowedTypes.includes(file.type)) {
-      return NextResponse.json({ success: false, error: "Invalid file type. Only images are allowed." }, { status: 400 });
-    }
 
-    const maxSize = 5 * 1024 * 1024; // 5MB
-    if (file.size > maxSize) {
-      return NextResponse.json({ success: false, error: "File size too large. Maximum size is 5MB." }, { status: 400 });
-    }
+    const result = await saveFile(file, {
+      prefix: "avatars/",
+      allowedContentTypes: allowedTypes,
+      maxSizeBytes: 5 * 1024 * 1024,
+    });
 
-    const ext = file.name.split(".").pop();
-    const fileName = `avatar_${randomUUID()}.${ext}`;
-
-    const uploadsDir = join(process.cwd(), "public", "uploads");
-    try {
-      await mkdir(uploadsDir, { recursive: true });
-    } catch (_) {}
-
-    const bytes = await file.arrayBuffer();
-    const buffer = Buffer.from(bytes);
-    const filePath = join(uploadsDir, fileName);
-    await writeFile(filePath, buffer);
-
-    const fileUrl = `/uploads/${fileName}`;
-    return NextResponse.json({ success: true, url: fileUrl, message: "Avatar uploaded successfully" });
-  } catch (error) {
-    console.error("Error uploading avatar:", error);
-    return NextResponse.json({ success: false, error: "Failed to upload avatar." }, { status: 500 });
+    return NextResponse.json({ success: true, url: result.url, message: "Avatar uploaded successfully" });
+  } catch (error: any) {
+    const msg = String(error?.message || error);
+    console.error("Error uploading avatar:", msg);
+    const isValidation = /File type not allowed|File too large|No file received/i.test(msg);
+    const status = isValidation ? 400 : 500;
+    return NextResponse.json({ success: false, error: msg }, { status });
   }
 }

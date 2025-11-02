@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { writeFile, mkdir } from "fs/promises";
-import { join } from "path";
 import { prisma } from "@/lib/prisma";
+import { saveFile } from "@/lib/storage";
 
 const SUPPORTED_PLACEHOLDERS = [
   '{{BRAND_NAME}}',
@@ -101,21 +100,12 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Create upload directory if it doesn't exist
-    const uploadDir = join(process.cwd(), 'public', 'uploads', 'templates');
-    try {
-      await mkdir(uploadDir, { recursive: true });
-    } catch (error) {
-      // Directory might already exist, continue
-    }
-
-    // Generate unique filename
-    const timestamp = Date.now();
-    const filename = `${timestamp}-${file.name}`;
-    const filepath = join(uploadDir, filename);
-
-    // Save file
-    await writeFile(filepath, buffer);
+    // Save file via storage util (supports Vercel Blob in prod)
+    const result = await saveFile(file, {
+      prefix: "templates/",
+      allowedContentTypes: ["image/svg+xml"],
+      maxSizeBytes: 5 * 1024 * 1024,
+    });
 
     // Save to database
     const template = await prisma.template.create({
@@ -124,7 +114,7 @@ export async function POST(request: NextRequest) {
         description,
         type,
         category: "custom",
-        fileUrl: `/uploads/templates/${filename}`,
+        fileUrl: result.url,
         placeholders: placeholders.reduce((acc, ph) => {
           acc[ph] = ph.replace(/\{\{/g, '').replace(/\}\}/g, '').toLowerCase().replace(/_/g, ' ');
           return acc;

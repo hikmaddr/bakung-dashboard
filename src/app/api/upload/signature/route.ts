@@ -1,9 +1,8 @@
 "use server";
 
 import { NextRequest, NextResponse } from "next/server";
-import { mkdir, writeFile } from "fs/promises";
-import { join } from "path";
 import { randomUUID } from "crypto";
+import { saveFile } from "@/lib/storage";
 
 const ALLOWED_TYPES = ["image/png", "image/jpeg", "image/jpg"];
 const MAX_SIZE = 5 * 1024 * 1024; // 5MB
@@ -31,23 +30,13 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const ext = (() => {
-      const nameExt = file.name.split(".").pop();
-      if (nameExt) return nameExt.toLowerCase();
-      return file.type === "image/png" ? "png" : "jpg";
-    })();
+    const result = await saveFile(file, {
+      prefix: "signatures/",
+      allowedContentTypes: ALLOWED_TYPES,
+      maxSizeBytes: MAX_SIZE,
+    });
 
-    const fileName = `signature_${randomUUID()}.${ext}`;
-    const uploadsDir = join(process.cwd(), "public", "uploads", "signatures");
-    await mkdir(uploadsDir, { recursive: true });
-
-    const bytes = await file.arrayBuffer();
-    const buffer = Buffer.from(bytes);
-    const filePath = join(uploadsDir, fileName);
-    await writeFile(filePath, buffer);
-
-    const fileUrl = `/uploads/signatures/${fileName}`;
-    return NextResponse.json({ success: true, url: fileUrl, message: "Signature berhasil diunggah." });
+    return NextResponse.json({ success: true, url: result.url, message: "Signature berhasil diunggah." });
   } catch (error) {
     console.error("[upload/signature] error", error);
     return NextResponse.json(
@@ -56,4 +45,3 @@ export async function POST(request: NextRequest) {
     );
   }
 }
-

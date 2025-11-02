@@ -4,26 +4,21 @@ import { resolveAllowedBrandIds } from "@/lib/brand";
 import { getAuth } from "@/lib/auth";
 import { logActivity } from "@/lib/activity";
 import { Prisma } from "@prisma/client"; // untuk tangani error
-import { writeFile, mkdir } from "fs/promises";
-import path from "path";
 import crypto from "crypto";
+import { saveFile } from "@/lib/storage";
 import { sendNotificationToRole } from "@/lib/notification";
 
 // Helper upload file
 async function saveUpload(file: File, baseName: string) {
-  const bytes = await file.arrayBuffer();
-  const buffer = Buffer.from(bytes);
-  const rawExt = file.name.split(".").pop();
-  const ext = (rawExt ? rawExt : "bin").toLowerCase();
   const safeBase = String(baseName || "file")
     .toLowerCase()
     .replace(/[^a-z0-9_\-]+/gi, "_");
-  const unique = `${safeBase}_${crypto.randomUUID()}.${ext}`;
-  const uploadsDir = path.join(process.cwd(), "public", "uploads");
-  await mkdir(uploadsDir, { recursive: true });
-  const uploadPath = path.join(uploadsDir, unique);
-  await writeFile(uploadPath, buffer);
-  return `/uploads/${unique}`;
+  const result = await saveFile(file, {
+    prefix: `quotations/${safeBase}/`,
+    // Allow a variety of types (images/docs), limit to 10MB
+    maxSizeBytes: 10 * 1024 * 1024,
+  });
+  return result.url;
 }
 
 // ===================================================================

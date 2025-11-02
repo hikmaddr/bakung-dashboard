@@ -10,6 +10,15 @@ const nextConfig = {
     // (sementara, sampai kompatibilitas tipe Next 15 disesuaikan di semua page)
     ignoreBuildErrors: true,
   },
+  images: {
+    remotePatterns: [
+      {
+        protocol: 'https',
+        hostname: 'blob.vercel-storage.com',
+      },
+    ],
+    domains: ['blob.vercel-storage.com'],
+  },
   turbopack: {},
   webpack(config) {
     // Temukan rule bawaan Next yang menangani asset, lalu kecualikan .svg
