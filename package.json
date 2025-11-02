@@ -80,7 +80,7 @@
         "tailwindcss": "^4.0.0",
         "typescript": "^5"
     },
-    "overrides": {
+  "overrides": {
         "@react-jvectormap/core": {
             "react": "^16.8.0 || ^17 || ^18 || ^19",
             "react-dom": "^16.8.0 || ^17 || ^18 || ^19"
@@ -89,7 +89,10 @@
             "react": "^16.8.0 || ^17 || ^18 || ^19",
             "react-dom": "^16.8.0 || ^17 || ^18 || ^19"
         }
-    },
-    "description": "Multi-brand business dashboard for HDP Works",
-    "author": "HDP Works"
+  },
+  "prisma": {
+    "seed": "node prisma/seed.js"
+  },
+  "description": "Multi-brand business dashboard for HDP Works",
+  "author": "HDP Works"
 }
