@@ -61,7 +61,7 @@ const MultiSelect: React.FC<MultiSelectProps> = ({
       <div className="relative z-20 inline-block w-full">
         <div className="relative flex flex-col items-center">
           <div onClick={toggleDropdown}  className="w-full">
-            <div className="mb-2 flex h-11 rounded-lg border border-gray-300 py-1.5 pl-3 pr-3 shadow-theme-xs outline-hidden transition focus:border-brand-300 focus:shadow-focus-ring dark:border-gray-700 dark:bg-gray-900 dark:focus:border-brand-300">
+            <div className="mb-2 flex h-11 rounded-lg border border-gray-300 bg-white py-1.5 pl-3 pr-3 shadow-theme-xs outline-hidden transition focus:border-brand-300 focus:shadow-focus-ring dark:border-gray-700 dark:bg-gray-900 dark:focus:border-brand-300">
               <div className="flex flex-wrap flex-auto gap-2">
                 {selectedValuesText.length > 0 ? (
                   selectedValuesText.map((text, index) => (
@@ -133,27 +133,33 @@ const MultiSelect: React.FC<MultiSelectProps> = ({
 
           {isOpen && (
             <div
-              className={`absolute left-0 top-[calc(100%+4px)] z-[100] w-full overflow-y-auto rounded-lg shadow-theme-xs border border-gray-200 max-h-60 bg-white ${dropdownDarkBackground ? "dark:bg-gray-900" : "dark:bg-white"}`}
+              className={`absolute left-0 top-[calc(100%+4px)] z-[100] w-full overflow-y-auto rounded-lg border border-gray-200 bg-white shadow-theme-sm max-h-60 ${dropdownDarkBackground ? "dark:bg-gray-900" : "dark:bg-white"}`}
               onClick={(e) => e.stopPropagation()}
             >
-              <ul className="flex flex-col bg-white p-0 m-0 list-none">
-                {options.map((option, index) => (
-                  <li key={index} className="bg-white">
-                    <button
-                      type="button"
-                      className={`w-full text-left px-3 py-2 bg-white hover:bg-gray-50 ${
-                        selectedOptions.includes(option.value)
-                          ? "!bg-gray-100 dark:!bg-gray-800"
-                          : ""
-                      }`}
-                      onClick={() => handleSelect(option.value)}
+              <ul className="flex flex-col bg-white dark:bg-inherit p-0 m-0 list-none">
+                {options.map((option, index) => {
+                  const isSelected = selectedOptions.includes(option.value);
+                  return (
+                    <li
+                      key={index}
+                      className={`border-b border-gray-100 last:border-b-0 bg-white dark:bg-inherit`}
                     >
-                      <span className="leading-6 text-gray-900 dark:text-gray-100">
-                        {option.text}
-                      </span>
-                    </button>
-                  </li>
-                ))}
+                      <button
+                        type="button"
+                        className={`w-full text-left px-3 py-2 transition-colors ${
+                          isSelected
+                            ? "bg-gray-100 dark:bg-gray-800"
+                            : "bg-white hover:bg-gray-50 dark:bg-inherit dark:hover:bg-white/5"
+                        }`}
+                        onClick={() => handleSelect(option.value)}
+                      >
+                        <span className="leading-6 text-gray-900 dark:text-gray-100">
+                          {option.text}
+                        </span>
+                      </button>
+                    </li>
+                  );
+                })}
               </ul>
             </div>
           )}

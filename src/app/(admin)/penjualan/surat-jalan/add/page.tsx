@@ -7,6 +7,7 @@ import DatePicker from "@/components/DatePicker";
 // Hapus html2canvas & jsPDF; gunakan endpoint server-side untuk PDF
 import toast from "react-hot-toast";
 import FeatureGuard from "@/components/FeatureGuard";
+import { formatDownloadFileName } from "@/utils/downloadFilename";
 
 type Item = { id: number; name: string; qty: number; unit: string };
 
@@ -100,26 +101,41 @@ function SuratJalanAddPageInner() {
     if (!etaTouched) setEtaDate(shipDate);
   }, [shipDate]);
 
-  // Generate nomor SJ otomatis sekali saat kosong
+  // Generate nomor SJ otomatis sekali saat kosong (mengikuti brand profile)
   useEffect(() => {
-    if (!sjNumber) {
-      const d = new Date();
-      const pad = (n:number) => n.toString().padStart(2,'0');
-      const auto = `SJ/${d.getFullYear()}${pad(d.getMonth()+1)}${pad(d.getDate())}-${pad(d.getHours())}${pad(d.getMinutes())}${pad(d.getSeconds())}`;
-      setSjNumber(auto);
-    }
-  }, [sjNumber]);
+    (async () => {
+      if (!sjNumber) {
+        try {
+          const url = `/api/deliveries/next-number?date=${encodeURIComponent(sjDate)}`;
+          const res = await fetch(url, { cache: 'no-store' });
+          const json = await res.json().catch(() => ({}));
+          if (res.ok && (json?.deliveryNumber || json?.number)) {
+            setSjNumber(String(json.deliveryNumber || json.number));
+            return;
+          }
+        } catch {}
+        // Fallback jika API gagal
+        const d = new Date();
+        const pad = (n:number) => n.toString().padStart(2,'0');
+        const auto = `SJ/${d.getFullYear()}${pad(d.getMonth()+1)}${pad(d.getDate())}-${pad(d.getHours())}${pad(d.getMinutes())}${pad(d.getSeconds())}`;
+        setSjNumber(auto);
+      }
+    })();
+  }, [sjNumber, sjDate]);
 
   // Actions
   const [sendOpen, setSendOpen] = useState(false);
   const [isPreviewOpen, setIsPreviewOpen] = useState(false);
   const savePdf = async () => {
     try {
+      const recvPicOnly = recvDiff ? showRecvName : (defRecvName ? String(defRecvName).split(' - ')[0] : showRecvName);
+      const recvCompanyVal = recvDiff ? '' : (defCompany || '');
       const payload = {
         number: sjNumber,
         date: sjDate,
         refInvoice,
-        receiverName: showRecvName,
+        receiverName: recvPicOnly,
+        receiverCompany: recvCompanyVal,
         receiverAddress: showRecvAddress,
         receiverPhone: showRecvPhone,
         items: items.map(i => ({ name: i.name, qty: i.qty, unit: i.unit })),
@@ -135,7 +151,13 @@ function SuratJalanAddPageInner() {
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = `SuratJalan-${sjNumber||'SJ'}.pdf`;
+      const fileName = formatDownloadFileName(
+        sjNumber,
+        showRecvName,
+        sjNumber || "SJ",
+        showRecvName || "Receiver"
+      );
+      a.download = fileName;
       a.click();
       URL.revokeObjectURL(url);
       toast.success('PDF berhasil diunduh');

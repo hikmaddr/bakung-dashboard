@@ -1,5 +1,6 @@
 // File: app/layout.tsx
 
+import type { Metadata } from "next";
 import { Outfit } from "next/font/google";
 import "./globals.css";
 
@@ -17,9 +18,13 @@ const outfit = Outfit({
   subsets: ["latin"],
 });
 
-export const metadata = {
-  title: "HDP Works Dashboard",
-  description: "Dashboard Admin System",
+export const metadata: Metadata = {
+  title: "Bakung Dashboard | HDP Works",
+  description: "Multi-brand business management dashboard for HDP Works.",
+  openGraph: {
+    title: "Bakung Dashboard",
+    description: "An integrated system for creative, procurement, and souvenir management.",
+  },
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {

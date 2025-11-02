@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { Prisma } from "@prisma/client";
+import { getAuth } from "@/lib/auth";
+import { resolveAllowedBrandIds, isOwnerOnly } from "@/lib/brand";
 
 // Ensure this route runs on Node.js runtime (required for Prisma)
 export const runtime = "nodejs";
@@ -10,7 +12,30 @@ const toJson = (value: unknown): Prisma.InputJsonValue =>
 
 export async function GET() {
   try {
+    const auth = await getAuth();
+    // Jika tidak terautentikasi, kembalikan list kosong untuk keamanan UI
+    if (!auth?.userId) {
+      return NextResponse.json([]);
+    }
+
+    // OWNER: akses semua brand; selain OWNER: filter berdasarkan brand yang diassign
+    const allowedIds = await resolveAllowedBrandIds(
+      auth.userId,
+      (auth.roles as string[]) ?? [],
+      []
+    );
+
+    const where: any = {};
+    if (!isOwnerOnly(auth.roles)) {
+      // Non-OWNER → batasi pada brand yang diassign; jika kosong → hasilkan list kosong
+      if (!allowedIds || allowedIds.length === 0) {
+        return NextResponse.json([]);
+      }
+      where.id = { in: allowedIds };
+    }
+
     const profiles = await prisma.brandProfile.findMany({
+      where,
       orderBy: { createdAt: "asc" },
     });
     return NextResponse.json(profiles);
@@ -44,6 +69,7 @@ export async function POST(request: Request) {
       templateDefaults = {},
       numberFormats = {},
       modules = {},
+      businessScope = "PROCUREMENT",
       isActive = false,
       showBrandName = true,
       showBrandDescription = true,
@@ -92,6 +118,7 @@ export async function POST(request: Request) {
           templateDefaults: toJson(templateDefaultsWithSignature),
           numberFormats: toJson(numberFormats),
           modules: toJson(modules),
+          businessScope: businessScope as any,
           primaryColor,
           secondaryColor,
           isActive,
@@ -144,6 +171,7 @@ export async function POST(request: Request) {
       numberFormats: created.numberFormats,
       templateDefaults: created.templateDefaults,
       isActive: created.isActive,
+      businessScope: (created as any).businessScope,
       showBrandName: created.showBrandName,
       showBrandDescription: created.showBrandDescription,
       showBrandEmail: created.showBrandEmail,
@@ -182,6 +210,7 @@ export async function PUT(request: Request) {
       templateDefaults = {},
       numberFormats = {},
       modules = {},
+      businessScope = "PROCUREMENT",
       isActive = false,
       showBrandName = true,
       showBrandDescription = true,
@@ -239,6 +268,7 @@ export async function PUT(request: Request) {
           templateDefaults: toJson(templateDefaultsWithSignature),
           numberFormats: toJson(numberFormats),
           modules: toJson(modules),
+          businessScope: businessScope as any,
           primaryColor,
           secondaryColor,
           isActive,

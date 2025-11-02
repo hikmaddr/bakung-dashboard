@@ -55,6 +55,7 @@ export default function ReportingRekapPage() {
   const [supplier, setSupplier] = useState<string>("");
   const [loading, setLoading] = useState(false);
   const [data, setData] = useState<ReportResponse | null>(null);
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
   // Load brands for selector (limited by user's scope server-side on fetch)
   useEffect(() => {
@@ -77,6 +78,7 @@ export default function ReportingRekapPage() {
 
   async function fetchReport() {
     setLoading(true);
+    setErrorMsg(null);
     try {
       const params = new URLSearchParams();
       if (dateFrom) params.set("dateFrom", dateFrom);
@@ -86,10 +88,20 @@ export default function ReportingRekapPage() {
       if (client) params.set("client", client);
       if (supplier) params.set("supplier", supplier);
       const res = await fetch(`/api/reports/rekap?${params.toString()}`);
+      if (!res.ok) {
+        throw new Error(`Gagal mengambil data: ${res.status} ${res.statusText}`);
+      }
       const j = (await res.json()) as ReportResponse;
-      setData(j);
-    } catch (e) {
+      if (!j.success) {
+        setErrorMsg("Gagal memuat laporan. Silakan coba beberapa saat lagi.");
+        setData(null);
+      } else {
+        setData(j);
+      }
+    } catch (e: any) {
       console.error(e);
+      setErrorMsg(e.message || "Terjadi galat saat memuat laporan.");
+      setData(null);
     } finally {
       setLoading(false);
     }
@@ -105,27 +117,27 @@ export default function ReportingRekapPage() {
     const ts = new Date().toISOString().replace(/[:.]/g, "-");
     if (kind === "sales") {
       const headers = ["Number", "Date", "Customer", "Total", "Paid", "Due", "Brand"];
-      const rows = data.sales.rows.map((r: any) => [r.number, r.date?.slice?.(0, 10) ?? "", r.customer, r.total, r.paid, r.due, r.brandName]);
+      const rows = data.sales?.rows?.map((r: any) => [r.number, r.date?.slice?.(0, 10) ?? "", r.customer, r.total, r.paid, r.due, r.brandName]) ?? [];
       downloadBlob(toCsv(headers, rows), `rekap-sales-${ts}.csv`);
     } else if (kind === "purchases") {
       const headers = ["Number", "Date", "Supplier", "Total", "Paid", "Due", "Brand"];
-      const rows = data.purchases.rows.map((r: any) => [r.number, r.date?.slice?.(0, 10) ?? "", r.supplier, r.total, r.paid, r.due, r.brandName]);
+      const rows = data.purchases?.rows?.map((r: any) => [r.number, r.date?.slice?.(0, 10) ?? "", r.supplier, r.total, r.paid, r.due, r.brandName]) ?? [];
       downloadBlob(toCsv(headers, rows), `rekap-purchases-${ts}.csv`);
     } else if (kind === "expenses") {
       const headers = ["ID", "Date", "Category", "Amount", "Paid", "Brand"];
-      const rows = data.expenses.rows.map((r: any) => [r.id, r.date?.slice?.(0, 10) ?? "", r.category, r.amount, r.paid ? "Yes" : "No", r.brandName]);
+      const rows = data.expenses?.rows?.map((r: any) => [r.id, r.date?.slice?.(0, 10) ?? "", r.category, r.amount, r.paid ? "Yes" : "No", r.brandName]) ?? [];
       downloadBlob(toCsv(headers, rows), `rekap-expenses-${ts}.csv`);
     } else if (kind === "ar") {
       const headers = ["Type", "Number", "Date", "Customer", "Total", "Paid", "Due", "Brand"];
-      const rows = data.ar.rows.map((r: any) => [r.type, r.number, (r.date || "").slice(0, 10), r.customer, r.total, r.paid, r.due, r.brandName]);
+      const rows = data.ar?.rows?.map((r: any) => [r.type, r.number, (r.date || "").slice(0, 10), r.customer, r.total, r.paid, r.due, r.brandName]) ?? [];
       downloadBlob(toCsv(headers, rows), `rekap-ar-${ts}.csv`);
     } else if (kind === "ap") {
       const headers = ["Type", "Number", "Date", "Supplier", "Total", "Paid", "Due", "Brand"];
-      const rows = data.ap.rows.map((r: any) => [r.type, r.number, (r.date || "").slice(0, 10), r.supplier, r.total, r.paid, r.due, r.brandName]);
+      const rows = data.ap?.rows?.map((r: any) => [r.type, r.number, (r.date || "").slice(0, 10), r.supplier, r.total, r.paid, r.due, r.brandName]) ?? [];
       downloadBlob(toCsv(headers, rows), `rekap-ap-${ts}.csv`);
     } else if (kind === "stock") {
       const headers = ["Product", "SKU", "Qty", "Unit", "Brand"];
-      const rows = data.stock.rows.map((r: any) => [r.name, r.sku, r.qty, r.unit, r.brandName]);
+      const rows = data.stock?.rows?.map((r: any) => [r.name, r.sku, r.qty, r.unit, r.brandName]) ?? [];
       downloadBlob(toCsv(headers, rows), `rekap-stock-${ts}.csv`);
     }
   }
@@ -139,7 +151,7 @@ export default function ReportingRekapPage() {
   return (
     <div className="p-4">
       <div className="flex items-center justify-between mb-4">
-        <h1 className="text-2xl font-semibold">Reporting & Rekap</h1>
+        <h1 className="text-2xl font-semibold">Report & Rekap</h1>
         <div className="space-x-2">
           <button onClick={() => exportCsv("sales")} className="px-3 py-1 border rounded">Export Sales</button>
           <button onClick={() => exportCsv("purchases")} className="px-3 py-1 border rounded">Export Purchases</button>
@@ -195,36 +207,38 @@ export default function ReportingRekapPage() {
         </div>
       </div>
 
+      {errorMsg && <div className="p-4 my-4 text-red-700 bg-red-100 border border-red-400 rounded">{errorMsg}</div>}
+
       {data && (
         <>
           <div className="grid grid-cols-2 md:grid-cols-6 gap-3 mb-6 print:grid-cols-6">
             <div className="p-3 border rounded">
               <div className="text-xs text-gray-500">Total Penjualan</div>
-              <div className="text-xl font-semibold">{fmt(data.grossProfit.components.salesTotal)}</div>
+              <div className="text-xl font-semibold">{fmt(data.grossProfit?.components?.salesTotal)}</div>
             </div>
             <div className="p-3 border rounded">
               <div className="text-xs text-gray-500">Total Pembelian</div>
-              <div className="text-xl font-semibold">{fmt(data.grossProfit.components.purchaseTotal)}</div>
+              <div className="text-xl font-semibold">{fmt(data.grossProfit?.components?.purchaseTotal)}</div>
             </div>
             <div className="p-3 border rounded">
               <div className="text-xs text-gray-500">Total Expense</div>
-              <div className="text-xl font-semibold">{fmt(data.grossProfit.components.expenseTotal)}</div>
+              <div className="text-xl font-semibold">{fmt(data.grossProfit?.components?.expenseTotal)}</div>
             </div>
             <div className="p-3 border rounded">
               <div className="text-xs text-gray-500">Laba Kotor</div>
-              <div className="text-xl font-semibold">{fmt(data.grossProfit.amount)}</div>
+              <div className="text-xl font-semibold">{fmt(data.grossProfit?.amount)}</div>
             </div>
             <div className="p-3 border rounded">
               <div className="text-xs text-gray-500">Piutang (A/R)</div>
-              <div className="text-xl font-semibold">{fmt(data.ar.totalDue)}</div>
+              <div className="text-xl font-semibold">{fmt(data.ar?.totalDue)}</div>
             </div>
             <div className="p-3 border rounded">
               <div className="text-xs text-gray-500">Hutang (A/P)</div>
-              <div className="text-xl font-semibold">{fmt(data.ap.totalDue)}</div>
+              <div className="text-xl font-semibold">{fmt(data.ap?.totalDue)}</div>
             </div>
           </div>
 
-          {data.brandSummary?.mode === "PER_BRAND" && (
+          {data.brandSummary?.mode === "PER_BRAND" && data.brandSummary?.rows?.length > 0 && (
             <div className="mb-6">
               <h2 className="text-lg font-semibold mb-2">Ringkasan Per Brand</h2>
               <div className="overflow-auto">
@@ -239,7 +253,7 @@ export default function ReportingRekapPage() {
                     </tr>
                   </thead>
                   <tbody>
-                    {data.brandSummary.rows.map((r) => (
+                    {data.brandSummary?.rows.map((r) => (
                       <tr key={r.brandId}>
                         <td className="border px-2 py-1">{r.brandName}</td>
                         <td className="border px-2 py-1 text-right">{fmt(r.salesTotal)}</td>
@@ -270,7 +284,7 @@ export default function ReportingRekapPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {data.sales.rows.map((r: any) => (
+                  {data.sales?.rows?.map((r: any) => (
                     <tr key={r.id}>
                       <td className="border px-2 py-1">{r.number}</td>
                       <td className="border px-2 py-1">{(r.date || "").slice(0, 10)}</td>
@@ -302,7 +316,7 @@ export default function ReportingRekapPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {data.purchases.rows.map((r: any) => (
+                  {data.purchases?.rows?.map((r: any) => (
                     <tr key={r.id}>
                       <td className="border px-2 py-1">{r.number}</td>
                       <td className="border px-2 py-1">{(r.date || "").slice(0, 10)}</td>
@@ -335,7 +349,7 @@ export default function ReportingRekapPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {data.ar.rows.map((r: any) => (
+                  {data.ar?.rows?.map((r: any) => (
                     <tr key={`${r.type}-${r.id}`}>
                       <td className="border px-2 py-1">{r.type}</td>
                       <td className="border px-2 py-1">{r.number}</td>
@@ -369,7 +383,7 @@ export default function ReportingRekapPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {data.ap.rows.map((r: any) => (
+                  {data.ap?.rows?.map((r: any) => (
                     <tr key={`${r.type}-${r.id}`}>
                       <td className="border px-2 py-1">{r.type}</td>
                       <td className="border px-2 py-1">{r.number}</td>
@@ -400,7 +414,7 @@ export default function ReportingRekapPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {data.stock.rows.map((r: any) => (
+                  {data.stock?.rows?.map((r: any) => (
                     <tr key={r.productId}>
                       <td className="border px-2 py-1">{r.name}</td>
                       <td className="border px-2 py-1">{r.sku}</td>
@@ -418,4 +432,3 @@ export default function ReportingRekapPage() {
     </div>
   );
 }
-

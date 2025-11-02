@@ -2,7 +2,7 @@
 
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import Image from "next/image";
-import { Modal, ModalHeader, ModalBody, ModalFooter } from "@/components/ui/modal";
+import { Modal } from "@/components/ui/modal";
 import toast from "react-hot-toast";
 import { useGlobal } from "@/context/AppContext";
 
@@ -119,49 +119,67 @@ export default function BrandSelectOnLogin() {
   if (!shouldShow) return null;
 
   return (
-    <Modal open={open} onClose={() => setOpen(false)} size="md">
-      <ModalHeader title="Pilih Brand Aktif" onClose={() => setOpen(false)} />
-      <ModalBody>
-        <p className="text-sm text-gray-600 dark:text-gray-300 mb-4">
+    <Modal
+      isOpen={open}
+      onClose={() => setOpen(false)}
+      className="max-w-xl w-full overflow-hidden"
+    >
+      <div className="px-6 pt-6 pb-4 border-b border-gray-200 dark:border-gray-800">
+        <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
+          Pilih Brand Aktif
+        </h3>
+        <p className="mt-1 text-sm text-gray-600 dark:text-gray-300">
           Kamu memiliki akses ke beberapa brand. Pilih salah satu untuk mulai bekerja.
         </p>
-        <div className="grid grid-cols-2 gap-3">
+      </div>
+      <div className="px-6 py-4">
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           {options.map((b) => (
             <button
               key={b.id}
               onClick={() => activateBrand(b.slug)}
               disabled={loading}
-              className="group flex items-center gap-3 rounded-xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 p-3 hover:bg-gray-100 dark:hover:bg-gray-800"
+              className="group flex items-center gap-3 rounded-xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 p-3 hover:bg-gray-100 dark:hover:bg-gray-800 transition"
             >
               {b.logoUrl ? (
-                <Image src={b.logoUrl} alt={b.name} width={28} height={28} className="object-contain" />
+                <Image
+                  src={b.logoUrl}
+                  alt={b.name}
+                  width={28}
+                  height={28}
+                  className="object-contain"
+                />
               ) : (
                 <div
-                  className="w-7 h-7 rounded-full flex items-center justify-center text-white text-[11px] font-semibold"
+                  className="flex h-7 w-7 items-center justify-center rounded-full text-[11px] font-semibold text-white"
                   style={{ backgroundColor: b.primaryColor || "#0EA5E9" }}
                 >
                   {b.name.charAt(0).toUpperCase()}
                 </div>
               )}
-              <div className="flex flex-col items-start">
-                <span className="text-sm font-medium text-gray-900 dark:text-white">{b.name}</span>
+              <div className="flex flex-col items-start text-left">
+                <span className="text-sm font-medium text-gray-900 dark:text-white">
+                  {b.name}
+                </span>
                 {b.primaryColor && (
-                  <span className="text-[11px] text-gray-500">Theme: {b.primaryColor}</span>
+                  <span className="text-[11px] text-gray-500">
+                    Tema: {b.primaryColor}
+                  </span>
                 )}
               </div>
             </button>
           ))}
         </div>
-      </ModalBody>
-      <ModalFooter>
+      </div>
+      <div className="flex justify-end gap-3 px-6 py-4 border-t border-gray-200 dark:border-gray-800">
         <button
           type="button"
           onClick={() => setOpen(false)}
-          className="px-3 py-2 rounded-md text-sm border border-gray-200 dark:border-gray-800 hover:bg-gray-100 dark:hover:bg-gray-800"
+          className="rounded-md border border-gray-200 px-3 py-2 text-sm text-gray-700 transition hover:bg-gray-100 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800"
         >
           Nanti Saja
         </button>
-      </ModalFooter>
+      </div>
     </Modal>
   );
 }

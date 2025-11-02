@@ -20,6 +20,7 @@ import Skeleton from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
 import Pagination from "@/components/tables/Pagination";
 import FeatureGuard from "@/components/FeatureGuard";
+import { formatDownloadFileName } from "@/utils/downloadFilename";
 
 // ================== TYPES ==================
 type Quotation = {
@@ -35,7 +36,7 @@ type Quotation = {
 // ================== EMPTY STATE ==================
 function EmptyState() {
   return (
-    <div className="mt-20 flex flex-col items-center justify-center text-center text-gray-600">
+    <div className="mt-20 flex flex-col items-center justify-center text-center text-gray-600 dark:text-gray-300">
       <img src="/empty-state.svg" alt="Empty State" className="mb-4 w-64 opacity-90" />
       <p className="text-lg font-medium">Belum ada data yang ditampilkan</p>
       <p className="mt-2 max-w-md text-sm">
@@ -67,12 +68,12 @@ function RowItem({
   setPreviewType: (type: "image" | "pdf") => void;
 }) {
   return (
-    <tr className="border-t hover:bg-gray-50">
-      <td className="p-3">{quotation.customer}</td>
+    <tr className="border-t border-gray-200 hover:bg-gray-50 dark:border-gray-800 dark:hover:bg-white/5">
+      <td className="p-3 dark:text-gray-200">{quotation.customer}</td>
 
-      <td className="p-3">{quotation.quotationNumber}</td>
+      <td className="p-3 dark:text-gray-200">{quotation.quotationNumber}</td>
 
-      <td className="p-3 text-right">
+      <td className="p-3 text-right dark:text-gray-200">
         {quotation.total
           ? quotation.total.toLocaleString("id-ID", {
               style: "currency",
@@ -81,23 +82,23 @@ function RowItem({
           : "Rp 0"}
       </td>
 
-      <td className="p-3">{quotation.date}</td>
+      <td className="p-3 dark:text-gray-200">{quotation.date}</td>
 
       <td className="p-3">
         <span
           className={`rounded-full px-2 py-1 text-xs ${
             quotation.status === "Confirmed"
-              ? "bg-green-100 text-green-700"
+              ? "bg-green-100 text-green-700 dark:bg-green-900/25 dark:text-green-300"
               : quotation.status === "Draft"
-              ? "bg-gray-100 text-gray-700"
-              : "bg-yellow-100 text-yellow-700"
+              ? "bg-gray-100 text-gray-700 dark:bg-white/10 dark:text-gray-300"
+              : "bg-yellow-100 text-yellow-700 dark:bg-yellow-900/20 dark:text-yellow-300"
           }`}
         >
           {quotation.status}
         </span>
       </td>
 
-      <td className="p-3 text-center">
+      <td className="p-3 text-center dark:text-gray-300">
         {quotation.attachmentUrl ? (
           <button
             onClick={() => {
@@ -117,7 +118,7 @@ function RowItem({
                 window.open(url, "_blank");
               }
             }}
-            className="inline-flex items-center justify-center text-blue-600 hover:text-blue-800"
+            className="inline-flex items-center justify-center text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300"
             title="Preview Lampiran"
           >
             <Paperclip className="h-4 w-4" />
@@ -132,33 +133,33 @@ function RowItem({
           <Link
             href={`/penjualan/quotation/${quotation.id}`}
             title="Lihat"
-            className="p-2 rounded-full hover:bg-gray-100"
+            className="p-2 rounded-full hover:bg-gray-100 dark:hover:bg-white/5"
           >
-            <Eye className="h-4 w-4 text-gray-600" />
+            <Eye className="h-4 w-4 text-gray-600 dark:text-gray-300" />
           </Link>
 
           <button
             onClick={() => handleAction("edit", quotation.id)}
             title="Ubah"
-            className="p-2 rounded-full hover:bg-gray-100"
+            className="p-2 rounded-full hover:bg-gray-100 dark:hover:bg-white/5"
           >
-            <Edit className="h-4 w-4 text-gray-600" />
+            <Edit className="h-4 w-4 text-gray-600 dark:text-gray-300" />
           </button>
 
           <button
             onClick={() => handleAction("download", quotation.id)}
             title="Unduh PDF"
-            className="p-2 rounded-full hover:bg-gray-100"
+            className="p-2 rounded-full hover:bg-gray-100 dark:hover:bg-white/5"
           >
-            <Download className="h-4 w-4 text-blue-600" />
+            <Download className="h-4 w-4 text-blue-600 dark:text-blue-400" />
           </button>
 
           <button
             onClick={() => handleAction("delete", quotation.id)}
             title="Hapus"
-            className="p-2 rounded-full hover:bg-gray-100"
+            className="p-2 rounded-full hover:bg-gray-100 dark:hover:bg-white/5"
           >
-            <Trash2 className="h-4 w-4 text-red-600" />
+            <Trash2 className="h-4 w-4 text-red-600 dark:text-red-400" />
           </button>
         </div>
       </td>
@@ -178,6 +179,7 @@ export default function QuotationPageWithTemplate() {
   
   // PERUBAHAN 1: Default limit diubah dari 5 menjadi 10
   const [limit, setLimit] = useState(10); 
+  const [refreshKey, setRefreshKey] = useState(0);
   const [deleteTarget, setDeleteTarget] = useState<Quotation | null>(null);
   const [deleteLoading, setDeleteLoading] = useState(false);
   const [isPreviewOpen, setIsPreviewOpen] = useState(false);
@@ -213,12 +215,15 @@ export default function QuotationPageWithTemplate() {
     switch (action) {
       case "download": {
         const target = quotations.find((q) => q.id === id);
-        const safeNumber = String(target?.quotationNumber ?? id).replace(/[^a-zA-Z0-9-_]/g, "_");
-        const safeCustomer = (target?.customer ?? "Customer")
-          .normalize("NFKD")
-          .replace(/[^\w\s-]/g, "")
-          .trim()
-          .replace(/\s+/g, "_");
+        const customerPic = target?.customer
+          ? target.customer.split(" - ")[0]?.trim() || target.customer?.trim()
+          : undefined;
+        const fileName = formatDownloadFileName(
+          target?.quotationNumber,
+          customerPic,
+          `QUO-${id}`,
+          customerPic || "Customer"
+        );
         try {
           // Samakan UI PDF dengan preview di halaman detail (default: tampilkan gambar, deskripsi, dan overview proyek)
           const query = new URLSearchParams({
@@ -235,7 +240,7 @@ export default function QuotationPageWithTemplate() {
           const url = URL.createObjectURL(blob);
           const link = document.createElement("a");
           link.href = url;
-          link.download = `Quotation-${safeNumber}-${safeCustomer}.pdf`;
+          link.download = fileName;
           document.body.appendChild(link);
           link.click();
           link.remove();
@@ -369,7 +374,21 @@ export default function QuotationPageWithTemplate() {
       }
     };
     fetchQuotations();
-  }, [router, searchParams]);
+  }, [router, searchParams, refreshKey]);
+
+  // Dengarkan perubahan daftar brand untuk memicu refetch
+  useEffect(() => {
+    const handler = () => setRefreshKey((k) => k + 1);
+    window.addEventListener("brand-list:updated", handler);
+    return () => window.removeEventListener("brand-list:updated", handler);
+  }, []);
+
+  // Refetch saat brand aktif berganti
+  useEffect(() => {
+    const handler = () => setRefreshKey((k) => k + 1);
+    window.addEventListener("brand-modules:updated", handler);
+    return () => window.removeEventListener("brand-modules:updated", handler);
+  }, []);
 
   // Filter + Pagination
   const filtered = useMemo(
@@ -423,7 +442,7 @@ export default function QuotationPageWithTemplate() {
 
         {/* Table */}
         {loading ? (
-          <div className="overflow-x-auto rounded-lg border bg-white shadow-sm">
+          <div className="overflow-x-auto rounded-lg border bg-white shadow-sm dark:border-gray-800 dark:bg-gray-900">
             <div className="p-4 space-y-4">
               {/* Header skeleton */}
               <div className="grid grid-cols-7 gap-3">
@@ -451,9 +470,9 @@ export default function QuotationPageWithTemplate() {
           <EmptyState />
         ) : (
           <>
-            <div className="overflow-x-auto rounded-lg border bg-white shadow-sm">
+            <div className="overflow-x-auto rounded-lg border bg-white shadow-sm dark:border-gray-800 dark:bg-gray-900">
               <table className="w-full text-sm">
-                <thead className="bg-gray-50 text-gray-700">
+                <thead className="bg-gray-50 text-gray-700 dark:bg-white/5 dark:text-white/80">
                   <tr>
                     <th className="p-3 text-left">Customer</th>
                     <th className="p-3 text-left">No. Quotation</th>
@@ -501,20 +520,20 @@ export default function QuotationPageWithTemplate() {
 
       {deleteTarget ? (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
-          <div className="w-full max-w-md rounded-xl bg-white p-6 shadow-2xl">
+          <div className="w-full max-w-md rounded-xl bg-white p-6 shadow-2xl dark:bg-gray-900 dark:text-white">
             <div className="flex items-center justify-between">
               <h3 className="text-lg font-semibold text-gray-800">Konfirmasi Hapus</h3>
               <button
                 type="button"
                 onClick={() => !deleteLoading && setDeleteTarget(null)}
-                className="rounded-full p-1 text-gray-400 hover:bg-gray-100 hover:text-gray-600"
+                className="rounded-full p-1 text-gray-400 hover:bg-gray-100 hover:text-gray-600 dark:text-gray-300 dark:hover:bg-white/5 dark:hover:text-gray-200"
               >
                 <X className="h-5 w-5" />
               </button>
             </div>
-            <p className="mt-4 text-sm text-gray-600">
+            <p className="mt-4 text-sm text-gray-600 dark:text-gray-300">
               Apakah Anda yakin ingin menghapus quotation
-              <span className="font-medium text-gray-800"> {deleteTarget.quotationNumber}</span>? Tindakan ini tidak
+              <span className="font-medium text-gray-800 dark:text-gray-100"> {deleteTarget.quotationNumber}</span>? Tindakan ini tidak
               dapat dibatalkan.
             </p>
             <div className="mt-6 flex justify-end gap-3">
@@ -547,7 +566,7 @@ export default function QuotationPageWithTemplate() {
           onClick={() => setIsPreviewOpen(false)}
         >
           <div
-            className="relative max-h-[90vh] max-w-[90vw] overflow-hidden rounded-lg bg-white shadow-2xl"
+            className="relative max-h-[90vh] max-w-[90vw] overflow-hidden rounded-lg bg-white shadow-2xl dark:bg-gray-900"
             onClick={(e) => e.stopPropagation()}
           >
             <button

@@ -2,7 +2,7 @@ import { Metadata } from "next";
 import Link from "next/link";
 
 export const metadata: Metadata = {
-  title: "Menunggu Persetujuan Admin | TailAdmin",
+  title: "Menunggu Persetujuan Admin | Bakung Dashboard",
   description:
     "Halaman informasi setelah registrasi: akun sedang menunggu persetujuan admin.",
 };

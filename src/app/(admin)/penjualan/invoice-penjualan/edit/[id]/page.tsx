@@ -79,8 +79,8 @@ export default function EditSalesInvoicePage() {
           fetch(`/api/invoices/${id}`, { cache: "no-store" }),
           fetch(`/api/customers`, { cache: "no-store" }),
         ]);
-        const invJson = await invRes.json();
-        const custJson = await custRes.json();
+        const invJson = await safeJson(invRes);
+        const custJson = await safeJson(custRes);
         const custRows = Array.isArray(custJson) ? custJson : (Array.isArray(custJson?.data) ? custJson.data : []);
         setCustomers(custRows.map((c: any) => ({ id: Number(c.id), pic: c.pic || "", company: c.company })));
         if (!invRes.ok || invJson?.success === false) throw new Error(invJson?.message || "Gagal memuat invoice");
@@ -135,7 +135,7 @@ export default function EditSalesInvoicePage() {
       try {
         setQuotationsLoading(true);
         const res = await fetch('/api/quotations', { cache: 'no-store' });
-        const json = await res.json();
+        const json = await safeJson(res);
         const rows: any[] = Array.isArray(json?.data) ? json.data : Array.isArray(json) ? json : [];
         if (!active) return;
         const mapped: QuotationSummary[] = rows.map((r: any) => ({
@@ -206,7 +206,7 @@ export default function EditSalesInvoicePage() {
         downPayment,
       };
       const res = await fetch(`/api/invoices/${id}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
-      const json = await res.json();
+      const json = await safeJson(res);
       if (!res.ok || json?.success === false) throw new Error(json?.message || 'Gagal menyimpan invoice');
       toast.success('Invoice berhasil diperbarui');
       router.push('/penjualan/invoice-penjualan');
@@ -240,7 +240,7 @@ export default function EditSalesInvoicePage() {
     <div className="sales-scope p-4 sm:p-6">
 
       <div className="rounded-2xl border border-gray-200 bg-white p-4 sm:p-6 shadow-sm">
-        <h1 className="text-2xl font-semibold mb-6">Buat Invoice Penjualan</h1>
+        <h1 className="text-2xl font-semibold mb-6">Edit Invoice Penjualan</h1>
 
         {loading ? (
           <div className="py-10 text-center text-gray-600">Memuat data…</div>
@@ -309,7 +309,13 @@ export default function EditSalesInvoicePage() {
                           <td className="p-3">{idx+1}</td>
                           <td className="p-3">
                             <input type="text" value={line.name} onChange={(e)=>updateLine(line.id,'name',e.target.value)} placeholder="Nama produk" className="w-full rounded border px-2 py-1 text-sm" />
-                            <input type="text" value={line.description} onChange={(e)=>updateLine(line.id,'description',e.target.value)} placeholder="Deskripsi (opsional)" className="mt-1 w-full rounded border px-2 py-1 text-xs text-gray-600" />
+                <textarea
+                  value={line.description}
+                  onChange={(e)=>updateLine(line.id,'description',e.target.value)}
+                  placeholder="Deskripsi (opsional)"
+                  rows={2}
+                  className="mt-1 w-full min-w-[200px] resize-y rounded border px-2 py-1 text-sm text-gray-700 focus:border-blue-500 focus:ring-blue-500"
+                />
                           </td>
                           <td className="p-3">
                             <div className="flex items-center gap-2">
@@ -414,11 +420,19 @@ export default function EditSalesInvoicePage() {
               <div className="lg:col-span-1">
                 <div className="rounded border p-4 bg-gray-50">
                   <div className="flex justify-between py-1 text-sm"><span>Subtotal</span><span>{fmt(subtotal)}</span></div>
-                  <div className="flex justify-between py-1 text-sm"><span>Diskon per item</span><span>{fmt(totalLineDiscount)}</span></div>
-                  <div className="flex justify-between py-1 text-sm"><span>Extra Discount</span><span>{fmt(extraDiscountAmount)}</span></div>
-                  <div className="flex justify-between py-1 text-sm"><span>Biaya Kirim</span><span>{fmt(shippingCost || 0)}</span></div>
+                  {totalLineDiscount > 0 && (
+                    <div className="flex justify-between py-1 text-sm"><span>Diskon per item</span><span>{fmt(totalLineDiscount)}</span></div>
+                  )}
+                  {extraDiscountAmount > 0 && (
+                    <div className="flex justify-between py-1 text-sm"><span>Extra Discount</span><span>{fmt(extraDiscountAmount)}</span></div>
+                  )}
+                  {Number(shippingCost || 0) > 0 && (
+                    <div className="flex justify-between py-1 text-sm"><span>Biaya Kirim</span><span>{fmt(shippingCost || 0)}</span></div>
+                  )}
                   {taxMode !== 'none' && (<div className="flex justify-between py-1 text-sm"><span>Pajak {taxMode.replaceAll('_', ' ')}</span><span>{fmt(taxCalc.amount)}</span></div>)}
-                  <div className="flex justify-between py-1 text-sm"><span>Uang Muka</span><span>{fmt(downPayment || 0)}</span></div>
+                  {Number(downPayment || 0) > 0 && (
+                    <div className="flex justify-between py-1 text-sm"><span>Uang Muka</span><span>{fmt(downPayment || 0)}</span></div>
+                  )}
                   <div className="mt-2 border-t pt-3 flex justify-between items-center font-semibold text-lg"><span>Total</span><span>{fmt(total)}</span></div>
                 </div>
               </div>
@@ -441,7 +455,16 @@ export default function EditSalesInvoicePage() {
                   Preview
                 </button>
                 <button className="border px-4 py-2 rounded hover:bg-gray-100" onClick={()=>setProductLines([])}>Reset</button>
-                <button className="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700 disabled:opacity-60 disabled:cursor-not-allowed" onClick={handleSubmit} disabled={savingInvoice}>Invoice</button>
+                <button
+                  className="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700 disabled:opacity-60 disabled:cursor-not-allowed"
+                  onClick={handleSubmit}
+                  disabled={savingInvoice}
+                  title={savingInvoice ? "Sedang menyimpan…" : "Simpan perubahan invoice"}
+                  aria-label={savingInvoice ? "Sedang menyimpan" : "Simpan perubahan invoice"}
+                  aria-busy={savingInvoice}
+                >
+                  {savingInvoice ? "Menyimpan…" : "Simpan Perubahan"}
+                </button>
               </div>
             ) : (
               <div className="mt-4 text-right text-sm text-gray-600">Invoice pada tahap Pembayaran (DP) — pengeditan dinonaktifkan.</div>
@@ -531,16 +554,24 @@ export default function EditSalesInvoicePage() {
               <div className="mt-5 flex justify-end">
                 <div className="w-full max-w-sm">
                   <div className="flex justify-between py-1 text-sm"><span>Sub Total</span><span>{fmt(subtotal)}</span></div>
-                  <div className="flex justify-between py-1 text-sm"><span>Diskon per item</span><span>{fmt(totalLineDiscount)}</span></div>
-                  <div className="flex justify-between py-1 text-sm"><span>Extra Discount</span><span>{fmt(extraDiscountAmount)}</span></div>
-                  <div className="flex justify-between py-1 text-sm"><span>Biaya Kirim</span><span>{fmt(shippingCost || 0)}</span></div>
+                  {totalLineDiscount > 0 && (
+                    <div className="flex justify-between py-1 text-sm"><span>Diskon per item</span><span>{fmt(totalLineDiscount)}</span></div>
+                  )}
+                  {extraDiscountAmount > 0 && (
+                    <div className="flex justify-between py-1 text-sm"><span>Extra Discount</span><span>{fmt(extraDiscountAmount)}</span></div>
+                  )}
+                  {Number(shippingCost || 0) > 0 && (
+                    <div className="flex justify-between py-1 text-sm"><span>Biaya Kirim</span><span>{fmt(shippingCost || 0)}</span></div>
+                  )}
                   {taxMode !== 'none' && (
                     <div className="flex justify-between py-1 text-sm">
                       <span>Pajak {taxMode.replaceAll('_', ' ')}</span>
                       <span>{fmt(taxCalc.amount)}</span>
                     </div>
                   )}
-                  <div className="flex justify-between py-1 text-sm"><span>Uang Muka</span><span>{fmt(downPayment || 0)}</span></div>
+                  {Number(downPayment || 0) > 0 && (
+                    <div className="flex justify-between py-1 text-sm"><span>Uang Muka</span><span>{fmt(downPayment || 0)}</span></div>
+                  )}
                   <div className="mt-2 border-t pt-3 flex justify-between items-center font-semibold text-lg">
                     <span>Total</span>
                     <span>{fmt(total)}</span>
@@ -553,6 +584,19 @@ export default function EditSalesInvoicePage() {
       )}
     </div>
   );
+}
+
+async function safeJson(res: Response): Promise<any> {
+  try {
+    const ct = res.headers.get('content-type') || '';
+    if (!ct.includes('application/json')) {
+      // Handle empty body or non-JSON responses gracefully
+      return {};
+    }
+    return await res.json();
+  } catch {
+    return {};
+  }
 }
 
 function QuotationDropdown({ value, quotations, onSelect, loading }: { value: number | null; quotations: QuotationSummary[]; onSelect: (q: QuotationSummary | null) => void; loading: boolean }) {

@@ -17,8 +17,9 @@ ALTER TABLE `product` ADD COLUMN `brandProfileId` INTEGER NULL;
 ALTER TABLE `productcategory` ADD COLUMN `brandProfileId` INTEGER NULL;
 
 -- AlterTable
-ALTER TABLE `quotation` ADD COLUMN `brandProfileId` INTEGER NULL,
-    MODIFY `notes` VARCHAR(191) NULL;
+ALTER TABLE `quotation` ADD COLUMN `brandProfileId` INTEGER NULL;
+-- Some environments might not have the `notes` column yet; add it if missing
+ALTER TABLE `quotation` ADD COLUMN `notes` VARCHAR(191) NULL;
 
 -- AlterTable
 ALTER TABLE `salesorder` ADD COLUMN `brandProfileId` INTEGER NULL;

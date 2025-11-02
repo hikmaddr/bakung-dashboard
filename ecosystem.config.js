@@ -1,7 +1,7 @@
 module.exports = {
   apps: [
     {
-      name: "tailadmin",
+      name: "bakung-dashboard",
       cwd: ".",
       script: "node_modules/next/dist/bin/next",
       args: "start",
@@ -15,8 +15,8 @@ module.exports = {
         // DATABASE_URL: ""
       },
       // Opsi log (opsional)
-      // error_file: "./logs/tailadmin.err.log",
-      // out_file: "./logs/tailadmin.out.log",
+      // error_file: "./logs/bakung-dashboard.err.log",
+      // out_file: "./logs/bakung-dashboard.out.log",
       // merge_logs: true,
     },
   ],

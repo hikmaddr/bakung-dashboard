@@ -24,28 +24,30 @@ export async function GET(req: Request) {
     const startOfMonth = new Date(today.getFullYear(), today.getMonth(), 1);
     const endOfMonth = new Date(today.getFullYear(), today.getMonth() + 1, 1);
 
+    const activeFilter = { deletedAt: null, ...(brandWhere as any) };
+
     const [unpaid, overdue, dueSoon, paidThisMonth, openInvoices] = await Promise.all([
       prisma.invoice.aggregate({
-        where: { status: { notIn: PAID_STATUSES }, ...(brandWhere as any) },
+        where: { status: { notIn: PAID_STATUSES }, ...activeFilter },
         _sum: { total: true },
         _count: true,
       }),
       prisma.invoice.count({
-        where: { status: { notIn: PAID_STATUSES }, dueDate: { lt: today }, ...(brandWhere as any) },
+        where: { status: { notIn: PAID_STATUSES }, dueDate: { lt: today }, ...activeFilter },
       }),
       prisma.invoice.count({
         where: {
           status: { notIn: PAID_STATUSES },
           dueDate: { gte: today, lt: new Date(today.getFullYear(), today.getMonth(), today.getDate() + 7) },
-          ...(brandWhere as any),
+          ...activeFilter,
         },
       }),
       prisma.invoice.aggregate({
-        where: { status: { in: PAID_STATUSES }, issueDate: { gte: startOfMonth, lt: endOfMonth }, ...(brandWhere as any) },
+        where: { status: { in: PAID_STATUSES }, issueDate: { gte: startOfMonth, lt: endOfMonth }, ...activeFilter },
         _sum: { total: true },
       }),
       prisma.invoice.findMany({
-        where: { status: { notIn: PAID_STATUSES }, ...(brandWhere as any) },
+        where: { status: { notIn: PAID_STATUSES }, ...activeFilter },
         select: { id: true, customerId: true, total: true, dueDate: true, status: true, customer: { select: { company: true, pic: true } } },
         orderBy: { dueDate: "asc" },
       }),

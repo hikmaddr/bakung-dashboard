@@ -2,9 +2,9 @@ import SignUpForm from "@/components/auth/SignUpForm";
 import { Metadata } from "next";
 
 export const metadata: Metadata = {
-  title: "Next.js SignUp Page | TailAdmin - Next.js Dashboard Template",
-  description: "This is Next.js SignUp Page TailAdmin Dashboard Template",
-  // other metadata
+  title: "Sign Up | Bakung Dashboard",
+  description:
+    "Create a Bakung Dashboard account and collaborate across HDP Works brands.",
 };
 
 export default function SignUp() {

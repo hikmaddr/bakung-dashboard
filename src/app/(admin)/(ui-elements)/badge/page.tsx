@@ -5,10 +5,9 @@ import { Metadata } from "next";
 import React from "react";
 
 export const metadata: Metadata = {
-  title: "Next.js Badge | TailAdmin - Next.js Dashboard Template",
+  title: "Badges | Bakung Dashboard",
   description:
-    "This is Next.js Badge page for TailAdmin - Next.js Tailwind CSS Admin Dashboard Template",
-  // other metadata
+    "Status badge styles available within the Bakung Dashboard design system.",
 };
 
 export default function BadgePage() {

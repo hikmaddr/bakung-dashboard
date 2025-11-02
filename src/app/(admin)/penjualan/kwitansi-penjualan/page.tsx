@@ -8,6 +8,7 @@ import Pagination from "@/components/tables/Pagination";
 import { downloadCSV, downloadXLSX } from "@/lib/exporters";
 import toast from "react-hot-toast";
 import FeatureGuard from "@/components/FeatureGuard";
+import { formatDownloadFileName } from "@/utils/downloadFilename";
 
 type ReceiptRow = {
   id: number;
@@ -18,7 +19,217 @@ type ReceiptRow = {
   _ts?: number; // key for local drafts deletion
 };
 
-export default function KwitansiPenjualanPage() {
+  export default function KwitansiPenjualanPage() {
+    // State untuk popup Surat Jalan
+    const [sjOpen, setSjOpen] = useState(false);
+    const [sjLoading, setSjLoading] = useState(false);
+    const [sjData, setSjData] = useState<{ number: string; date: string; refInvoice: string; recvName: string; recvAddress: string; recvPhone: string; items: Array<{ name: string; qty: number; unit: string }>; senderName: string; expedition: string; shipDate: string; etaDate: string; note: string } | null>(null);
+    const [waPhone, setWaPhone] = useState("");
+    const [emailTo, setEmailTo] = useState("");
+
+    const fallbackSjNumber = () => {
+      const d = new Date();
+      const pad = (n: number) => n.toString().padStart(2, "0");
+      return `SJ/${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}-${pad(d.getHours())}${pad(d.getMinutes())}${pad(d.getSeconds())}`;
+    };
+
+    const openSjModal = async (r: ReceiptRow) => {
+      // Cegah dari draft tanpa invoice ID valid
+      if (r._ts && r.id === r._ts) {
+        toast.error("Tidak bisa buat Surat Jalan dari draft kwitansi. Pilih invoice valid.");
+        return;
+      }
+      setSjLoading(true);
+      setSjOpen(true);
+      try {
+        const res = await fetch(`/api/invoices/${r.id}`, { cache: "no-store" });
+        const json = await res.json();
+        if (!res.ok || json?.success === false) {
+          throw new Error(json?.message || "Gagal memuat data invoice");
+        }
+        const data = json.data || {};
+        const invoiceNumber = data?.invoiceNumber || String(r.id);
+        const pic = data?.customer?.pic || "";
+        const company = data?.customer?.company || "";
+        const name = `${pic}${company ? " - " + company : ""}`.trim();
+        const addr = data?.customer?.address || "";
+        const phone = data?.customer?.phone || "";
+        const mappedItems = Array.isArray(data?.items)
+          ? data.items.map((it: any) => ({ name: it?.name || "", qty: Number(it?.qty || 0), unit: it?.unit || "pcs" }))
+          : [];
+        const today = new Date().toISOString().slice(0, 10);
+        const brandId = (data?.brandProfileId != null) ? Number(data.brandProfileId) : undefined;
+        let nextNumber = "";
+        try {
+          const url = `/api/deliveries/next-number?date=${today}` + (brandId ? `&brandId=${brandId}` : "");
+          const nres = await fetch(url, { cache: "no-store" });
+          const njson = await nres.json().catch(() => ({}));
+          if (nres.ok) {
+            nextNumber = njson?.deliveryNumber || njson?.number || "";
+          }
+        } catch {}
+        if (!nextNumber) nextNumber = fallbackSjNumber();
+        const payload = {
+          number: nextNumber,
+          date: today,
+          refInvoice: invoiceNumber,
+          recvName: name,
+          recvAddress: addr,
+          recvPhone: phone,
+          items: mappedItems,
+          senderName: "",
+          expedition: "Kurir Sendiri",
+          shipDate: today,
+          etaDate: today,
+          note: "Barang sudah dicek sebelum dikirim",
+        };
+        setSjData(payload);
+        setWaPhone(normalizePhone(phone));
+        setEmailTo(data?.customer?.email || "");
+      } catch (e: any) {
+        toast.error(e?.message || "Gagal menyiapkan Surat Jalan");
+        setSjOpen(false);
+      } finally {
+        setSjLoading(false);
+      }
+    };
+
+    const downloadSjPdf = async () => {
+      if (!sjData) return;
+      try {
+        setSjLoading(true);
+        const response = await fetch("/api/deliveries/pdf", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(sjData),
+        });
+        if (!response.ok) {
+          const errJson = await response.json().catch(() => null);
+          throw new Error(errJson?.message || "Gagal membuat PDF Surat Jalan");
+        }
+        const blob = await response.blob();
+        const url = window.URL.createObjectURL(blob);
+        const link = document.createElement("a");
+        const filename = formatDownloadFileName(
+          sjData.number,
+          sjData.recvName,
+          sjData.number || "SJ",
+          sjData.recvName || "Receiver"
+        );
+        link.href = url;
+        link.download = filename;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        window.URL.revokeObjectURL(url);
+        toast.success("Surat Jalan berhasil diunduh");
+      } catch (e: any) {
+        toast.error(e?.message || "Gagal mengunduh PDF");
+      } finally {
+        setSjLoading(false);
+      }
+    };
+
+    const normalizePhone = (raw: string) => {
+      let s = (raw || "").trim();
+      // keep digits and plus
+      s = s.replace(/[^0-9+]/g, "");
+      if (!s) return "";
+      if (s.startsWith("+")) s = s.slice(1);
+      // asumsi Indonesia: jika mulai 0 -> ganti dengan 62
+      if (s.startsWith("0")) s = "62" + s.slice(1);
+      return s;
+    };
+    const isValidPhone = (s: string) => /^\d{8,}$/.test(s);
+    const isValidEmail = (s: string) => /.+@.+\..+/.test(s);
+
+    const buildSjMessage = () => {
+      if (!sjData) return "";
+      const totalItems = Array.isArray(sjData.items) ? sjData.items.length : 0;
+      return `Surat Jalan ${sjData.number} tanggal ${sjData.date}. Ref Invoice: ${sjData.refInvoice || '-'}${totalItems ? `, Total item: ${totalItems}` : ''}.`;
+    };
+
+    const sendViaWhatsApp = () => {
+      try {
+        const msg = encodeURIComponent(buildSjMessage());
+        const dest = normalizePhone(waPhone);
+        if (!isValidPhone(dest)) {
+          toast.error("Nomor WhatsApp tidak valid");
+          return;
+        }
+        window.open(`https://wa.me/${dest}?text=${msg}`, "_blank");
+        toast.success("WhatsApp dibuka dengan tujuan");
+        setSjOpen(false);
+      } catch { toast.error("Gagal membuka WhatsApp"); }
+    };
+
+    const sendViaEmail = () => {
+      try {
+        const subject = encodeURIComponent(`Surat Jalan ${sjData?.number || ''}`);
+        const body = encodeURIComponent(buildSjMessage());
+        const dest = (emailTo || "").trim();
+        if (!isValidEmail(dest)) {
+          toast.error("Alamat email tidak valid");
+          return;
+        }
+        window.location.href = `mailto:${encodeURIComponent(dest)}?subject=${subject}&body=${body}`;
+        setSjOpen(false);
+      } catch { toast.error("Gagal membuka Email"); }
+    };
+
+    const previewSjPdf = async () => {
+      if (!sjData) return;
+      try {
+        setSjLoading(true);
+        const response = await fetch("/api/deliveries/pdf", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(sjData),
+        });
+        if (!response.ok) {
+          const errJson = await response.json().catch(() => null);
+          throw new Error(errJson?.message || "Gagal membuat PDF Surat Jalan");
+        }
+        const blob = await response.blob();
+        const url = window.URL.createObjectURL(blob);
+        window.open(url, "_blank");
+        toast.success("Preview PDF dibuka");
+        // Jangan revoke langsung; biarkan tab baru menggunakan URL
+        setTimeout(() => { try { window.URL.revokeObjectURL(url); } catch {} }, 60000);
+      } catch (e: any) {
+        toast.error(e?.message || "Gagal membuka preview PDF");
+      } finally {
+        setSjLoading(false);
+      }
+    };
+
+    const saveSjDraft = () => {
+      if (!sjData) return;
+      try {
+        const raw = localStorage.getItem('sjDrafts') || '[]';
+        let drafts: any[] = [];
+        try { drafts = JSON.parse(raw); } catch { drafts = []; }
+        drafts = Array.isArray(drafts) ? drafts.filter((d:any)=> (d?.sjNumber||'') !== sjData.number) : [];
+        drafts.push({
+          ts: Date.now(),
+          sjNumber: sjData.number,
+          sjDate: sjData.date,
+          refInvoice: sjData.refInvoice,
+          recvName: sjData.recvName,
+          recvAddress: sjData.recvAddress,
+          recvPhone: sjData.recvPhone,
+          expedition: sjData.expedition,
+          shipDate: sjData.shipDate,
+          etaDate: sjData.etaDate,
+          note: sjData.note,
+          items: sjData.items,
+        });
+        localStorage.setItem('sjDrafts', JSON.stringify(drafts));
+        toast.success('Draft Surat Jalan disimpan');
+        setSjOpen(false);
+        setTimeout(()=>{ window.location.href = '/penjualan/surat-jalan'; }, 200);
+      } catch { toast.error('Gagal menyimpan draft'); }
+    };
   const [showDropdown, setShowDropdown] = useState(false);
   const [rows, setRows] = useState<ReceiptRow[]>([]); // gabungan draft (localStorage) + data API (jika ada)
   const [searchTerm, setSearchTerm] = useState("");
@@ -89,12 +300,47 @@ export default function KwitansiPenjualanPage() {
     window.location.href = `/penjualan/surat-jalan/add?from=receipt-list&invoiceId=${r.id}`;
   };
 
-  const downloadKw = (r: ReceiptRow) => {
+  const downloadKw = async (r: ReceiptRow) => {
     try {
       const payload = { from: 'receipt-list', invoiceId: r.id, invoiceNumber: r.receiptNumber, ts: Date.now() };
       localStorage.setItem('newReceiptFromInvoice', JSON.stringify(payload));
     } catch {}
-    window.open(`/penjualan/kwitansi-penjualan/${r.id}?download=1`, '_blank');
+
+    // Periksa apakah ini adalah draft (ID berupa timestamp) atau invoice yang valid
+    const isDraft = r._ts && r.id === r._ts;
+    if (isDraft) {
+      toast.error("Tidak dapat mengunduh PDF untuk draft kwitansi. Silakan buat kwitansi terlebih dahulu.");
+      return;
+    }
+
+    try {
+      const response = await fetch(`/api/receipts/${r.id}/pdf`, { cache: "no-store" });
+      if (!response.ok) {
+        const errorMessage = (await response.json().catch(() => null))?.message ?? "Gagal mengunduh kwitansi";
+        throw new Error(errorMessage);
+      }
+
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      const filename = formatDownloadFileName(
+        r.receiptNumber,
+        r.customer?.pic || r.customer?.company,
+        r.receiptNumber || `KW-${r.id}`,
+        r.customer?.pic || r.customer?.company || "Customer"
+      );
+      link.href = url;
+      link.download = filename;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      window.URL.revokeObjectURL(url);
+      toast.success("Kwitansi berhasil diunduh");
+    } catch (err) {
+      console.error("Failed to download receipt PDF", err);
+      const message = err instanceof Error ? err.message : "Gagal mengunduh kwitansi";
+      toast.error(message);
+    }
   };
 
   const deleteDraft = (r: ReceiptRow) => {
@@ -117,6 +363,7 @@ export default function KwitansiPenjualanPage() {
   };
 
   return (
+    <>
     <FeatureGuard feature="sales.receipt">
     <div className="sales-scope p-6 min-h-screen">
       <PageBreadcrumb pageTitle="Kwitansi Penjualan" />
@@ -187,7 +434,7 @@ export default function KwitansiPenjualanPage() {
                         <button onClick={() => openPreview(r)} title="Lihat" className="p-2 rounded-full hover:bg-gray-100">
                           <Eye className="h-4 w-4 text-gray-600" />
                         </button>
-                        <button onClick={() => sendToSJ(r)} title="Buat Surat Jalan" className="p-2 rounded-full hover:bg-gray-100">
+                        <button onClick={() => openSjModal(r)} title="Buat Surat Jalan" className="p-2 rounded-full hover:bg-gray-100">
                           <Truck className="h-4 w-4 text-indigo-600" />
                         </button>
                         <button onClick={() => downloadKw(r)} title="Download PDF" className="p-2 rounded-full hover:bg-gray-100">
@@ -214,7 +461,128 @@ export default function KwitansiPenjualanPage() {
           onLimitChange={(v) => { setLimit(v); setPage(1); }}
         />
       </div>
-    </div>
+      </div>
     </FeatureGuard>
+
+    {/* Popup Surat Jalan tanpa form */}
+    {sjOpen && (
+      <div
+        className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
+        onClick={(e) => {
+          if (e.target === e.currentTarget) setSjOpen(false);
+        }}
+      >
+        <div className="w-full max-w-3xl overflow-hidden rounded-xl bg-white shadow-2xl">
+          <div className="flex items-center justify-between border-b px-6 py-4">
+            <h3 className="text-lg font-semibold">Buat Surat Jalan</h3>
+            <button
+              className="h-8 w-8 inline-flex items-center justify-center rounded-full hover:bg-gray-100"
+              onClick={() => setSjOpen(false)}
+              aria-label="Tutup"
+            >
+              ×
+            </button>
+          </div>
+          <div className="px-6 py-4">
+            {sjLoading && <div className="text-sm text-slate-500">Menyiapkan data...</div>}
+            {!sjLoading && sjData && (
+              <div className="space-y-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm">
+                  <div>
+                    <div>No. Surat Jalan : <span className="font-medium">{sjData.number}</span></div>
+                    <div>Tanggal : <span className="font-medium">{sjData.date}</span></div>
+                    <div>No. Referensi Inv : <span className="font-medium">{sjData.refInvoice || "-"}</span></div>
+                  </div>
+                  <div>
+                    <div className="font-medium">Kepada Yth:</div>
+                    <div>Nama Penerima : {sjData.recvName || "-"}</div>
+                    <div>Alamat : <span className="whitespace-pre-line">{sjData.recvAddress || "-"}</span></div>
+                    <div>Telepon : {sjData.recvPhone || "-"}</div>
+                  </div>
+                </div>
+                <div className="mt-2 overflow-x-auto rounded border">
+                  <table className="w-full text-sm">
+                    <thead className="bg-gray-50">
+                      <tr>
+                        <th className="px-3 py-2 text-left">Nama Barang</th>
+                        <th className="px-3 py-2 text-center">Qty</th>
+                        <th className="px-3 py-2 text-left">Unit</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {(!sjData.items || sjData.items.length === 0) ? (
+                        <tr><td colSpan={3} className="text-center text-gray-500 py-4">Tidak ada barang</td></tr>
+                      ) : sjData.items.map((i, idx) => (
+                        <tr key={idx} className="border-t">
+                          <td className="px-3 py-2">{i.name}</td>
+                          <td className="px-3 py-2 text-center">{i.qty}</td>
+                          <td className="px-3 py-2">{i.unit}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+                {/* Informasi pengirim dan input tujuan dihilangkan sesuai permintaan */}
+              </div>
+            )}
+          </div>
+          <div className="flex flex-col sm:flex-row sm:items-center gap-3 border-t px-6 py-4">
+            {/* Grup kiri: kirim/preview */}
+            <div className="flex items-center gap-2">
+              <button
+                onClick={sendViaWhatsApp}
+                disabled={!sjData || sjLoading}
+                className="rounded-lg border border-gray-300 px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-100 disabled:opacity-60 disabled:cursor-not-allowed"
+              >
+                Kirim via WhatsApp
+              </button>
+              <button
+                onClick={sendViaEmail}
+                disabled={!sjData || sjLoading}
+                className="rounded-lg border border-gray-300 px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-100 disabled:opacity-60 disabled:cursor-not-allowed"
+              >
+                Kirim via Email
+              </button>
+              <button
+                onClick={previewSjPdf}
+                disabled={!sjData || sjLoading}
+                className="rounded-lg border border-gray-300 px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-100 disabled:opacity-60 disabled:cursor-not-allowed"
+              >
+                Preview PDF
+              </button>
+            </div>
+
+            {/* Grup tengah: simpan/unduh */}
+            <div className="flex items-center gap-2">
+              <button
+                onClick={saveSjDraft}
+                disabled={!sjData || sjLoading}
+                className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-700 disabled:opacity-60 disabled:cursor-not-allowed"
+              >
+                Simpan
+              </button>
+              <button
+                onClick={downloadSjPdf}
+                disabled={!sjData || sjLoading}
+                className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700 disabled:opacity-60 disabled:cursor-not-allowed"
+              >
+                Unduh PDF
+              </button>
+            </div>
+
+            {/* Grup kanan: batal */}
+            <div className="flex items-center gap-2 sm:ml-auto">
+              <button
+                onClick={() => setSjOpen(false)}
+                className="rounded-lg border border-gray-300 px-4 py-2 text-sm font-medium text-gray-600 hover:bg-gray-100"
+              >
+                Batal
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    )}
+    </>
   );
 }

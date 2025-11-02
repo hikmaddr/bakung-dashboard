@@ -39,7 +39,7 @@ Write-Host "Starting app with PM2..." -ForegroundColor Cyan
 try {
   pm2 start ecosystem.config.js
 } catch {
-  pm2 restart tailadmin --update-env
+  pm2 restart bakung-dashboard --update-env
 }
 
 pm2 save

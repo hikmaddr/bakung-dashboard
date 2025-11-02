@@ -575,6 +575,7 @@ export default function AddQuotationPage() {
 
   // Header fields
   const [quotationNumber, setQuotationNumber] = useState("");
+  const [numberLocked, setNumberLocked] = useState<boolean>(true);
   const [date, setDate] = useState(dayjs().format("YYYY-MM-DD"));
   const [validUntil, setValidUntil] = useState(
     dayjs().add(7, "day").format("YYYY-MM-DD")
@@ -849,7 +850,7 @@ export default function AddQuotationPage() {
   // Fungsi untuk mengambil nomor quotation baru
   const fetchNewQuotationNumber = async () => {
     try {
-      const res = await fetch("/api/quotations/new-number", { cache: "no-store" });
+      const res = await fetch(`/api/quotations/new-number?date=${encodeURIComponent(date)}`, { cache: "no-store" });
       if (!res.ok) throw new Error("Gagal ambil nomor baru");
       const data = await res.json();
       return data.quotationNumber;
@@ -862,12 +863,33 @@ export default function AddQuotationPage() {
   // Fetch initial data (quotation number & customer)
   useEffect(() => {
     const init = async () => {
+        // Fetch active brand profile to determine lock status
+        try {
+          const res = await fetch('/api/brand-profiles/active', { cache: 'no-store' });
+          const json = await res.json();
+          const nf = json?.numberFormats || {};
+          const lockedVal = nf?.lockedQuotation ?? nf?.quotationLocked ?? nf?.numberFormatsLocked?.quotation; // support multiple keys if present
+          const locked = String(lockedVal ?? 'true').toLowerCase() === 'true';
+          setNumberLocked(locked);
+        } catch {}
+        // Initialize quotation number
         setQuotationNumber(await fetchNewQuotationNumber());
         fetchCustomers();
     };
     init();
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // Keep quotation number in sync with date when locked
+  useEffect(() => {
+    if (!numberLocked) return;
+    let alive = true;
+    (async () => {
+      const num = await fetchNewQuotationNumber();
+      if (alive) setQuotationNumber(num);
+    })();
+    return () => { alive = false; };
+  }, [date, numberLocked]);
 
   // Close dropdown when clicking outside
   useEffect(() => {
@@ -1200,8 +1222,9 @@ const submitQuotation = async (variant: "Draft" | "Confirmed" | "SendPDF") => {
                 <input
                   type="text"
                   value={quotationNumber}
-                  readOnly
-                  className="w-full border rounded-lg px-3 py-2 bg-gray-100 cursor-not-allowed text-gray-700 shadow-sm"
+                  readOnly={numberLocked}
+                  onChange={(e) => setQuotationNumber(e.target.value)}
+                  className={`w-full border rounded-lg px-3 py-2 shadow-sm ${numberLocked ? 'bg-gray-100 cursor-not-allowed text-gray-700' : 'bg-white'}`}
                 />
               </div>
               <div>

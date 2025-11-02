@@ -7,14 +7,21 @@ import { PDFDocument, rgb, StandardFonts, type PDFFont, type PDFPage } from "pdf
 import fontkit from "@pdf-lib/fontkit";
 import { getAuth } from "@/lib/auth";
 import { type InvoiceTemplateTheme, resolveTheme, resolveThankYou, resolvePaymentLines, toRgb255 } from "@/lib/quotationTheme";
-import { initPdfWithBrandFonts, drawHeaderCommon, drawInfoSectionCommon, drawSignatureSectionCommon, drawSignatureColumnsCommon } from "@/lib/pdfCommon";
+import { initPdfWithBrandFonts, drawHeaderCommon, drawInfoSectionCommon, drawSignatureSectionCommon, drawSignatureColumnsCommon, formatPdfFileName } from "@/lib/pdfCommon";
 
 type RGBA = { r: number; g: number; b: number; a?: number };
 
 // Header & info will be handled by shared pdfCommon utilities
 
-function drawItemsTable(page: PDFPage, fontRegular: PDFFont, fontBold: PDFFont, theme: InvoiceTemplateTheme, items: Array<{ name: string; qty: number; unit: string }>) {
-  const startY = page.getHeight() - 200;
+function drawItemsTable(
+  page: PDFPage,
+  fontRegular: PDFFont,
+  fontBold: PDFFont,
+  theme: InvoiceTemplateTheme,
+  items: Array<{ name: string; qty: number; unit: string }>,
+  startYOverride?: number,
+) {
+  const startY = typeof startYOverride === "number" ? startYOverride : page.getHeight() - 200;
   const x = 40;
   const tableWidth = page.getWidth() - 80;
   const rowHeight = 22;
@@ -110,6 +117,8 @@ export async function POST(req: NextRequest) {
       etaDate = "",
       note = "",
       brandSlug = "",
+      templateId,
+      brandOverrides,
     } = body || {};
 
     // Resolve brand profile & theme (fallback ke brand aktif bila auth/slug tidak tersedia)
@@ -149,7 +158,14 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ success: false, message: "Forbidden: brand scope" }, { status: 403 });
       }
     }
-    const theme: InvoiceTemplateTheme = resolveTheme(brand as any);
+    if (brandOverrides && typeof brandOverrides === "object") {
+      const overrides = brandOverrides as Record<string, unknown>;
+      if (overrides.primaryColor) (brand as any).primaryColor = overrides.primaryColor;
+      if (overrides.secondaryColor) (brand as any).secondaryColor = overrides.secondaryColor;
+      if (overrides.footerText) (brand as any).footerText = overrides.footerText;
+      if (overrides.paymentInfo) (brand as any).paymentInfo = overrides.paymentInfo;
+    }
+    const theme: InvoiceTemplateTheme = resolveTheme(brand as any, templateId ?? (brand?.templateDefaults?.invoice as string | undefined));
 
     // Build PDF
     const { pdf, font: fontRegular, bold: fontBold, extraBold } = await initPdfWithBrandFonts();
@@ -186,8 +202,16 @@ export async function POST(req: NextRequest) {
       margin,
       headerBottomY
     );
-    const itemsEndY = drawItemsTable(page, fontRegular, fontBold, theme, Array.isArray(items) ? items.map((i: any) => ({ name: i?.name || "", qty: Number(i?.qty || 0), unit: i?.unit || "pcs" })) : []);
-    const shipEndY = drawShipmentInfo(page, fontRegular, fontBold, theme, { senderName, expedition, shipDate, etaDate, note }, itemsEndY - 10);
+    const tableStartY = Math.min(infoBottomY - 24, page.getHeight() - 220);
+    const itemsEndY = drawItemsTable(
+      page,
+      fontRegular,
+      fontBold,
+      theme,
+      Array.isArray(items) ? items.map((i: any) => ({ name: i?.name || "", qty: Number(i?.qty || 0), unit: i?.unit || "pcs" })) : [],
+      tableStartY
+    );
+    const shipEndY = drawShipmentInfo(page, fontRegular, fontBold, theme, { senderName, expedition, shipDate, etaDate, note }, itemsEndY - 20);
 
     const signatureResult = await drawSignatureColumnsCommon(
       pdf,
@@ -221,7 +245,7 @@ export async function POST(req: NextRequest) {
     });
 
     const bytes = await pdf.save();
-    const fileName = `Delivery-${String(number || 'SJ').replace(/[^a-zA-Z0-9-_]/g,'_')}.pdf`;
+    const fileName = formatPdfFileName(number, receiverName, number || "Delivery", receiverName || "Receiver");
     const ab = (bytes.buffer as ArrayBuffer).slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength);
     return new Response(ab, { headers: { "Content-Type": "application/pdf", "Content-Disposition": `inline; filename="${fileName}"` } });
   } catch (error) {

@@ -7,6 +7,7 @@ import Pagination from "@/components/tables/Pagination";
 import { downloadCSV, downloadXLSX } from "@/lib/exporters";
 import { toast } from "react-hot-toast";
 import FeatureGuard from "@/components/FeatureGuard";
+import { formatDownloadFileName } from "@/utils/downloadFilename";
 
 type DeliveryRow = {
   id: number;
@@ -118,8 +119,52 @@ export default function SuratJalanPage() {
     window.open(url, qs.includes('download=1') ? '_blank' : '_self');
   };
 
+  // Directly download PDF without navigating to the Add/Preview page
+  const downloadPdf = async (r: DeliveryRow) => {
+    try {
+      const payload = {
+        number: r.deliveryNumber,
+        date: r.date,
+        refInvoice: r.refInvoice || '',
+        receiverName: r.recvName || r.customer?.pic || '',
+        receiverCompany: r.customer?.company || '',
+        receiverAddress: r.recvAddress || '',
+        receiverPhone: r.recvPhone || '',
+        items: Array.isArray(r.items) ? r.items.map(i => ({ name: i.name, qty: i.qty, unit: i.unit })) : [],
+        senderName: '',
+        expedition: r.expedition || '',
+        shipDate: r.shipDate || r.date || '',
+        etaDate: r.etaDate || '',
+        note: r.note || '',
+      };
+      const res = await fetch('/api/deliveries/pdf', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+      if (!res.ok) throw new Error('Gagal menghasilkan PDF');
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      const fileName = formatDownloadFileName(
+        r.deliveryNumber,
+        r.customer?.pic || r.customer?.company || r.recvName,
+        r.deliveryNumber || "SJ",
+        r.customer?.pic || r.customer?.company || r.recvName || "Receiver"
+      );
+      a.download = fileName;
+      a.click();
+      URL.revokeObjectURL(url);
+      toast.success('PDF berhasil diunduh');
+    } catch (e: any) {
+      toast.error(e?.message || 'Gagal mengunduh PDF');
+    }
+  };
+
   const deleteRow = (r: DeliveryRow) => {
-    if (!confirm('Hapus draft surat jalan ini?')) return;
+    const ok = confirm('Hapus draft surat jalan ini?');
+    if (!ok) { toast('Penghapusan dibatalkan'); return; }
     try {
       const raw = localStorage.getItem('sjDrafts') || '[]';
       const drafts = JSON.parse(raw);
@@ -127,7 +172,8 @@ export default function SuratJalanPage() {
       localStorage.setItem('sjDrafts', JSON.stringify(filtered));
       // update UI
       setRows(prev => prev.filter(x => x.deliveryNumber !== r.deliveryNumber));
-    } catch {}
+      toast.success('Draft Surat Jalan dihapus');
+    } catch { toast.error('Gagal menghapus draft'); }
   };
 
   const getStatusColor = (status: string) => {
@@ -147,7 +193,7 @@ export default function SuratJalanPage() {
     // simple outside-click handler
     useEffect(()=>{
       const onDown = (e: MouseEvent | TouchEvent) => {
-        const el = document.getElementById(`status-dd-${row.id}`);
+        const el = document.getElementById(`status-dd-${row.deliveryNumber}`);
         if (el && !el.contains(e.target as Node)) setOpen(false);
       };
       document.addEventListener('mousedown', onDown as EventListener);
@@ -156,7 +202,7 @@ export default function SuratJalanPage() {
     }, [row?.id]);
     const options = row.status === 'Dikirim' ? ['Diterima'] : ['Draft','Dikirim','Diterima','Dibatalkan'];
     return (
-      <div id={`status-dd-${row.id}`} className="relative inline-block">
+      <div id={`status-dd-${row.deliveryNumber}`} className="relative inline-block">
         <button onClick={()=>setOpen(v=>!v)} className={`px-3 py-1 rounded-full text-xs font-medium flex items-center gap-1 ${getStatusColor(row.status)}`}>
           {row.status || 'Draft'}
           <ChevronDown className="h-3 w-3" />
@@ -259,7 +305,6 @@ export default function SuratJalanPage() {
                   <th className="px-4 py-3 text-left">Customer</th>
                   <th className="px-4 py-3 text-left">No. Surat Jalan</th>
                   <th className="px-4 py-3 text-left">No. Invoice</th>
-                  <th className="px-4 py-3 text-left">Lampiran</th>
                   <th className="px-4 py-3 text-left">Tanggal</th>
                   <th className="px-4 py-3 text-left">Status Pengiriman</th>
                   <th className="px-4 py-3 text-right">Tindakan</th>
@@ -267,21 +312,10 @@ export default function SuratJalanPage() {
               </thead>
               <tbody>
                 {paged.map((r) => (
-                  <tr key={r.id} className="border-t hover:bg-gray-50 transition">
+                  <tr key={`${r.deliveryNumber}-${r.id}`} className="border-t hover:bg-gray-50 transition">
                     <td className="px-4 py-3">{customerText(r)}</td>
                     <td className="px-4 py-3">{r.deliveryNumber}</td>
                     <td className="px-4 py-3">{r.refInvoice || '-'}</td>
-                    <td className="px-4 py-3">
-                      {r.attachment ? (
-                        <button onClick={()=>{ setAttachPreview(r.attachment!); }} className="text-blue-600 hover:underline">Lihat</button>
-                      ) : (
-                        r.status === 'Draft' ? (
-                          <span className="text-gray-400">-</span>
-                        ) : (
-                          <button onClick={()=>{ setUploadTarget(r); setUploadOpen(true); }} className="text-blue-600 hover:underline">Upload</button>
-                        )
-                      )}
-                    </td>
                     <td className="px-4 py-3">{fmtDate(r.date)}</td>
                     <td className="px-4 py-3">
                       {r.status === 'Diterima' ? (
@@ -296,7 +330,7 @@ export default function SuratJalanPage() {
                         {r.status !== 'Dikirim' && r.status !== 'Diterima' && (
                           <>
                             <button title="Edit" onClick={()=>openWithRow(r)} className="p-2 rounded-full hover:bg-gray-100"><Edit className="h-4 w-4 text-gray-600" /></button>
-                            <button title="Download PDF" onClick={()=>openWithRow(r,'preview=1&download=1')} className="p-2 rounded-full hover:bg-gray-100"><Download className="h-4 w-4 text-emerald-600" /></button>
+                            <button title="Download PDF" onClick={()=>downloadPdf(r)} className="p-2 rounded-full hover:bg-gray-100"><Download className="h-4 w-4 text-emerald-600" /></button>
                             <button title="Hapus" onClick={()=>deleteRow(r)} className="p-2 rounded-full hover:bg-gray-100"><Trash2 className="h-4 w-4 text-red-600" /></button>
                           </>
                         )}

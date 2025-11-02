@@ -73,7 +73,7 @@ export async function PUT(req: Request) {
     if (body.taxId != null) data.taxId = body.taxId;
     if (body.company != null) data.company = body.company;
     if (body.website != null) data.website = body.website;
-    if (body.avatar != null) data.avatar = body.avatar;
+    if (Object.prototype.hasOwnProperty.call(body, 'avatar')) data.avatar = body.avatar;
     if (body.facebook != null) data.facebook = body.facebook;
     if (body.twitter != null) data.twitter = body.twitter;
     if (body.linkedin != null) data.linkedin = body.linkedin;

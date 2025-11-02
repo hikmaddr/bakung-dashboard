@@ -275,7 +275,14 @@ export default function TemplateManagerPage() {
       const res = await fetch("/api/deliveries/pdf", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(sample),
+        body: JSON.stringify({
+          ...sample,
+          templateId: template.id,
+          brandOverrides: {
+            primaryColor: template.primaryColor,
+            secondaryColor: template.secondaryColor,
+          },
+        }),
       });
       if (!res.ok) {
         const errText = await res.text().catch(() => "Gagal membuat PDF");
@@ -753,6 +760,7 @@ export default function TemplateManagerPage() {
                         onEdit={(tpl) => openBuiltInDialog(tpl)}
                         onPreviewPdf={(tpl) => openPreviewPdf(tpl)}
                         enableEditForBuiltIn
+                        previewVariant="compact"
                       />
                     ))}
                   </div>

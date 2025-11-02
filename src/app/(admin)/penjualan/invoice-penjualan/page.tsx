@@ -1,6 +1,6 @@
 "use client";
 import Link from "next/link";
-import { Suspense, useEffect, useMemo, useState } from "react";
+import { Suspense, useEffect, useMemo, useState, useRef } from "react";
 import { useSearchParams } from "next/navigation";
 import { PlusCircle, Download, ChevronDown, Eye, Edit, Send, Trash2, Receipt, RotateCcw } from "lucide-react";
 import toast from "react-hot-toast";
@@ -10,6 +10,7 @@ import EmptyState from "@/components/EmptyState";
 import Pagination from "@/components/tables/Pagination";
 import { downloadCSV, downloadXLSX } from "@/lib/exporters";
 import FeatureGuard from "@/components/FeatureGuard";
+import { formatDownloadFileName } from "@/utils/downloadFilename";
 
 type InvoiceRow = {
   id: number;
@@ -27,32 +28,32 @@ type InvoiceRow = {
 const getStatusColor = (status: string) => {
   switch (status) {
     case "Paid":
-      return "bg-green-100 text-green-700";
+      return "bg-green-100 text-green-700 dark:bg-green-900/25 dark:text-green-300";
     case "DP":
-      return "bg-blue-100 text-blue-700";
+      return "bg-blue-100 text-blue-700 dark:bg-blue-900/25 dark:text-blue-300";
     case "Unpaid":
-      return "bg-yellow-100 text-yellow-800";
+      return "bg-yellow-100 text-yellow-800 dark:bg-yellow-900/20 dark:text-yellow-300";
     case "Sent":
-      return "bg-blue-100 text-blue-700";
+      return "bg-blue-100 text-blue-700 dark:bg-blue-900/25 dark:text-blue-300";
     case "Overdue":
-      return "bg-red-100 text-red-700";
+      return "bg-red-100 text-red-700 dark:bg-red-900/25 dark:text-red-300";
     case "Cancelled":
-      return "bg-gray-200 text-gray-700";
+      return "bg-gray-200 text-gray-700 dark:bg-white/10 dark:text-gray-300";
     default:
-      return "bg-yellow-100 text-yellow-800"; // Draft
+      return "bg-yellow-100 text-yellow-800 dark:bg-yellow-900/20 dark:text-yellow-300"; // Draft
   }
 };
 
 const getDocumentStatusColor = (status: string) => {
   switch (status) {
     case "Draft":
-      return "bg-gray-100 text-gray-700";
+      return "bg-gray-100 text-gray-700 dark:bg-white/10 dark:text-gray-300";
     case "Sent":
-      return "bg-blue-100 text-blue-700";
+      return "bg-blue-100 text-blue-700 dark:bg-blue-900/25 dark:text-blue-300";
     case "Cancelled":
-      return "bg-gray-200 text-gray-700";
+      return "bg-gray-200 text-gray-700 dark:bg-white/10 dark:text-gray-300";
     default:
-      return "bg-gray-100 text-gray-700";
+      return "bg-gray-100 text-gray-700 dark:bg-white/10 dark:text-gray-300";
   }
 };
 
@@ -113,6 +114,24 @@ function InvoicePageInner() {
 
   useEffect(() => { fetchRows(); }, [searchParams, tab]);
 
+  // Refetch saat daftar brand berubah (gunakan ref agar selalu pakai fungsi terbaru)
+  const fetchRef = useRef<() => void>(() => {});
+  useEffect(() => {
+    fetchRef.current = fetchRows;
+  }, [fetchRows]);
+  useEffect(() => {
+    const handler = () => fetchRef.current();
+    window.addEventListener("brand-list:updated", handler);
+    return () => window.removeEventListener("brand-list:updated", handler);
+  }, []);
+
+  // Refetch saat brand aktif berganti
+  useEffect(() => {
+    const handler = () => fetchRef.current();
+    window.addEventListener("brand-modules:updated", handler);
+    return () => window.removeEventListener("brand-modules:updated", handler);
+  }, []);
+
   const fmt = (n: number) => (Number(n) || 0).toLocaleString("id-ID", { style: "currency", currency: "IDR" });
   const fmtDate = (s: string) => (s ? new Date(s).toLocaleDateString("id-ID") : "-");
   const filteredAll = useMemo(() => {
@@ -137,14 +156,47 @@ function InvoicePageInner() {
     } catch { toast.error('Gagal mengubah status'); }
   };
 
-  const deleteRow = async (id: number) => {
-    if (!confirm('Hapus invoice ini? (tersimpan 30 hari)')) return;
+  const deleteInvoice = async (id: number) => {
+    const toastId = toast.loading('Menghapus invoice...');
     try {
       const res = await fetch(`/api/invoices/${id}`, { method: 'DELETE' });
       if (!res.ok) throw new Error();
       setRows((prev) => prev.filter((r) => r.id !== id));
-      toast.success('Invoice dihapus');
-    } catch { toast.error('Gagal menghapus invoice'); }
+      toast.success('Invoice dipindahkan ke tab Terhapus', { id: toastId });
+    } catch {
+      toast.error('Gagal menghapus invoice', { id: toastId });
+    }
+  };
+
+  const confirmDelete = (id: number) => {
+    toast.custom(
+      (t) => (
+        <div className="w-[320px] rounded-xl border border-slate-200 bg-white p-4 shadow-lg">
+          <p className="text-sm font-semibold text-slate-800">Hapus invoice ini?</p>
+          <p className="mt-1 text-xs text-slate-500">
+            Invoice akan dipindahkan ke tab Terhapus dan disimpan selama 30 hari.
+          </p>
+          <div className="mt-3 flex justify-end gap-2">
+            <button
+              onClick={() => toast.dismiss(t.id)}
+              className="rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-medium text-slate-600 hover:bg-slate-100"
+            >
+              Batal
+            </button>
+            <button
+              onClick={() => {
+                toast.dismiss(t.id);
+                deleteInvoice(id);
+              }}
+              className="rounded-lg bg-red-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-red-700"
+            >
+              Hapus
+            </button>
+          </div>
+        </div>
+      ),
+      { duration: 6000 }
+    );
   };
 
   const restoreRow = async (id: number) => {
@@ -164,9 +216,14 @@ function InvoicePageInner() {
       const blob = await res.blob();
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
-      const safeNumber = String(row.invoiceNumber || `INV-${row.id}`).replace(/[^a-zA-Z0-9-_]/g, '_');
       a.href = url;
-      a.download = `Invoice-${safeNumber}.pdf`;
+      const fileName = formatDownloadFileName(
+        row.invoiceNumber,
+        row.customer?.pic || row.customer?.company,
+        `INV-${row.id}`,
+        row.customer?.pic || row.customer?.company || "Customer"
+      );
+      a.download = fileName;
       document.body.appendChild(a);
       a.click();
       a.remove();
@@ -205,30 +262,30 @@ function InvoicePageInner() {
       <PageBreadcrumb pageTitle="Invoice Penjualan" />
 
       {/* Kontainer utama */}
-      <div className="rounded-2xl border border-gray-200 bg-white p-6 min-h-[70vh] overflow-visible flex flex-col gap-4">
+      <div className="rounded-2xl border border-gray-200 bg-white p-6 min-h-[70vh] overflow-visible flex flex-col gap-4 dark:border-gray-800 dark:bg-gray-900">
         {/* Tabs with underline */}
         <div>
-          <div className="flex gap-6 border-b">
+          <div className="flex gap-6 border-b dark:border-gray-800">
             <button
-              className={`relative -mb-px px-1 py-3 text-sm font-medium ${tab==='list' ? 'text-blue-600' : 'text-gray-600 hover:text-gray-800'}`}
+              className={`relative -mb-px px-1 py-3 text-sm font-medium ${tab==='list' ? 'text-blue-600 dark:text-blue-400' : 'text-gray-600 hover:text-gray-800 dark:text-gray-300 dark:hover:text-gray-100'}`}
               onClick={() => { setTab('list'); setPage(1); }}
             >
               List Invoice
-              {tab==='list' && <span className="absolute left-0 right-0 -bottom-[1px] h-0.5 bg-blue-600" />}
+              {tab==='list' && <span className="absolute left-0 right-0 -bottom-[1px] h-0.5 bg-blue-600 dark:bg-blue-400" />}
             </button>
             <button
-              className={`relative -mb-px px-1 py-3 text-sm font-medium ${tab==='payment' ? 'text-blue-600' : 'text-gray-600 hover:text-gray-800'}`}
+              className={`relative -mb-px px-1 py-3 text-sm font-medium ${tab==='payment' ? 'text-blue-600 dark:text-blue-400' : 'text-gray-600 hover:text-gray-800 dark:text-gray-300 dark:hover:text-gray-100'}`}
               onClick={() => { setTab('payment'); setPage(1); }}
             >
               Invoice Pembayaran
-              {tab==='payment' && <span className="absolute left-0 right-0 -bottom-[1px] h-0.5 bg-blue-600" />}
+              {tab==='payment' && <span className="absolute left-0 right-0 -bottom-[1px] h-0.5 bg-blue-600 dark:bg-blue-400" />}
             </button>
             <button
-              className={`relative -mb-px px-1 py-3 text-sm font-medium ${tab==='deleted' ? 'text-blue-600' : 'text-gray-600 hover:text-gray-800'}`}
+              className={`relative -mb-px px-1 py-3 text-sm font-medium ${tab==='deleted' ? 'text-blue-600 dark:text-blue-400' : 'text-gray-600 hover:text-gray-800 dark:text-gray-300 dark:hover:text-gray-100'}`}
               onClick={() => { setTab('deleted'); setPage(1); }}
             >
               Terhapus
-              {tab==='deleted' && <span className="absolute left-0 right-0 -bottom-[1px] h-0.5 bg-blue-600" />}
+              {tab==='deleted' && <span className="absolute left-0 right-0 -bottom-[1px] h-0.5 bg-blue-600 dark:bg-blue-400" />}
             </button>
           </div>
         </div>
@@ -239,32 +296,32 @@ function InvoicePageInner() {
             placeholder="Cari pelanggan / nomor invoice..."
             value={searchTerm}
             onChange={(e) => { setSearchTerm(e.target.value); setPage(1); }}
-            className="h-11 w-full sm:w-64 rounded-lg border border-gray-300 bg-transparent px-4 py-2.5 text-sm text-gray-800 placeholder:text-gray-400 focus:ring-3 focus:outline-hidden"
+            className="h-11 w-full sm:w-64 rounded-lg border border-gray-300 bg-transparent px-4 py-2.5 text-sm text-gray-800 placeholder:text-gray-400 focus:ring-3 focus:outline-hidden dark:border-gray-700 dark:text-gray-200 dark:placeholder:text-gray-500"
           />
           <div className="flex items-center gap-3">
             {activeFiltersLabel ? (
-              <span className="rounded-full bg-gray-100 px-3 py-1 text-xs font-semibold text-gray-600">
+              <span className="rounded-full bg-gray-100 px-3 py-1 text-xs font-semibold text-gray-600 dark:bg-white/10 dark:text-gray-300">
                 Aktif: {activeFiltersLabel}
               </span>
             ) : null}
             {/* Dropdown Unduh dipindah ke toolbar */}
             <div className="relative">
-              <button onClick={() => setShowDropdown(!showDropdown)} className="border px-4 py-2 rounded-md flex items-center gap-2 hover:bg-gray-50">
+              <button onClick={() => setShowDropdown(!showDropdown)} className="border px-4 py-2 rounded-md flex items-center gap-2 hover:bg-gray-50 dark:border-gray-700 dark:hover:bg-white/5">
                 <Download size={18} />
                 Unduh & Bagikan
                 <ChevronDown size={16} />
               </button>
               {showDropdown && (
-                <div className="absolute right-0 mt-2 w-52 bg-white shadow-lg rounded-md border z-10">
-                  <ul className="py-2 text-sm text-gray-700">
+                <div className="absolute right-0 mt-2 w-52 bg-white shadow-lg rounded-md border z-10 dark:bg-gray-900 dark:border-gray-800">
+                  <ul className="py-2 text-sm text-gray-700 dark:text-gray-200">
                     <li
-                      className="px-4 py-2 hover:bg-gray-100 cursor-pointer"
+                      className="px-4 py-2 hover:bg-gray-100 cursor-pointer dark:hover:bg-white/5"
                       onClick={() => toast("Fitur unduh semua dokumen belum tersedia")}
                     >
                       Unduh Semua Dokumen
                     </li>
                     <li
-                      className="px-4 py-2 hover:bg-gray-100 cursor-pointer"
+                      className="px-4 py-2 hover:bg-gray-100 cursor-pointer dark:hover:bg-white/5"
                       onClick={() => {
                       const rows = activeData.map((r) => ({
                         invoiceNumber: r.invoiceNumber,
@@ -282,7 +339,7 @@ function InvoicePageInner() {
                       Ekspor data CSV
                     </li>
                     <li
-                      className="px-4 py-2 hover:bg-gray-100 cursor-pointer"
+                      className="px-4 py-2 hover:bg-gray-100 cursor-pointer dark:hover:bg-white/5"
                       onClick={async () => {
                       const rows = activeData.map((r) => ({
                         invoiceNumber: r.invoiceNumber,
@@ -311,7 +368,7 @@ function InvoicePageInner() {
         </div>
 
         {/* Tabel */}
-        <div className="overflow-x-auto overflow-y-visible rounded-lg border bg-white shadow-sm min-h-[50vh] flex-1">
+        <div className="overflow-x-auto overflow-y-visible rounded-lg border bg-white shadow-sm min-h-[50vh] flex-1 dark:bg-gray-900 dark:border-gray-800">
           {loading ? (
             <div className="p-6">
               {/* Toolbar skeleton */}
@@ -324,7 +381,7 @@ function InvoicePageInner() {
               </div>
               {/* Table skeleton */}
               <table className="w-full text-sm">
-                <thead className="bg-gray-50">
+                <thead className="bg-gray-50 dark:bg-white/5">
                   <tr>
                     <th className="px-4 py-3 text-left">Customer</th>
                     <th className="px-4 py-3 text-left">No. Invoice</th>
@@ -337,7 +394,7 @@ function InvoicePageInner() {
                 </thead>
                 <tbody>
                   {Array.from({ length: 8 }).map((_, i) => (
-                    <tr key={i} className="border-t">
+                    <tr key={i} className="border-t dark:border-gray-800">
                       <td className="px-4 py-3"><Skeleton className="h-4 w-48" /></td>
                       <td className="px-4 py-3"><Skeleton className="h-4 w-32" /></td>
                       <td className="px-4 py-3"><Skeleton className="h-4 w-28" /></td>
@@ -365,7 +422,7 @@ function InvoicePageInner() {
             />
           ) : (
             <table className="w-full text-sm">
-              <thead className="bg-gray-50 text-gray-700">
+              <thead className="bg-gray-50 text-gray-700 dark:bg-white/5 dark:text-white/80">
                 {tab === 'list' && (
                   <tr>
                     <th className="px-4 py-3 text-left">Customer</th>
@@ -410,38 +467,38 @@ function InvoicePageInner() {
                   const docStatus = r.status === 'Sent' ? 'Sent' : 'Pending';
                   const invStatus = r.status === 'Paid' ? 'Paid' : (paid > 0 ? 'DP' : 'Unpaid');
                   return (
-                    <tr key={r.id} className="border-t hover:bg-gray-50 transition">
+                    <tr key={r.id} className="border-t hover:bg-gray-50 transition dark:border-gray-800 dark:hover:bg-white/5">
                       {tab === 'list' && (
                         <>
-                          <td className="px-4 py-3">{r.customer?.pic ? `${r.customer.pic} - ` : ''}{r.customer?.company || '-'}</td>
-                          <td className="px-4 py-3">{r.invoiceNumber}</td>
-                          <td className="px-4 py-3">{r.quotation?.id ? (<Link href={`/penjualan/quotation/${r.quotation.id}`} className="text-blue-600 hover:underline">{r.quotation.quotationNumber || `Q-${r.quotation.id}`}</Link>) : ('-')}</td>
-                          <td className="px-4 py-3">{fmtDate(r.issueDate)}</td>
+                          <td className="px-4 py-3 text-gray-800 dark:text-gray-200">{r.customer?.pic ? `${r.customer.pic} - ` : ''}{r.customer?.company || '-'}</td>
+                          <td className="px-4 py-3 text-gray-800 dark:text-gray-200">{r.invoiceNumber}</td>
+                          <td className="px-4 py-3">{r.quotation?.id ? (<Link href={`/penjualan/quotation/${r.quotation.id}`} className="text-blue-600 hover:underline dark:text-blue-400">{r.quotation.quotationNumber || `Q-${r.quotation.id}`}</Link>) : ('-')}</td>
+                          <td className="px-4 py-3 text-gray-700 dark:text-gray-300">{fmtDate(r.issueDate)}</td>
                           <td className="px-4 py-3"><span className={`px-3 py-1 rounded-full text-xs font-medium ${getDocumentStatusColor(docStatus)}`}>{docStatus}</span></td>
                           <td className="px-4 py-3"><span className={`px-3 py-1 rounded-full text-xs font-medium ${getStatusColor(invStatus)}`}>{invStatus}</span></td>
-                          <td className="px-4 py-3 text-right">{fmt(r.total)}</td>
+                          <td className="px-4 py-3 text-right text-gray-800 dark:text-gray-200">{fmt(r.total)}</td>
                         </>
                       )}
                       {tab === 'payment' && (
                         <>
-                          <td className="px-4 py-3">{r.customer?.pic ? `${r.customer.pic} - ` : ''}{r.customer?.company || '-'}</td>
-                          <td className="px-4 py-3">{r.invoiceNumber}</td>
+                          <td className="px-4 py-3 text-gray-800 dark:text-gray-200">{r.customer?.pic ? `${r.customer.pic} - ` : ''}{r.customer?.company || '-'}</td>
+                          <td className="px-4 py-3 text-gray-800 dark:text-gray-200">{r.invoiceNumber}</td>
                           <td className="px-4 py-3"><span className={`px-3 py-1 rounded-full text-xs font-medium ${getStatusColor(invStatus)}`}>{invStatus}</span></td>
-                          <td className="px-4 py-3 text-right">{fmt(paid)}</td>
-                          <td className="px-4 py-3 text-right">{fmt(due)}</td>
-                          <td className="px-4 py-3">{fmtDate(r.issueDate)}</td>
-                          <td className="px-4 py-3">{fmtDate(r.dueDate)}</td>
+                          <td className="px-4 py-3 text-right text-gray-800 dark:text-gray-200">{fmt(paid)}</td>
+                          <td className="px-4 py-3 text-right text-gray-800 dark:text-gray-200">{fmt(due)}</td>
+                          <td className="px-4 py-3 text-gray-700 dark:text-gray-300">{fmtDate(r.issueDate)}</td>
+                          <td className="px-4 py-3 text-gray-700 dark:text-gray-300">{fmtDate(r.dueDate)}</td>
                         </>
                       )}
                       {tab === 'deleted' && (
                         <>
-                          <td className="px-4 py-3">{r.customer?.pic ? `${r.customer.pic} - ` : ''}{r.customer?.company || '-'}</td>
-                          <td className="px-4 py-3">{r.invoiceNumber}</td>
-                          <td className="px-4 py-3">{fmtDate(r.deletedAt || '')}</td>
-                          <td className="px-4 py-3">{fmtDate(r.issueDate)}</td>
+                          <td className="px-4 py-3 text-gray-800 dark:text-gray-200">{r.customer?.pic ? `${r.customer.pic} - ` : ''}{r.customer?.company || '-'}</td>
+                          <td className="px-4 py-3 text-gray-800 dark:text-gray-200">{r.invoiceNumber}</td>
+                          <td className="px-4 py-3 text-gray-700 dark:text-gray-300">{fmtDate(r.deletedAt || '')}</td>
+                          <td className="px-4 py-3 text-gray-700 dark:text-gray-300">{fmtDate(r.issueDate)}</td>
                           <td className="px-4 py-3"><span className={`px-3 py-1 rounded-full text-xs font-medium ${getDocumentStatusColor(docStatus)}`}>{docStatus}</span></td>
                           <td className="px-4 py-3"><span className={`px-3 py-1 rounded-full text-xs font-medium ${getStatusColor(invStatus)}`}>{invStatus}</span></td>
-                          <td className="px-4 py-3 text-right">{fmt(r.total)}</td>
+                          <td className="px-4 py-3 text-right text-gray-800 dark:text-gray-200">{fmt(r.total)}</td>
                         </>
                       )}
                       <td className="px-4 py-3 text-right">
@@ -449,48 +506,48 @@ function InvoicePageInner() {
                           {tab === 'payment' && (
                             invStatus === 'Paid' ? (
                               <>
-                                <button onClick={() => openPdf(r)} title="Lihat PDF" className="p-2 rounded-full hover:bg-gray-100">
-                                  <Eye className="h-4 w-4 text-gray-600" />
+                                <button onClick={() => openPdf(r)} title="Lihat PDF" className="p-2 rounded-full hover:bg-gray-100 dark:hover:bg-white/5">
+                                  <Eye className="h-4 w-4 text-gray-600 dark:text-gray-300" />
                                 </button>
-                                <button onClick={() => openKw(r)} title="Kirim ke Kwitansi" className="p-2 rounded-full hover:bg-gray-100">
-                                  <Receipt className="h-4 w-4 text-gray-600" />
+                                <button onClick={() => openKw(r)} title="Kirim ke Kwitansi" className="p-2 rounded-full hover:bg-gray-100 dark:hover:bg-white/5">
+                                  <Receipt className="h-4 w-4 text-gray-600 dark:text-gray-300" />
                                 </button>
                               </>
                             ) : (
-                              <button onClick={() => openPay(r)} title="Lihat" className="p-2 rounded-full hover:bg-gray-100">
-                                <Eye className="h-4 w-4 text-gray-600" />
+                              <button onClick={() => openPay(r)} title="Lihat" className="p-2 rounded-full hover:bg-gray-100 dark:hover:bg-white/5">
+                                <Eye className="h-4 w-4 text-gray-600 dark:text-gray-300" />
                               </button>
                             )
                           )}
                           {tab === 'deleted' && (
-                            <button onClick={() => restoreRow(r.id)} title="Pulihkan" className="p-2 rounded-full hover:bg-gray-100">
-                              <RotateCcw className="h-4 w-4 text-blue-600" />
+                            <button onClick={() => restoreRow(r.id)} title="Pulihkan" className="p-2 rounded-full hover:bg-gray-100 dark:hover:bg-white/5">
+                              <RotateCcw className="h-4 w-4 text-blue-600 dark:text-blue-400" />
                             </button>
                           )}
                           {tab === 'list' && (
                             <Link
                               href={`/penjualan/invoice-penjualan/${r.id}`}
                               title="Lihat"
-                              className="p-2 rounded-full hover:bg-gray-100"
+                              className="p-2 rounded-full hover:bg-gray-100 dark:hover:bg-white/5"
                             >
-                              <Eye className="h-4 w-4 text-gray-600" />
+                              <Eye className="h-4 w-4 text-gray-600 dark:text-gray-300" />
                             </Link>
                           )}
                           {tab === 'list' && (
                             <Link
                               href={`/penjualan/invoice-penjualan/edit/${r.id}?from=list`}
                               title="Edit"
-                              className="p-2 rounded-full hover:bg-gray-100"
+                              className="p-2 rounded-full hover:bg-gray-100 dark:hover:bg-white/5"
                             >
-                              <Edit className="h-4 w-4 text-gray-600" />
+                              <Edit className="h-4 w-4 text-gray-600 dark:text-gray-300" />
                             </Link>
                           )}
-                          <button onClick={() => downloadInvoice(r)} title="Download PDF" className="p-2 rounded-full hover:bg-gray-100">
-                            <Download className="h-4 w-4 text-emerald-600" />
+                          <button onClick={() => downloadInvoice(r)} title="Download PDF" className="p-2 rounded-full hover:bg-gray-100 dark:hover:bg-white/5">
+                            <Download className="h-4 w-4 text-emerald-600 dark:text-emerald-400" />
                           </button>
                           {tab !== 'deleted' && !(tab==='payment' && invStatus==='Paid') && (
-                            <button onClick={() => deleteRow(r.id)} title="Hapus" className="p-2 rounded-full hover:bg-gray-100">
-                              <Trash2 className="h-4 w-4 text-red-600" />
+                            <button onClick={() => confirmDelete(r.id)} title="Hapus" className="p-2 rounded-full hover:bg-gray-100 dark:hover:bg-white/5">
+                              <Trash2 className="h-4 w-4 text-red-600 dark:text-red-400" />
                             </button>
                           )}
                         </div>
@@ -518,31 +575,31 @@ function InvoicePageInner() {
       {/* Modal Kirim */}
       {sendModalOpen && selectedRow && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4" onClick={(e)=>{ if(e.target===e.currentTarget) setSendModalOpen(false); }}>
-          <div className="bg-white rounded-xl shadow-2xl w-full max-w-2xl overflow-hidden">
-            <div className="flex items-center justify-between border-b px-6 py-4">
-              <h2 className="text-lg font-semibold">Kirim Invoice</h2>
-              <button onClick={()=>setSendModalOpen(false)} className="text-gray-400 hover:text-gray-600 text-xl">×</button>
+          <div className="bg-white rounded-xl shadow-2xl w-full max-w-2xl overflow-hidden dark:bg-gray-900">
+            <div className="flex items-center justify-between border-b px-6 py-4 dark:border-gray-800">
+              <h2 className="text-lg font-semibold dark:text-gray-100">Kirim Invoice</h2>
+              <button onClick={()=>setSendModalOpen(false)} className="text-gray-400 hover:text-gray-600 text-xl dark:text-gray-400 dark:hover:text-gray-300">×</button>
             </div>
-            <div className="grid grid-cols-1 md:grid-cols-2 divide-y md:divide-y-0 md:divide-x">
+            <div className="grid grid-cols-1 md:grid-cols-2 divide-y md:divide-y-0 md:divide-x dark:divide-gray-800">
               <div className="p-6 space-y-3">
-                <p className="font-medium text-gray-800 mb-2">Pilih metode</p>
-                <label onClick={()=>setSendMethod('wa')} className={`flex items-center gap-3 rounded-lg border p-3 cursor-pointer transition ${sendMethod==='wa' ? 'border-blue-500 bg-blue-50' : 'border-gray-200 hover:border-gray-300'}`}>
+                <p className="font-medium text-gray-800 mb-2 dark:text-gray-200">Pilih metode</p>
+                <label onClick={()=>setSendMethod('wa')} className={`flex items-center gap-3 rounded-lg border p-3 cursor-pointer transition ${sendMethod==='wa' ? 'border-blue-500 bg-blue-50 dark:border-blue-400 dark:bg-blue-900/20' : 'border-gray-200 hover:border-gray-300 dark:border-gray-700 dark:hover:border-gray-600'} dark:text-gray-200`}>
                   <span className="inline-block h-2.5 w-2.5 rounded-full bg-green-500" /> WhatsApp
                 </label>
-                <label onClick={()=>setSendMethod('email')} className={`flex items-center gap-3 rounded-lg border p-3 cursor-pointer transition ${sendMethod==='email' ? 'border-blue-500 bg-blue-50' : 'border-gray-200 hover:border-gray-300'}`}>
+                <label onClick={()=>setSendMethod('email')} className={`flex items-center gap-3 rounded-lg border p-3 cursor-pointer transition ${sendMethod==='email' ? 'border-blue-500 bg-blue-50 dark:border-blue-400 dark:bg-blue-900/20' : 'border-gray-200 hover:border-gray-300 dark:border-gray-700 dark:hover:border-gray-600'} dark:text-gray-200`}>
                   <span className="inline-block h-2.5 w-2.5 rounded-full bg-blue-500" /> Email
                 </label>
-                <label onClick={()=>setSendMethod('pdf')} className={`flex items-center gap-3 rounded-lg border p-3 cursor-pointer transition ${sendMethod==='pdf' ? 'border-blue-500 bg-blue-50' : 'border-gray-200 hover:border-gray-300'}`}>
+                <label onClick={()=>setSendMethod('pdf')} className={`flex items-center gap-3 rounded-lg border p-3 cursor-pointer transition ${sendMethod==='pdf' ? 'border-blue-500 bg-blue-50 dark:border-blue-400 dark:bg-blue-900/20' : 'border-gray-200 hover:border-gray-300 dark:border-gray-700 dark:hover:border-gray-600'} dark:text-gray-200`}>
                   <span className="inline-block h-2.5 w-2.5 rounded-full bg-gray-500" /> Simpan sebagai PDF
                 </label>
               </div>
               <div className="p-6">
-                <p className="font-medium text-gray-800 mb-2">Preview Pesan</p>
-                <textarea className="w-full h-56 resize-none rounded-lg border border-gray-300 p-3 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500" readOnly value={`Hi ${selectedRow.customer?.pic || '-'},\nAnda menerima invoice ${selectedRow.invoiceNumber}. Total ${fmt(selectedRow.total)}.`} />
+                <p className="font-medium text-gray-800 mb-2 dark:text-gray-200">Preview Pesan</p>
+                <textarea className="w-full h-56 resize-none rounded-lg border border-gray-300 p-3 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200 dark:focus:ring-blue-400" readOnly value={`Hi ${selectedRow.customer?.pic || '-'},\nAnda menerima invoice ${selectedRow.invoiceNumber}. Total ${fmt(selectedRow.total)}.`} />
               </div>
             </div>
-            <div className="flex justify-end gap-3 border-t px-6 py-4">
-              <button onClick={()=>setSendModalOpen(false)} className="rounded-lg border border-gray-300 px-4 py-2 text-sm font-medium text-gray-600 hover:bg-gray-100">Batal</button>
+            <div className="flex justify-end gap-3 border-t px-6 py-4 dark:border-gray-800">
+              <button onClick={()=>setSendModalOpen(false)} className="rounded-lg border border-gray-300 px-4 py-2 text-sm font-medium text-gray-600 hover:bg-gray-100 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-white/5">Batal</button>
               <button onClick={async ()=>{
                 try {
                   if (sendMethod==='wa') {
@@ -567,30 +624,30 @@ function InvoicePageInner() {
       {/* Modal Pembayaran (Invoice Pembayaran) */}
       {payModalOpen && selectedPayRow && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4" onClick={(e)=>{ if(e.target===e.currentTarget) setPayModalOpen(false); }}>
-          <div className="bg-white rounded-xl shadow-2xl w-full max-w-md overflow-hidden">
-            <div className="flex items-center justify-between border-b px-6 py-4">
+          <div className="bg-white rounded-xl shadow-2xl w-full max-w-md overflow-hidden dark:bg-gray-900 dark:text-gray-100">
+            <div className="flex items-center justify-between border-b px-6 py-4 dark:border-gray-800">
               <h2 className="text-lg font-semibold">Pembayaran Invoice</h2>
-              <button onClick={()=>setPayModalOpen(false)} className="text-gray-400 hover:text-gray-600 text-xl">×</button>
+              <button onClick={()=>setPayModalOpen(false)} className="text-gray-400 hover:text-gray-600 text-xl dark:text-gray-400 dark:hover:text-gray-300">×</button>
             </div>
             <div className="p-6 space-y-4">
-              <div className="text-sm text-gray-700">
+              <div className="text-sm text-gray-700 dark:text-gray-300">
                 <div className="font-medium">{selectedPayRow.invoiceNumber}</div>
                 <div>Total: {fmt(selectedPayRow.total)} | Dibayar: {fmt(Number(selectedPayRow.downPayment||0))}</div>
                 <div>Sisa: {fmt(Math.max(0, Number(selectedPayRow.total) - Number(selectedPayRow.downPayment||0)))}</div>
               </div>
               <div className="flex gap-2">
-                <button onClick={()=>setPayMode('paid')} className={`px-3 py-2 rounded border ${payMode==='paid'?'border-blue-500 bg-blue-50':''}`}>Tandai Lunas</button>
-                <button onClick={()=>setPayMode('add')} className={`px-3 py-2 rounded border ${payMode==='add'?'border-blue-500 bg-blue-50':''}`}>Rekam Tambahan</button>
+                <button onClick={()=>setPayMode('paid')} className={`px-3 py-2 rounded border ${payMode==='paid'?'border-blue-500 bg-blue-50':''} dark:border-gray-700 dark:bg-transparent`}>Tandai Lunas</button>
+                <button onClick={()=>setPayMode('add')} className={`px-3 py-2 rounded border ${payMode==='add'?'border-blue-500 bg-blue-50':''} dark:border-gray-700 dark:bg-transparent`}>Rekam Tambahan</button>
               </div>
               {payMode==='add' && (
                 <div>
                   <label className="block text-sm font-medium mb-1">Jumlah Tambahan (Rp)</label>
-                  <input value={payAmount} onChange={(e)=>setPayAmount(e.target.value)} placeholder="0" className="w-full rounded border px-3 py-2" />
+                  <input value={payAmount} onChange={(e)=>setPayAmount(e.target.value)} placeholder="0" className="w-full rounded border px-3 py-2 dark:border-gray-700 dark:bg-transparent dark:text-gray-200" />
                 </div>
               )}
             </div>
-            <div className="flex justify-end gap-3 border-t px-6 py-4">
-              <button onClick={()=>setPayModalOpen(false)} className="rounded-lg border border-gray-300 px-4 py-2 text-sm font-medium text-gray-600 hover:bg-gray-100">Batal</button>
+            <div className="flex justify-end gap-3 border-t px-6 py-4 dark:border-gray-800">
+              <button onClick={()=>setPayModalOpen(false)} className="rounded-lg border border-gray-300 px-4 py-2 text-sm font-medium text-gray-600 hover:bg-gray-100 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-white/5">Batal</button>
               <button onClick={async ()=>{
                 try {
                   let payload:any = {};
@@ -618,13 +675,13 @@ function InvoicePageInner() {
       {/* Modal Kwitansi untuk Paid */}
       {kwModalOpen && selectedKwRow && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4" onClick={(e)=>{ if(e.target===e.currentTarget) setKwModalOpen(false); }}>
-          <div className="bg-white rounded-xl shadow-2xl w-full max-w-md overflow-hidden">
-            <div className="flex items-center justify-between border-b px-6 py-4">
+          <div className="bg-white rounded-xl shadow-2xl w-full max-w-md overflow-hidden dark:bg-gray-900 dark:text-gray-100">
+            <div className="flex items-center justify-between border-b px-6 py-4 dark:border-gray-800">
               <h2 className="text-lg font-semibold">Posting ke Kwitansi</h2>
-              <button onClick={()=>setKwModalOpen(false)} className="text-gray-400 hover:text-gray-600 text-xl">×</button>
+              <button onClick={()=>setKwModalOpen(false)} className="text-gray-400 hover:text-gray-600 text-xl dark:text-gray-400 dark:hover:text-gray-300">×</button>
             </div>
             <div className="p-6 space-y-4">
-              <div className="text-sm text-gray-700">
+              <div className="text-sm text-gray-700 dark:text-gray-300">
                 <div className="font-medium">{selectedKwRow.invoiceNumber}</div>
                 <div>Customer: {(selectedKwRow.customer?.pic || '-') + (selectedKwRow.customer?.company ? ' - ' + selectedKwRow.customer.company : '')}</div>
                 <div>Total: {fmt(selectedKwRow.total)}</div>
@@ -634,8 +691,8 @@ function InvoicePageInner() {
                 Buat Surat Jalan juga
               </label>
             </div>
-            <div className="flex justify-end gap-3 border-t px-6 py-4">
-              <button onClick={()=>setKwModalOpen(false)} className="rounded-lg border border-gray-300 px-4 py-2 text-sm font-medium text-gray-600 hover:bg-gray-100">Batal</button>
+            <div className="flex justify-end gap-3 border-t px-6 py-4 dark:border-gray-800">
+              <button onClick={()=>setKwModalOpen(false)} className="rounded-lg border border-gray-300 px-4 py-2 text-sm font-medium text-gray-600 hover:bg-gray-100 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-white/5">Batal</button>
               <button onClick={()=>{ 
                 try {
                   const payload = {
@@ -658,22 +715,22 @@ function InvoicePageInner() {
       {/* Modal Preview PDF (native browser viewer, allows download) */}
       {pdfModalOpen && selectedPdfRow && (
         <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4" onClick={(e)=>{ if(e.target===e.currentTarget) setPdfModalOpen(false); }}>
-          <div className="bg-white rounded-xl shadow-2xl w-full max-w-5xl h-[85vh] overflow-hidden flex flex-col">
-            <div className="flex items-center justify-between border-b px-6 py-4">
+          <div className="bg-white rounded-xl shadow-2xl w-full max-w-5xl h-[85vh] overflow-hidden flex flex-col dark:bg-gray-900 dark:text-gray-100">
+            <div className="flex items-center justify-between border-b px-6 py-4 dark:border-gray-800">
               <h2 className="text-lg font-semibold">Preview Invoice - {selectedPdfRow.invoiceNumber}</h2>
               <div className="flex items-center gap-3">
                 <a
                   href={`/api/invoices/${selectedPdfRow.id}/pdf?preview=1`}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="rounded-lg border border-gray-300 px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-100"
+                  className="rounded-lg border border-gray-300 px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-100 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-white/5"
                 >
                   Buka di tab baru
                 </a>
-                <button onClick={()=>setPdfModalOpen(false)} className="text-gray-400 hover:text-gray-600 text-xl">×</button>
+                <button onClick={()=>setPdfModalOpen(false)} className="text-gray-400 hover:text-gray-600 text-xl dark:text-gray-400 dark:hover:text-gray-300">×</button>
               </div>
             </div>
-            <div className="flex-1 bg-gray-50">
+            <div className="flex-1 bg-gray-50 dark:bg-gray-800">
               <iframe
                 title={`Preview Invoice ${selectedPdfRow.invoiceNumber}`}
                 src={`/api/invoices/${selectedPdfRow.id}/pdf?preview=1`}

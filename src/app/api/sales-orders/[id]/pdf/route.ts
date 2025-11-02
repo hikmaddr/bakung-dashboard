@@ -6,7 +6,7 @@ import fontkit from "@pdf-lib/fontkit";
 import fs from "fs/promises";
 import path from "path";
 import { resolveTheme, toRgb255, resolveThankYou, resolvePaymentLines, type InvoiceTemplateTheme, DEFAULT_TERMS } from "@/lib/quotationTheme";
-import { toRgb, isLightHex, splitTextToSize } from "@/lib/pdfCommon";
+import { toRgb, isLightHex, splitTextToSize, formatPdfFileName } from "@/lib/pdfCommon";
 import { getActiveBrandProfile, resolveAllowedBrandIds } from "@/lib/brand";
 import { getAuth } from "@/lib/auth";
 
@@ -556,8 +556,8 @@ const drawSignatureSection = async (
   if (sigUrl) {
     const bytes = await (async () => {
       try {
-        const absoluteUrl = sigUrl.startsWith("http") ? sigUrl : `${process.env.NEXT_PUBLIC_BASE_URL || "http://localhost:3000"}${sigUrl.startsWith("/") ? sigUrl : `/${sigUrl}`}`;
-        return await loadImageBytes(absoluteUrl);
+        // Baca langsung dengan loader yang mendukung URL absolut dan path relatif ke `public/`
+        return await loadImageBytes(sigUrl);
       } catch {
         return null;
       }
@@ -648,7 +648,6 @@ export async function GET(
     } catch {}
     const templateDefaults = (brand?.templateDefaults ?? {}) as Record<string, string>;
     const theme = resolveTheme(brand as any, templateDefaults?.invoice);
-    const auth = await getAuth();
     let actor = { name: (auth?.user?.name as string) || brand?.name || "Sales", email: brand?.email || null, phone: brand?.phone || null } as { name: string; email?: string|null; phone?: string|null };
     if (auth?.userId) {
       try {
@@ -780,9 +779,9 @@ export async function GET(
     }
 
     const pdfBytes = Buffer.from(await pdf.save());
-    const safeOrderNumber = (order.orderNumber || `SO-${order.id}`).replace(/[^\w\-]+/g, "_");
-    const safeCustomer = (order.customer?.company || order.customer?.pic || "Customer").replace(/[^\w\-]+/g, "_");
-    const fileName = `SalesOrder-${safeOrderNumber}-${safeCustomer}.pdf`;
+    const orderNumber = order.orderNumber || `SO-${order.id}`;
+    const customerName = order.customer?.pic || order.customer?.company || "Customer";
+    const fileName = formatPdfFileName(orderNumber, customerName, `SO-${order.id}`);
     return new Response(pdfBytes, {
       headers: {
         "Content-Type": "application/pdf",

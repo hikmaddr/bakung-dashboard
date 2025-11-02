@@ -77,13 +77,11 @@ export default function NotificationDropdown() {
   }
 
   const handleClick = async () => {
+    // Buka/tutup dropdown tanpa menandai seluruh notifikasi sebagai dibaca
     toggleDropdown();
     try {
-      // Tandai semua sebagai dibaca saat dropdown dibuka
-      await updateRead([], true);
-    } finally {
-      loadNotifications();
-    }
+      await loadNotifications();
+    } catch {}
   };
 
   function isApprovalNotification(n: NotificationItem): boolean {

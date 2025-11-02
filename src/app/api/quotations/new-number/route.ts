@@ -1,18 +1,16 @@
 import { NextResponse, type NextRequest } from "next/server";
-import { prisma } from "@/lib/prisma";
+import { generateNextNumber } from "@/lib/documentNumber";
+import { getActiveBrandProfile } from "@/lib/brand";
 
-export async function GET(_req: NextRequest) {
+export async function GET(req: NextRequest) {
   try {
-    const year = new Date().getFullYear();
-    const base = `QUO-${year}`;
-    const count = await prisma.quotation.count({
-      where: { quotationNumber: { startsWith: base } },
-    });
-    const quotationNumber = `${base}-${String(count + 1).padStart(4, "0")}`;
+    const dateParam = req.nextUrl.searchParams.get("date");
+    const dt = dateParam ? new Date(dateParam) : new Date();
+    const active = await getActiveBrandProfile();
+    const quotationNumber = await generateNextNumber("quotation", { brandProfileId: active?.id ?? undefined, date: dt });
     return NextResponse.json({ quotationNumber });
   } catch (e) {
     console.error("GET /api/quotations/new-number error:", e);
     return NextResponse.json({ error: "Gagal menghitung nomor" }, { status: 500 });
   }
 }
-

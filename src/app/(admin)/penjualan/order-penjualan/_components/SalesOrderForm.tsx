@@ -874,6 +874,7 @@ export const SalesOrderForm: React.FC<SalesOrderFormProps> = ({
     initialValues?.orderNumber ?? ""
   );
   const [loadingOrderNumber, setLoadingOrderNumber] = useState(false);
+  const [orderNumberLocked, setOrderNumberLocked] = useState<boolean>(true);
   const [date, setDate] = useState(
     initialValues?.date ?? formatDateValue(new Date())
   );
@@ -919,44 +920,67 @@ export const SalesOrderForm: React.FC<SalesOrderFormProps> = ({
    setNotes(initialValues.notes ?? "");
   }, [initialValues, defaultUnit]);
 
+  // Determine lock setting from active brand profile
   useEffect(() => {
-    if (mode !== "create") return;
-    if (initialValues?.orderNumber) return;
-    if (orderNumber) return;
-
-    let active = true;
-    setLoadingOrderNumber(true);
+    let alive = true;
     (async () => {
       try {
-        const res = await fetch("/api/sales-orders/new-number", {
-          cache: "no-store",
-        });
+        const res = await fetch('/api/brand-profiles/active', { cache: 'no-store' });
+        const json = await res.json();
+        const nf = json?.numberFormats || {};
+        const lockedVal =
+          nf?.lockedSalesOrder ??
+          nf?.salesOrderLocked ??
+          nf?.numberFormatsLocked?.salesOrder ??
+          nf?.salesOrder?.locked;
+        const locked = String(lockedVal ?? 'true').toLowerCase() === 'true';
+        if (alive) setOrderNumberLocked(locked);
+      } catch {
+        // default locked = true
+      }
+    })();
+    return () => { alive = false; };
+  }, []);
+
+  // Auto-fetch sales order number
+  useEffect(() => {
+    if (mode !== 'create') return;
+
+    let active = true;
+    const run = async () => {
+      setLoadingOrderNumber(true);
+      try {
+        const res = await fetch(`/api/sales-orders/new-number?date=${encodeURIComponent(parseDateValue(date)?.toISOString() || new Date().toISOString())}`, { cache: 'no-store' });
         const json = await res.json();
         if (!active) return;
-        if (res.ok && json?.success && json?.data?.orderNumber) {
-          setOrderNumber(String(json.data.orderNumber));
+        const val = json?.data?.orderNumber ?? json?.orderNumber;
+        if (res.ok && (json?.success ?? true) && val) {
+          setOrderNumber(String(val));
         } else {
-          toast.error(
-            json?.message || "Gagal mengambil nomor sales order baru"
-          );
+          toast.error(json?.message || 'Gagal mengambil nomor sales order baru');
         }
       } catch (error: unknown) {
         if (active) {
-          const message =
-            error instanceof Error
-              ? error.message
-              : "Gagal mengambil nomor sales order baru";
+          const message = error instanceof Error ? error.message : 'Gagal mengambil nomor sales order baru';
           toast.error(message);
         }
       } finally {
         if (active) setLoadingOrderNumber(false);
       }
-    })();
-
-    return () => {
-      active = false;
     };
-  }, [mode, initialValues?.orderNumber, orderNumber]);
+
+    // If locked: always refresh on date change
+    if (orderNumberLocked) {
+      run();
+    } else {
+      // Unlocked: only fetch if empty and no initial preset
+      if (!initialValues?.orderNumber && !orderNumber) {
+        run();
+      }
+    }
+
+    return () => { active = false; };
+  }, [mode, initialValues?.orderNumber, orderNumberLocked, date]);
 
   const [customers, setCustomers] = useState<CustomerOption[]>([]);
   const [customersLoading, setCustomersLoading] = useState(true);
@@ -1331,13 +1355,14 @@ export const SalesOrderForm: React.FC<SalesOrderFormProps> = ({
           <label className="mb-1 block text-sm font-medium">
             Nomor Sales Order
           </label>
-          <div className="w-full rounded-lg border border-gray-300 bg-gray-100 px-3 py-2 text-sm text-gray-700">
-            {orderNumber
-              ? orderNumber
-              : loadingOrderNumber
-              ? "Memuat nomor..."
-              : "Nomor akan dibuat otomatis saat disimpan"}
-          </div>
+          <input
+            type="text"
+            value={orderNumber}
+            readOnly={orderNumberLocked}
+            onChange={(e) => setOrderNumber(e.target.value)}
+            placeholder={loadingOrderNumber ? 'Memuat nomor...' : (orderNumberLocked ? 'Nomor akan dibuat otomatis saat disimpan' : 'Masukkan nomor sales order')}
+            className={`w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-200 ${orderNumberLocked ? 'bg-gray-100 cursor-not-allowed text-gray-700' : 'bg-white'}`}
+          />
         </div>
         <div>
           <label className="mb-1 block text-sm font-medium">Tanggal</label>

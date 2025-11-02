@@ -66,6 +66,26 @@ export const splitTextToSize = (
   return lines.length ? lines : [text];
 };
 
+const sanitizeFileSegment = (input: unknown) =>
+  String(input ?? "")
+    .replace(/[\\:*?"<>|]+/g, "-")
+    .replace(/\s+/g, " ")
+    .trim();
+
+export const formatPdfFileName = (
+  numberValue: string | null | undefined,
+  customerValue: string | null | undefined,
+  fallbackNumber: string,
+  fallbackCustomer = "Customer"
+) => {
+  const numberPart = sanitizeFileSegment(numberValue);
+  const customerPart = sanitizeFileSegment(customerValue);
+  const safeNumber = numberPart || sanitizeFileSegment(fallbackNumber) || "Dokumen";
+  const safeCustomer = customerPart || sanitizeFileSegment(fallbackCustomer) || "Customer";
+  const normalizedNumber = safeNumber.replace(/-+/g, "/").replace(/\s*\/\s*/g, "/");
+  return `${normalizedNumber} - ${safeCustomer}.pdf`;
+};
+
 // Fonts (fallback ke PlusJakartaSans dari public/fonts)
 const FONT_REGULAR_PATH = path.join(process.cwd(), "public", "fonts", "PlusJakartaSans-Medium.ttf");
 const FONT_SEMIBOLD_PATH = path.join(process.cwd(), "public", "fonts", "PlusJakartaSans-Bold.ttf");
@@ -120,16 +140,17 @@ const loadImageBytes = async (source: string): Promise<Uint8Array | null> => {
   }
 };
 
-export const embedBrandLogo = async (pdfDoc: PDFDocument, brand: BrandProfile): Promise<{ image: PDFImage; width: number; height: number } | null> => {
+export const embedBrandLogo = async (
+  pdfDoc: PDFDocument,
+  brand: BrandProfile
+): Promise<{ image: PDFImage; width: number; height: number } | null> => {
   if (!brand.logoUrl) return null;
   try {
-    const logoUrl = brand.logoUrl.startsWith("http")
-      ? brand.logoUrl
-      : `${process.env.NEXT_PUBLIC_BASE_URL || "http://localhost:3000"}${brand.logoUrl}`;
-    const response = await fetch(logoUrl);
-    if (!response.ok) return null;
-    const buffer = await response.arrayBuffer();
-    const bytes = new Uint8Array(buffer);
+    // Gunakan loader serbaguna yang mendukung URL absolut (http/https)
+    // dan path relatif ke folder `public/` (misal: "/uploads/brand/logo.png").
+    const source = brand.logoUrl;
+    const bytes = await loadImageBytes(source.startsWith("http") ? source : source);
+    if (!bytes) return null;
     let image: PDFImage;
     try {
       image = await pdfDoc.embedPng(bytes);
@@ -164,10 +185,8 @@ export const embedSignatureImage = async (
 ): Promise<{ image: PDFImage; width: number; height: number } | null> => {
   try {
     if (!imageUrl) return null;
-    const absoluteUrl = imageUrl.startsWith("http")
-      ? imageUrl
-      : `${process.env.NEXT_PUBLIC_BASE_URL || "http://localhost:3000"}${imageUrl.startsWith("/") ? imageUrl : `/${imageUrl}`}`;
-    const bytes = await loadImageBytes(absoluteUrl);
+    // Gunakan loader serbaguna: mendukung URL absolut dan path relatif ke folder `public/`
+    const bytes = await loadImageBytes(imageUrl);
     if (!bytes) return null;
     let image: PDFImage;
     try {
@@ -194,7 +213,8 @@ export const initPdfWithBrandFonts = async () => {
   const font = await safeEmbedFont(pdf, regularBytes, StandardFonts.Helvetica);
   const bold = await safeEmbedFont(pdf, semiBoldBytes, StandardFonts.HelveticaBold);
   const extraBold = await safeEmbedFont(pdf, extraBoldBytes, StandardFonts.HelveticaBold);
-  return { pdf, font, bold, extraBold };
+  const italic = await safeEmbedFont(pdf, null, StandardFonts.HelveticaOblique);
+  return { pdf, font, bold, extraBold, italic };
 };
 
 // Common header: brand on left, title & meta on right, separator line below
@@ -299,26 +319,45 @@ export const drawInfoSectionCommon = (
   const availableWidth = width - margin * 2 - gap;
   const columnWidth = availableWidth / 2;
   const baseY = startY - 6;
+  const uniqueValues = (values: Array<string | null | undefined>) =>
+    values
+      .map((value) => (typeof value === "string" ? value.trim() : ""))
+      .filter((value, index, arr) => value && arr.indexOf(value) === index);
 
-  const combinedName = customer && (customer.pic || customer.company)
-    ? [customer.pic, customer.company].filter(Boolean).filter((v, i, a) => a.indexOf(v) === i).join(" | ")
+  const customerNameParts = uniqueValues([customer?.pic, customer?.company]);
+  const customerDisplayName = customerNameParts.length
+    ? customerNameParts.join(" - ")
     : "Customer";
 
   const fromRows: Array<{ text: string; size?: number; font?: PDFFont; color?: ReturnType<typeof rgb> }> = [];
-  const fromHeading = actor.name || brand.name || "Our Company";
+  const fromHeading = (actor.name && actor.name.trim()) || brand.name || "Our Company";
   fromRows.push({ text: fromHeading, size: 10, font: bold, color: toRgb(theme.headerTextColor) });
-  const contactValues = [
-    actor.email || ((brand.showBrandEmail ?? true) ? brand.email : null),
-    actor.phone || brand.phone,
-  ].filter((v): v is string => Boolean(v && v.trim())).filter((v, i, a) => a.indexOf(v) === i);
-  contactValues.forEach((value) => fromRows.push({ text: value, size: 9, font, color: toRgb(theme.mutedText) }));
-  if ((brand.showBrandAddress ?? true) && brand.address)
-    splitTextToSize(String(brand.address), columnWidth - 4, font, 8).forEach((line) => fromRows.push({ text: line, size: 8, font, color: toRgb(theme.mutedText) }));
+
+  if ((brand.showBrandAddress ?? true) && brand.address) {
+    const addressLines = splitTextToSize(String(brand.address), columnWidth - 4, font, 8);
+    addressLines.forEach((line) => fromRows.push({ text: line, size: 8, font, color: toRgb(theme.mutedText) }));
+  }
+
+  const emailValues = uniqueValues([actor.email]);
+  emailValues.forEach((value) => fromRows.push({ text: value, size: 9, font, color: toRgb(theme.mutedText) }));
+
+  const phoneValues = uniqueValues([actor.phone]);
+  phoneValues.forEach((value) => fromRows.push({ text: value, size: 9, font, color: toRgb(theme.mutedText) }));
 
   const billRows: Array<{ text: string; size?: number; font?: PDFFont; color?: ReturnType<typeof rgb> }> = [];
-  billRows.push({ text: combinedName, size: 10, font: bold, color: toRgb(theme.headerTextColor) });
-  if (customer?.address) splitTextToSize(String(customer.address), columnWidth - 4, font, 8).forEach((line) => billRows.push({ text: line, size: 8, font, color: toRgb(theme.mutedText) }));
-  [customer?.email, customer?.phone].filter((v): v is string => Boolean(v && v.trim())).filter((v, i, a) => a.indexOf(v) === i).forEach((value) => billRows.push({ text: value, size: 9, font, color: toRgb(theme.mutedText) }));
+  billRows.push({ text: customerDisplayName, size: 10, font: bold, color: toRgb(theme.headerTextColor) });
+
+  if (customer?.address) {
+    splitTextToSize(String(customer.address), columnWidth - 4, font, 8).forEach((line) =>
+      billRows.push({ text: line, size: 8, font, color: toRgb(theme.mutedText) })
+    );
+  }
+
+  const customerEmails = uniqueValues([customer?.email]);
+  customerEmails.forEach((value) => billRows.push({ text: value, size: 9, font, color: toRgb(theme.mutedText) }));
+
+  const customerPhones = uniqueValues([customer?.phone]);
+  customerPhones.forEach((value) => billRows.push({ text: value, size: 9, font, color: toRgb(theme.mutedText) }));
 
   const columns = [
     { title: "From", rows: fromRows.length ? fromRows : [{ text: "-", size: 9, font, color: toRgb(theme.mutedText) }] },
@@ -389,6 +428,16 @@ export const drawSignatureSectionCommon = async (
   // Caption (printed name)
   const caption = actor?.name || metaName || brand.name || "Authorized";
   page.drawText(caption, { x: margin + 12, y: y - 16, size: Math.max(9, Math.floor(11 * s)), font: bold, color: toRgb(theme.headerTextColor) });
+  const titleText = actor?.title || actor?.position || brand.signatureTitle;
+  if (titleText) {
+    page.drawText(String(titleText), {
+      x: margin + 12,
+      y: y - 28,
+      size: Math.max(8, Math.floor(10 * s)),
+      font,
+      color: toRgb(theme.mutedText),
+    });
+  }
 
   return { page, finalY: y - sectionHeight - Math.floor(18 * s) };
 };

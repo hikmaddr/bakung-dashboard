@@ -31,6 +31,8 @@ interface BrandProfile {
   footerText?: string;
   paymentInfo?: string;
   termsConditions?: string;
+  // Kategori bisnis utama brand
+  businessScope?: "CREATIVE" | "PROCUREMENT" | "SOUVENIR";
   showBrandName?: boolean;
   showBrandDescription?: boolean;
   showBrandEmail?: boolean;
@@ -297,6 +299,7 @@ const createEmptyProfile = (overrides: Partial<BrandProfile> = {}): BrandProfile
   footerText: overrides.footerText ?? "",
   paymentInfo: overrides.paymentInfo ?? "",
   termsConditions: overrides.termsConditions ?? "",
+  businessScope: overrides.businessScope ?? "PROCUREMENT",
   showBrandName: overrides.showBrandName ?? true,
   showBrandDescription: overrides.showBrandDescription ?? true,
   showBrandEmail: overrides.showBrandEmail ?? true,
@@ -343,6 +346,7 @@ const normalizeProfileFromApi = (profile: any): BrandProfile => {
     footerText: profile?.footerText ?? "",
     paymentInfo: profile?.paymentInfo ?? "",
     termsConditions: profile?.termsConditions ?? "",
+    businessScope: profile?.businessScope ?? "PROCUREMENT",
     showBrandName: profile?.showBrandName ?? true,
     showBrandDescription: profile?.showBrandDescription ?? true,
     showBrandEmail: profile?.showBrandEmail ?? true,
@@ -386,6 +390,7 @@ const buildPayloadFromProfile = (profile: BrandProfile) => {
     ...sanitizedProfile,
     paymentInfo: sanitizedProfile.paymentInfo ?? "",
     termsConditions: sanitizedProfile.termsConditions ?? "",
+    businessScope: sanitizedProfile.businessScope ?? "PROCUREMENT",
     showBrandName: sanitizedProfile.showBrandName ?? true,
     showBrandDescription: sanitizedProfile.showBrandDescription ?? true,
     showBrandEmail: sanitizedProfile.showBrandEmail ?? true,
@@ -400,6 +405,12 @@ const buildPayloadFromProfile = (profile: BrandProfile) => {
 const notifyBrandModulesUpdated = () => {
   if (typeof window !== "undefined") {
     window.dispatchEvent(new CustomEvent("brand-modules:updated"));
+  }
+};
+
+const notifyBrandListUpdated = () => {
+  if (typeof window !== "undefined") {
+    window.dispatchEvent(new CustomEvent("brand-list:updated"));
   }
 };
 
@@ -728,6 +739,7 @@ function BrandSettingsPage() {
 
       await fetchProfiles({ silent: true });
       notifyBrandModulesUpdated();
+      notifyBrandListUpdated();
 
       toast.success(
         updatedProfile.isActive ? "Brand profile set as active." : "Brand profile updated."
@@ -771,6 +783,7 @@ function BrandSettingsPage() {
 
       await fetchProfiles({ silent: true });
       notifyBrandModulesUpdated();
+      notifyBrandListUpdated();
 
       toast.success("Brand profile deleted successfully.");
     } catch (err) {
@@ -841,6 +854,8 @@ function BrandSettingsPage() {
       if (savedProfile.isActive) {
         notifyBrandModulesUpdated();
       }
+      // Brand list berubah saat create/update, informasikan ke seluruh UI
+      notifyBrandListUpdated();
 
       // Show success message
       toast.success(editingProfile ? "Brand profile updated successfully" : "Brand profile created successfully");
@@ -1326,84 +1341,90 @@ function BrandSettingsPage() {
             {/* Modal Content - Scrollable */}
             <div className="flex-1 overflow-y-auto p-4">
               <div className="space-y-6">
-                {/* Preset Quick Actions */}
+                {/* Business Scope Selector */}
                 <Card className="border-l-4 border-l-indigo-500">
                   <CardHeader className="pb-4">
                     <CardTitle className="flex items-center gap-2">
                       <div className="w-3 h-3 bg-indigo-500 rounded-full"></div>
-                      Gunakan Preset Cepat
+                      Business Scope
                     </CardTitle>
                     <CardDescription>
-                      Terapkan preset untuk mengisi kombinasi warna, modul, dan template utama secara instan. Anda masih bisa menyesuaikannya setelah dipilih.
+                      Pilih kategori utama brand. Pilihan ini akan menentukan modul yang aktif di sistem.
                     </CardDescription>
                   </CardHeader>
-                  <CardContent className="grid gap-4 md:grid-cols-2">
-                    {BRAND_PRESETS.map((preset) => (
-                      <div key={preset.id} className="rounded-xl border border-gray-200 p-4 flex flex-col justify-between">
-                        <div className="space-y-2">
-                          <h3 className="text-sm font-semibold text-gray-900">{preset.label}</h3>
-                          <p className="text-xs text-muted-foreground">{preset.description}</p>
-                          <div className="flex gap-2">
-                            <span
-                              className="h-6 w-6 rounded-full border"
-                              style={{ backgroundColor: preset.overrides.primaryColor }}
-                              title="Primary color"
-                            />
-                            <span
-                              className="h-6 w-6 rounded-full border"
-                              style={{ backgroundColor: preset.overrides.secondaryColor }}
-                              title="Secondary color"
-                            />
-                          </div>
-                          <div className="flex flex-wrap gap-1 pt-1">
-                            {MODULE_OPTIONS.map(({ key, label }) => {
-                              const enabled = preset.overrides.modules?.[key] ?? defaultModules[key];
-                              return (
-                                <span
-                                  key={key}
-                                  className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${
-                                    enabled ? "bg-emerald-100 text-emerald-700" : "bg-gray-100 text-gray-500"
-                                  }`}
-                                >
-                                  {label}
-                                </span>
-                              );
-                            })}
-                          </div>
-                        </div>
-                        <Button
-                          onClick={() => {
-                            setFormData((prev) => {
-                              const currentModules = normalizeModules(prev.modules);
-                              return {
-                                ...prev,
-                                primaryColor: preset.overrides.primaryColor ?? prev.primaryColor,
-                                secondaryColor: preset.overrides.secondaryColor ?? prev.secondaryColor,
-                                footerText: preset.overrides.footerText ?? prev.footerText,
-                                paymentInfo: preset.overrides.paymentInfo ?? prev.paymentInfo,
-                                termsConditions: preset.overrides.termsConditions ?? prev.termsConditions,
-                                showBrandName:
-                                  preset.overrides.showBrandName ?? (prev.showBrandName ?? true),
-                                showBrandDescription:
-                                  preset.overrides.showBrandDescription ?? (prev.showBrandDescription ?? true),
-                                templateDefaults: {
-                                  ...prev.templateDefaults,
-                                  ...(preset.overrides.templateDefaults ?? {}),
-                                },
-                                modules: {
-                                  ...currentModules,
-                                  ...(preset.overrides.modules ?? {}),
-                                },
-                              };
-                            });
-                          }}
-                          variant="outline"
-                          className="mt-4"
-                        >
-                          Terapkan Preset
-                        </Button>
-                      </div>
-                    ))}
+                  <CardContent>
+                    <div className="grid gap-4 sm:grid-cols-3">
+                      {([
+                        {
+                          id: "CREATIVE",
+                          title: "Creative",
+                          desc: "Fokus jasa kreatif & dokumen penjualan",
+                          modules: { sales: true, purchase: false, inventory: false },
+                        },
+                        {
+                          id: "PROCUREMENT",
+                          title: "Procurement",
+                          desc: "Pengadaan & operasional barang (semua modul)",
+                          modules: { sales: true, purchase: true, inventory: true },
+                        },
+                        {
+                          id: "SOUVENIR",
+                          title: "Souvenir",
+                          desc: "Merchandise & souvenir (semua modul)",
+                          modules: { sales: true, purchase: true, inventory: true },
+                        },
+                      ] as const).map((opt) => {
+                        const active = (formData.businessScope ?? "PROCUREMENT") === opt.id;
+                        return (
+                          <button
+                            type="button"
+                            key={opt.id}
+                            onClick={() => {
+                              setFormData((prev) => {
+                                const normalized = normalizeModules(prev.modules);
+                                const nextModules = { ...normalized, ...opt.modules };
+                                return {
+                                  ...prev,
+                                  businessScope: opt.id,
+                                  modules: nextModules,
+                                };
+                              });
+                              notifyBrandModulesUpdated();
+                            }}
+                            className={`text-left rounded-xl border p-4 transition ${
+                              active ? "border-indigo-600 bg-indigo-50" : "border-gray-200 hover:border-gray-300"
+                            }`}
+                          >
+                            <div className="flex items-center justify-between">
+                              <div>
+                                <p className="font-medium text-gray-900">{opt.title}</p>
+                                <p className="text-xs text-muted-foreground">{opt.desc}</p>
+                              </div>
+                              <span className={`text-[11px] rounded-full px-2 py-0.5 ${
+                                active ? "bg-indigo-100 text-indigo-700" : "bg-gray-100 text-gray-600"
+                              }`}>
+                                {active ? "Dipilih" : "Pilih"}
+                              </span>
+                            </div>
+                            <div className="mt-3 flex flex-wrap gap-1">
+                              {MODULE_OPTIONS.map(({ key, label }) => {
+                                const enabled = opt.modules[key as keyof typeof opt.modules];
+                                return (
+                                  <span
+                                    key={key}
+                                    className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${
+                                      enabled ? "bg-emerald-100 text-emerald-700" : "bg-gray-100 text-gray-500"
+                                    }`}
+                                  >
+                                    {label}
+                                  </span>
+                                );
+                              })}
+                            </div>
+                          </button>
+                        );
+                      })}
+                    </div>
                   </CardContent>
                 </Card>
 
@@ -1663,62 +1684,118 @@ function BrandSettingsPage() {
                       Number Formats
                     </CardTitle>
                     <CardDescription>
-                      Configure numbering formats for documents. Use {`{BRAND}`}, {`{YYYY}`}, {`{MM}`}, {`{SEQ4}`} as placeholders.
+                      Configure numbering formats. Use {`{BRAND}`}, {`{YYYY}`}, {`{MM}`}, {`{ROMAN}`}, {`{SEQ4}`}.
                     </CardDescription>
                   </CardHeader>
                   <CardContent>
                     <div className="space-y-4">
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                        <div className="space-y-2">
-                          <Label htmlFor="modal-quotation-format" className="text-sm font-semibold">Quotation Format</Label>
-                          <Input
-                            id="modal-quotation-format"
-                            placeholder="QUO-{YYYY}-{0000}"
-                            value={formData.numberFormats?.quotation || ""}
-                            onChange={(e) => handleNestedInputChange("numberFormats", "quotation", e.target.value)}
-                            className="border-2 focus:border-green-500 font-mono"
-                          />
-                        </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="modal-quotation-format" className="text-sm font-semibold">Quotation Format</Label>
+                    <Input
+                      id="modal-quotation-format"
+                      placeholder="QUO-{YYYY}-{0000}"
+                      value={formData.numberFormats?.quotation || ""}
+                      onChange={(e) => handleNestedInputChange("numberFormats", "quotation", e.target.value)}
+                      className="border-2 focus:border-green-500 font-mono"
+                    />
+                    <div className="pt-1">
+                      <Checkbox
+                        id="lock-quotation-number"
+                        label="Kunci nomor otomatis"
+                        checked={(formData.numberFormats as any)?.lockedQuotation === 'true'}
+                        onChange={(checked) =>
+                          handleNestedInputChange(
+                            "numberFormats",
+                            "lockedQuotation",
+                            checked ? 'true' : 'false'
+                          )
+                        }
+                      />
+                    </div>
+                  </div>
 
-                        <div className="space-y-2">
-                          <Label htmlFor="modal-sales-order-format" className="text-sm font-semibold">Sales Order Format</Label>
-                          <Input
-                            id="modal-sales-order-format"
-                            placeholder="SO-{YYYY}-{0000}"
-                            value={formData.numberFormats?.salesOrder || ""}
-                            onChange={(e) => handleNestedInputChange("numberFormats", "salesOrder", e.target.value)}
-                            className="border-2 focus:border-green-500 font-mono"
-                          />
-                        </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="modal-sales-order-format" className="text-sm font-semibold">Sales Order Format</Label>
+                    <Input
+                      id="modal-sales-order-format"
+                      placeholder="SO-{YYYY}-{0000}"
+                      value={formData.numberFormats?.salesOrder || ""}
+                      onChange={(e) => handleNestedInputChange("numberFormats", "salesOrder", e.target.value)}
+                      className="border-2 focus:border-green-500 font-mono"
+                    />
+                    <div className="pt-1">
+                      <Checkbox
+                        id="lock-sales-order-number"
+                        label="Kunci nomor otomatis"
+                        checked={(formData.numberFormats as any)?.lockedSalesOrder === 'true'}
+                        onChange={(checked) =>
+                          handleNestedInputChange(
+                            "numberFormats",
+                            "lockedSalesOrder",
+                            checked ? 'true' : 'false'
+                          )
+                        }
+                      />
+                    </div>
+                  </div>
 
-                        <div className="space-y-2">
-                          <Label htmlFor="modal-invoice-format" className="text-sm font-semibold">Invoice Format</Label>
-                          <Input
-                            id="modal-invoice-format"
-                            placeholder="INV-{YYYY}-{0000}"
-                            value={formData.numberFormats?.invoice || ""}
-                            onChange={(e) => handleNestedInputChange("numberFormats", "invoice", e.target.value)}
-                            className="border-2 focus:border-green-500 font-mono"
-                          />
-                        </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="modal-invoice-format" className="text-sm font-semibold">Invoice Format</Label>
+                    <Input
+                      id="modal-invoice-format"
+                      placeholder="INV-{YYYY}-{0000}"
+                      value={formData.numberFormats?.invoice || ""}
+                      onChange={(e) => handleNestedInputChange("numberFormats", "invoice", e.target.value)}
+                      className="border-2 focus:border-green-500 font-mono"
+                    />
+                    <div className="pt-1">
+                      <Checkbox
+                        id="lock-invoice-number"
+                        label="Kunci nomor otomatis"
+                        checked={(formData.numberFormats as any)?.lockedInvoice === 'true'}
+                        onChange={(checked) =>
+                          handleNestedInputChange(
+                            "numberFormats",
+                            "lockedInvoice",
+                            checked ? 'true' : 'false'
+                          )
+                        }
+                      />
+                    </div>
+                  </div>
 
-                        <div className="space-y-2">
-                          <Label htmlFor="modal-delivery-note-format" className="text-sm font-semibold">Delivery Note Format</Label>
-                          <Input
-                            id="modal-delivery-note-format"
-                            placeholder="DN-{YYYY}-{0000}"
-                            value={formData.numberFormats?.deliveryNote || ""}
-                            onChange={(e) => handleNestedInputChange("numberFormats", "deliveryNote", e.target.value)}
-                            className="border-2 focus:border-green-500 font-mono"
-                          />
-                        </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="modal-delivery-note-format" className="text-sm font-semibold">Delivery Note Format</Label>
+                    <Input
+                      id="modal-delivery-note-format"
+                      placeholder="DN-{YYYY}-{0000}"
+                      value={formData.numberFormats?.deliveryNote || ""}
+                      onChange={(e) => handleNestedInputChange("numberFormats", "deliveryNote", e.target.value)}
+                      className="border-2 focus:border-green-500 font-mono"
+                    />
+                    <div className="pt-1">
+                      <Checkbox
+                        id="lock-delivery-note-number"
+                        label="Kunci nomor otomatis"
+                        checked={(formData.numberFormats as any)?.lockedDeliveryNote === 'true'}
+                        onChange={(checked) =>
+                          handleNestedInputChange(
+                            "numberFormats",
+                            "lockedDeliveryNote",
+                            checked ? 'true' : 'false'
+                          )
+                        }
+                      />
+                    </div>
+                  </div>
                       </div>
 
                       <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
                         <h4 className="font-semibold text-blue-900 mb-2">Format Examples:</h4>
                         <div className="text-sm text-blue-800 space-y-1">
                           <p><strong>Current:</strong> {formData.numberFormats?.invoice?.replace('{YYYY}', '2025').replace('{0000}', '0001') || 'INV-2025-0001'}</p>
-                          <p><strong>Variables:</strong> {`{BRAND}`} = 3-letter code, {`{YYYY}`} = Year, {`{MM}`} = Month, {`{SEQ4}`} = 4-digit sequence</p>
+                          <p><strong>Variables:</strong> {`{BRAND}`} = 3-letter code, {`{YYYY}`} = Year, {`{MM}`} = Month (01-12), {`{ROMAN}`} = Month in Roman, {`{SEQ4}`} = 4-digit sequence</p>
                         </div>
                       </div>
                     </div>
@@ -1916,80 +1993,135 @@ function BrandSettingsPage() {
                 </CardContent>
               </Card>
 
-              {/* Feature Modules Card */}
-              <Card className="border-l-4 border-l-amber-500">
-                <CardHeader>
+              {/* Feature Modules Display - Read-only based on Business Scope */}
+              <Card className="border-l-4 border-l-emerald-500">
+                <CardHeader className="p-4">
                   <CardTitle className="flex items-center gap-2">
-                    <div className="w-3 h-3 bg-amber-500 rounded-full"></div>
-                    Feature Modules
+                    <div className="w-3 h-3 bg-emerald-500 rounded-full"></div>
+                    Modul Aktif
                   </CardTitle>
                   <CardDescription>
-                    Tentukan modul apa saja yang aktif pada profil brand ini.
+                    Aktifkan modul yang digunakan tim sales. Modul nonaktif tidak muncul pada form dan laporan.
                   </CardDescription>
                 </CardHeader>
-                <CardContent>
-                  <div className="grid gap-4 md:grid-cols-3">
-                    {MODULE_OPTIONS.map(({ key, label, description, Icon }) => {
-                      const isEnabled = (formData.modules?.[key] ?? defaultModules[key]) === true;
-                      return (
-                        <div
-                          key={key}
-                          className={`rounded-xl border p-4 transition-shadow ${
-                            isEnabled ? "border-green-400 shadow-md shadow-green-100" : "border-red-300"
-                          }`}
-                        >
-                          <div className="flex items-start justify-between gap-3">
+                <CardContent className="p-4">
+                  <div className="space-y-4">
+                    <div className="text-sm text-gray-600 bg-blue-50 border border-blue-200 rounded-lg p-3">
+                      <div className="flex items-center gap-2">
+                        <AlertCircle className="h-4 w-4 text-blue-600" />
+                        <span className="font-medium">Konfigurasi Otomatis</span>
+                      </div>
+                      <p className="mt-1 text-xs">
+                        Modul diaktifkan secara otomatis berdasarkan Business Scope yang dipilih. 
+                        Untuk mengubah modul, pilih Business Scope yang berbeda di atas.
+                      </p>
+                    </div>
+                    
+                    <div className="grid gap-3 sm:grid-cols-3">
+                      {MODULE_OPTIONS.map(({ key, label, description, Icon }) => {
+                        const normalizedModules = normalizeModules(formData.modules);
+                        const scope = String(formData.businessScope || "").toUpperCase();
+                        const effectiveModules = { ...normalizedModules } as Record<ModuleKey, boolean>;
+                        if (scope === "CREATIVE") {
+                          effectiveModules.purchase = false;
+                          effectiveModules.inventory = false;
+                        }
+                        const isEnabled = effectiveModules[key];
+                        
+                        return (
+                          <div
+                            key={key}
+                            className={`rounded-lg border p-4 transition-colors ${
+                              isEnabled 
+                                ? "border-emerald-200 bg-emerald-50" 
+                                : "border-gray-200 bg-gray-50"
+                            }`}
+                          >
                             <div className="flex items-start gap-3">
-                              <div
-                                className={`flex h-10 w-10 items-center justify-center rounded-lg ${
-                                  isEnabled ? "bg-green-100 text-green-700" : "bg-red-100 text-red-700"
-                                }`}
-                              >
-                                <Icon className="h-5 w-5" />
+                              <div className={`rounded-lg p-2 ${
+                                isEnabled 
+                                  ? "bg-emerald-100 text-emerald-700" 
+                                  : "bg-gray-100 text-gray-400"
+                              }`}>
+                                <Icon className="h-4 w-4" />
                               </div>
-                              <div>
-                                <p className="font-semibold text-gray-900">{label}</p>
-                                <p className="text-sm text-muted-foreground mt-1">{description}</p>
+                              <div className="flex-1 min-w-0">
+                                <div className="flex items-center gap-2">
+                                  <h4 className={`font-medium text-sm ${
+                                    isEnabled ? "text-emerald-900" : "text-gray-500"
+                                  }`}>
+                                    {label}
+                                  </h4>
+                                  <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${
+                                    isEnabled 
+                                      ? "bg-emerald-100 text-emerald-700" 
+                                      : "bg-gray-100 text-gray-500"
+                                  }`}>
+                                    {isEnabled ? "Aktif" : "Nonaktif"}
+                                  </span>
+                                </div>
+                                <p className={`text-xs mt-1 ${
+                                  isEnabled ? "text-emerald-700" : "text-gray-400"
+                                }`}>
+                                  {description}
+                                </p>
+                                
+                                {isEnabled && (
+                                  <div className="mt-2 flex flex-wrap gap-1">
+                                    {FEATURES_BY_MODULE[key].map(({ key: featureKey, label: featureLabel }) => (
+                                      <span
+                                        key={featureKey}
+                                        className="text-[10px] px-1.5 py-0.5 bg-emerald-100 text-emerald-600 rounded-full font-medium"
+                                      >
+                                        {featureLabel}
+                                      </span>
+                                    ))}
+                                  </div>
+                                )}
                               </div>
                             </div>
-                            <Switch
-                              checked={isEnabled}
-                              onCheckedChange={(checked) => handleModuleToggle(key, checked)}
-                              aria-label={`Toggle module ${label}`}
-                              className="mt-1"
-                            />
                           </div>
-                          <div className="mt-3">
-                            <span
-                              className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ${
-                                isEnabled
-                                  ? "bg-green-100 text-green-700"
-                                  : "bg-red-100 text-red-700"
-                              }`}
-                            >
-                              {isEnabled ? "Aktif" : "Nonaktif"}
-                            </span>
-                          </div>
-
-                          {/* Granular feature toggles */}
-                          <div className="mt-4 grid grid-cols-1 gap-2">
-                            {FEATURES_BY_MODULE[key].map(({ key: featureKey, label: featureLabel }) => {
-                              const featureEnabled = Boolean(formData.modules?.[featureKey]);
-                              return (
-                                <div key={featureKey} className="flex items-center justify-between">
-                                  <span className="text-sm text-gray-700">{featureLabel}</span>
-                                  <Switch
-                                    checked={featureEnabled}
-                                    onCheckedChange={(checked) => handleFeatureToggle(featureKey, checked)}
-                                    aria-label={`Toggle feature ${featureLabel}`}
-                                  />
-                                </div>
-                              );
-                            })}
-                          </div>
+                        );
+                      })}
+                    </div>
+                    
+                    {/* Active Module Summary */}
+                    <div className="border-t pt-4">
+                      <div className="flex items-center justify-between">
+                        <span className="text-sm font-medium text-gray-700">
+                          Ringkasan Modul Aktif:
+                        </span>
+                        <div className="flex flex-wrap gap-1">
+                          {(() => {
+                            const normalizedModules = normalizeModules(formData.modules);
+                            const scope = String(formData.businessScope || "").toUpperCase();
+                            const effectiveModules = { ...normalizedModules } as Record<ModuleKey, boolean>;
+                            if (scope === "CREATIVE") {
+                              effectiveModules.purchase = false;
+                              effectiveModules.inventory = false;
+                            }
+                            const activeModuleNames = MODULE_OPTIONS
+                              .filter(({ key }) => effectiveModules[key])
+                              .map(({ label }) => label);
+                            
+                            return activeModuleNames.length > 0 ? (
+                              activeModuleNames.map((name) => (
+                                <span
+                                  key={name}
+                                  className="text-xs px-2 py-1 bg-emerald-100 text-emerald-700 rounded-full font-medium"
+                                >
+                                  {name}
+                                </span>
+                              ))
+                            ) : (
+                              <span className="text-xs px-2 py-1 bg-gray-100 text-gray-500 rounded-full">
+                                Tidak ada modul aktif
+                              </span>
+                            );
+                          })()}
                         </div>
-                      );
-                    })}
+                      </div>
+                    </div>
                   </div>
                 </CardContent>
               </Card>

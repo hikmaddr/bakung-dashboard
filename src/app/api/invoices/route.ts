@@ -133,13 +133,13 @@ export async function POST(req: NextRequest) {
         total,
         items: {
           create: items.map((it: any) => ({
-            name: it.name,
-            description: it.description || "",
+            name: String(it.name ?? "").slice(0, 191),
+            description: it.description ? String(it.description).slice(0, 191) : null,
             qty: Number(it.qty) || 0,
-            unit: it.unit || "pcs",
+            unit: String(it.unit || "pcs").slice(0, 32),
             price: Number(it.price) || 0,
             discount: Number(it.discount) || 0,
-            discountType: it.discountType || "percent",
+            discountType: String(it.discountType || "percent").slice(0, 32),
             subtotal: Number(it.qty || 0) * Number(it.price || 0),
           })),
         },

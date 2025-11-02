@@ -22,12 +22,20 @@ export default function AuthLayout({
                 <Image
                   width={231}
                   height={48}
-                  src="/images/logo/auth-logo.svg"
-                  alt="Logo"
+                  src="/branding/logo-bakung-color.png"
+                  alt="Bakung Dashboard logo"
+                  className="dark:hidden"
+                />
+                <Image
+                  width={231}
+                  height={48}
+                  src="/branding/logo-bakung-white.png"
+                  alt="Bakung Dashboard logo"
+                  className="hidden dark:block"
                 />
               </Link>
               <p className="text-center text-gray-400 dark:text-white/60">
-                Free and Open-Source Tailwind CSS Admin Dashboard Template
+                Multi-brand business management platform for HDP Works.
               </p>
             </div>
           </div>

@@ -21,10 +21,6 @@ interface UserProfile {
   company?: string;
   website?: string;
   avatar?: string;
-  facebook?: string;
-  twitter?: string;
-  linkedin?: string;
-  instagram?: string;
 }
 
 export default function UserInfoCard() {
@@ -183,49 +179,6 @@ export default function UserInfoCard() {
           <form className="flex flex-col">
             <div className="custom-scrollbar h-[450px] overflow-y-auto px-2 pb-3">
               <div>
-                <h5 className="mb-5 text-lg font-medium text-gray-800 dark:text-white/90 lg:mb-6">
-                  Social Links
-                </h5>
-
-                <div className="grid grid-cols-1 gap-x-6 gap-y-5 lg:grid-cols-2">
-                  <div>
-                    <Label>Facebook</Label>
-                    <Input
-                      type="text"
-                      value={formData.facebook || ""}
-                      onChange={(e) => handleInputChange("facebook", e.target.value)}
-                    />
-                  </div>
-
-                  <div>
-                    <Label>X.com</Label>
-                    <Input
-                      type="text"
-                      value={formData.twitter || ""}
-                      onChange={(e) => handleInputChange("twitter", e.target.value)}
-                    />
-                  </div>
-
-                  <div>
-                    <Label>Linkedin</Label>
-                    <Input
-                      type="text"
-                      value={formData.linkedin || ""}
-                      onChange={(e) => handleInputChange("linkedin", e.target.value)}
-                    />
-                  </div>
-
-                  <div>
-                    <Label>Instagram</Label>
-                    <Input
-                      type="text"
-                      value={formData.instagram || ""}
-                      onChange={(e) => handleInputChange("instagram", e.target.value)}
-                    />
-                  </div>
-                </div>
-              </div>
-              <div className="mt-7">
                 <h5 className="mb-5 text-lg font-medium text-gray-800 dark:text-white/90 lg:mb-6">
                   Personal Information
                 </h5>

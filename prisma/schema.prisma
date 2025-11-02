@@ -11,6 +11,13 @@ datasource db {
 // Inventory & Purchase additions
 // =============================
 
+// Business scope kategori untuk BrandProfile
+enum BusinessScope {
+  CREATIVE
+  PROCUREMENT
+  SOUVENIR
+}
+
 enum StockMutationType {
   IN
   OUT
@@ -258,6 +265,8 @@ model BrandProfile {
   templateDefaults Json     @default("{}")
   numberFormats    Json     @default("{}")
   modules          Json     @default("{}")
+  // Kategori utama brand yang menentukan modul aktif
+  businessScope    BusinessScope @default(PROCUREMENT)
   primaryColor     String?  @default("#0EA5E9")
   secondaryColor   String?  @default("#ECFEFF")
   isActive         Boolean  @default(false)
@@ -277,6 +286,7 @@ model BrandProfile {
   payments        Payment[]
   receipts        Receipt[]
   expenses        Expense[]
+  notifications   Notification[]
   // New relations for additional finance models
   purchaseInvoices PurchaseInvoice[]
   paymentsIn      PaymentIn[]

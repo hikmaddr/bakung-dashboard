@@ -1,2 +1,3 @@
+-- Ensure `notes` column uses TEXT type; modify if it already exists
 ALTER TABLE `quotation`
-    ADD COLUMN `notes` TEXT NULL;
+    MODIFY COLUMN `notes` TEXT NULL;

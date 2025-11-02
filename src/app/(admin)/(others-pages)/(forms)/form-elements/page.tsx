@@ -13,9 +13,9 @@ import { Metadata } from "next";
 import React from "react";
 
 export const metadata: Metadata = {
-  title: "Next.js Form Elements | TailAdmin - Next.js Dashboard Template",
+  title: "Form Elements | Bakung Dashboard",
   description:
-    "This is Next.js Form Elements page for TailAdmin - Next.js Tailwind CSS Admin Dashboard Template",
+    "Reusable form components that power HDP Works processes inside Bakung Dashboard.",
 };
 
 export default function FormElements() {

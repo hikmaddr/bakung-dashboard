@@ -55,8 +55,8 @@ export default function GlobalError({
           </Link>
         </div>
       </div>
-      <p className="absolute text-sm text-center text-gray-500 -translate-x-1/2 bottom-6 left-1/2 dark:text-gray-400">
-        &copy; {new Date().getFullYear()} - TailAdmin
+      <p className="absolute bottom-6 left-1/2 -translate-x-1/2 text-center text-sm text-gray-500 dark:text-gray-400">
+        © {new Date().getFullYear()} Bakung Dashboard – HDP Works. All rights reserved.
       </p>
     </div>
   );

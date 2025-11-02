@@ -12,6 +12,7 @@ interface ButtonProps {
   loading?: boolean;
   loadingText?: string;
   className?: string;
+  type?: "button" | "submit" | "reset"; // allow overriding button type
 }
 
 const Button: React.FC<ButtonProps> = ({
@@ -25,6 +26,7 @@ const Button: React.FC<ButtonProps> = ({
   disabled = false,
   loading = false,
   loadingText,
+  type,
 }) => {
   const mappedSize = size === "sm" ? "sm" : "md"; // maps to BaseButton sizes
   const mappedVariant = variant; // BaseButton understands "primary" and "outline"
@@ -38,6 +40,7 @@ const Button: React.FC<ButtonProps> = ({
       loading={loading}
       loadingText={loadingText}
       className={className}
+      type={type as any}
     >
       {startIcon && <span className="flex items-center">{startIcon}</span>}
       {children}

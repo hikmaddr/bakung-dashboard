@@ -39,7 +39,9 @@ async function resolveAllowedBrandIds(userId: number | null, roles?: string[] | 
 
 export async function GET(req: NextRequest) {
   try {
+    console.log("[reports/rekap] incoming", { url: req.url });
     const auth = await getAuth();
+    console.log("[reports/rekap] auth", { userId: auth?.userId, roles: auth?.roles });
     const url = new URL(req.url);
     const dateFromStr = url.searchParams.get("dateFrom");
     const dateToStr = url.searchParams.get("dateTo");
@@ -54,8 +56,10 @@ export async function GET(req: NextRequest) {
     const page = Math.max(1, parseInt(pageStr));
     const pageSize = Math.max(1, Math.min(200, parseInt(pageSizeStr)));
 
-    const dateFrom = dateFromStr ? new Date(dateFromStr) : undefined;
-    const dateTo = dateToStr ? new Date(dateToStr) : undefined;
+    const dateFromTmp = dateFromStr ? new Date(dateFromStr) : undefined;
+    const dateToTmp = dateToStr ? new Date(dateToStr) : undefined;
+    const dateFrom = dateFromTmp && !Number.isNaN(dateFromTmp.getTime()) ? dateFromTmp : undefined;
+    const dateTo = dateToTmp && !Number.isNaN(dateToTmp.getTime()) ? dateToTmp : undefined;
     const requestedBrandIds = parseCsvNumbers(brandIdsCsv);
 
     const allowedBrandIds = await resolveAllowedBrandIds(auth?.userId ?? null, auth?.roles ?? [], requestedBrandIds);
@@ -99,49 +103,66 @@ export async function GET(req: NextRequest) {
 
     // client filter for sales/invoice
     const clientId = clientIdStr ? Number(clientIdStr) : undefined;
+    console.log("[reports/rekap] filters", { dateFrom, dateTo, requestedBrandIds, allowedBrandIds, aggregateMode, clientId, clientName, supplier, page, pageSize });
     if (clientId && !Number.isNaN(clientId)) {
       whereSales.customerId = clientId;
       whereInvoice.customerId = clientId;
     } else if (clientName && clientName.trim()) {
-      // Filter by customer relation name contains
-      whereSales.customer = { name: { contains: clientName } };
-      whereInvoice.customer = { name: { contains: clientName } };
+      // Filter by customer relation name contains (use relation filter)
+      whereSales.customer = { is: { name: { contains: clientName } } };
+      whereInvoice.customer = { is: { name: { contains: clientName } } };
     }
 
     // supplier filter for purchases
     if (supplier && supplier.trim()) wherePurchase.supplierName = { contains: supplier };
 
     // Aggregations and rows
-    const [salesAgg, salesRows, purchaseAgg, purchaseRows, expenseAgg, expenseRows, invoiceAgg] = await Promise.all([
-      prisma.salesOrder.aggregate({ where: whereSales, _sum: { totalAmount: true }, _count: true }),
-      prisma.salesOrder.findMany({
-        where: whereSales,
-        include: { customer: true, brand: true },
-        orderBy: { date: "desc" },
-        skip: (page - 1) * pageSize,
-        take: pageSize,
-      }),
-      prisma.purchaseDirect.aggregate({ where: wherePurchase, _sum: { total: true }, _count: true }),
-      prisma.purchaseDirect.findMany({
-        where: wherePurchase,
-        include: { brand: true },
-        orderBy: { date: "desc" },
-        skip: (page - 1) * pageSize,
-        take: pageSize,
-      }),
-      prisma.expense.aggregate({ where: whereExpense, _sum: { amount: true }, _count: true }),
-      prisma.expense.findMany({ where: whereExpense, include: { brand: true, payment: true }, orderBy: { paidAt: "desc" }, skip: 0, take: Math.min(200, pageSize) }),
-      prisma.invoice.aggregate({ where: whereInvoice, _sum: { total: true }, _count: true }),
-    ]);
+    console.log("[reports/rekap] starting aggregations with filters", { whereSales, whereInvoice, wherePurchase, whereExpense, whereStock });
+    
+    let salesAgg, salesRows, purchaseAgg, purchaseRows, expenseAgg, expenseRows, invoiceAgg;
+    
+    try {
+      [salesAgg, salesRows, purchaseAgg, purchaseRows, expenseAgg, expenseRows, invoiceAgg] = await Promise.all([
+        prisma.salesOrder.aggregate({ where: whereSales, _sum: { totalAmount: true }, _count: true }),
+        prisma.salesOrder.findMany({
+          where: whereSales,
+          include: { customer: true, brand: true },
+          orderBy: { date: "desc" },
+          skip: (page - 1) * pageSize,
+          take: pageSize,
+        }),
+        prisma.purchaseDirect.aggregate({ where: wherePurchase, _sum: { total: true }, _count: true }),
+        prisma.purchaseDirect.findMany({
+          where: wherePurchase,
+          include: { brand: true },
+          orderBy: { date: "desc" },
+          skip: (page - 1) * pageSize,
+          take: pageSize,
+        }),
+        prisma.expense.aggregate({ where: whereExpense, _sum: { amount: true }, _count: true }),
+        prisma.expense.findMany({ 
+          where: whereExpense, 
+          include: { brand: true, payment: true, paymentOut: true }, 
+          orderBy: { paidAt: "desc" }, 
+          skip: 0, 
+          take: Math.min(200, pageSize) 
+        }),
+        prisma.invoice.aggregate({ where: whereInvoice, _sum: { total: true }, _count: true }),
+      ]);
+    } catch (aggregationError: any) {
+      console.error("[reports/rekap] aggregation error", aggregationError);
+      throw new Error(`Aggregation failed: ${aggregationError.message}`);
+    }
+    console.log("[reports/rekap] aggregates", { salesAgg, purchaseAgg, expenseAgg, invoiceAgg });
 
     // AR (A/R) = order/invoice unpaid
     const [soAr, invAr] = await Promise.all([
       prisma.salesOrder.findMany({
-        where: { ...whereSales, AND: [{}, { totalAmount: { gt: 0 } }] },
+        where: { ...whereSales, AND: [{ totalAmount: { gt: 0 } }] },
         select: { id: true, orderNumber: true, date: true, totalAmount: true, paidAmount: true, brandProfileId: true, customer: { select: { name: true } }, brand: { select: { name: true } } },
       }),
       prisma.invoice.findMany({
-        where: { ...whereInvoice, AND: [{}, { total: { gt: 0 } }] },
+        where: { ...whereInvoice, AND: [{ total: { gt: 0 } }] },
         select: { id: true, invoiceNumber: true, issueDate: true, total: true, paidAmount: true, brandProfileId: true, customer: { select: { name: true } }, brand: { select: { name: true } } },
       }),
     ]);
@@ -226,8 +247,12 @@ export async function GET(req: NextRequest) {
       where: whereStock,
       _sum: { qty: true },
     });
-    const productIds = stockGroup.map((g) => g.productId);
-    const products = await prisma.product.findMany({ where: { id: { in: productIds } }, select: { id: true, sku: true, name: true, unit: true, brandProfileId: true, brand: { select: { name: true } } } });
+    console.log("[reports/rekap] stock group count", stockGroup.length);
+    // Filter out null/undefined productIds to avoid Prisma "in" invalid value errors
+    const productIds = stockGroup.map((g) => g.productId).filter((id) => typeof id === "number");
+    const products = productIds.length
+      ? await prisma.product.findMany({ where: { id: { in: productIds as number[] } }, select: { id: true, sku: true, name: true, unit: true, brandProfileId: true, brand: { select: { name: true } } } })
+      : [];
     const productMap = new Map(products.map((p) => [p.id, p]));
     const stockRows = stockGroup.map((g) => {
       const p = productMap.get(g.productId);
@@ -268,6 +293,7 @@ export async function GET(req: NextRequest) {
         rows.push({ brandId: b.id, brandName: b.name, salesTotal, purchaseTotal, expenseTotal, grossProfit: salesTotal - purchaseTotal - expenseTotal });
       }
       brandSummary = { mode: "PER_BRAND", rows };
+      console.log("[reports/rekap] brand summary rows", rows.length);
     }
 
     const salesTotal = Number(salesAgg._sum.totalAmount || 0) + Number(invoiceAgg._sum.total || 0);
@@ -275,7 +301,7 @@ export async function GET(req: NextRequest) {
     const expenseTotal = Number(expenseAgg._sum.amount || 0);
     const grossProfit = salesTotal - purchaseTotal - expenseTotal;
 
-    return NextResponse.json({
+    const response = {
       success: true,
       filters: {
         dateFrom: dateFrom?.toISOString() ?? null,
@@ -303,10 +329,11 @@ export async function GET(req: NextRequest) {
       grossProfit: { amount: grossProfit, components: { salesTotal, purchaseTotal, expenseTotal } },
       stock: { rows: stockRows, totalProducts: stockRows.length, totalQty: stockTotalQty },
       brandSummary,
-    });
+    };
+    console.log("[reports/rekap] response ok");
+    return NextResponse.json(response);
   } catch (err: any) {
     console.error("[reports/rekap][GET]", err);
     return NextResponse.json({ success: false, message: err?.message || "Gagal memuat rekap" }, { status: 500 });
   }
 }
-

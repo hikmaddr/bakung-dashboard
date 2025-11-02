@@ -21,6 +21,7 @@ import {
 import { PDFDocument, rgb } from "pdf-lib";
 import { downloadCSV, downloadXLSX } from "@/lib/exporters";
 import FeatureGuard from "@/components/FeatureGuard";
+import { formatDownloadFileName } from "@/utils/downloadFilename";
 
 // ================== TYPES ==================
 interface SalesOrder {
@@ -43,17 +44,17 @@ const STATUS_OPTIONS = ["Approved", "Declined"] as const;
 const getStatusColor = (status: string) => {
   switch (status) {
     case "Confirmed":
-      return "bg-green-100 text-green-700";
+      return "bg-green-100 text-green-700 dark:bg-green-900/25 dark:text-green-300";
     case "Sent":
-      return "bg-blue-100 text-blue-700";
+      return "bg-blue-100 text-blue-700 dark:bg-blue-900/25 dark:text-blue-300";
     case "Approved":
-      return "bg-yellow-100 text-yellow-800";
+      return "bg-yellow-100 text-yellow-800 dark:bg-yellow-900/20 dark:text-yellow-300";
     case "Declined":
-      return "bg-red-100 text-red-700";
+      return "bg-red-100 text-red-700 dark:bg-red-900/25 dark:text-red-300";
     case "Draft":
-      return "bg-gray-100 text-gray-700";
+      return "bg-gray-100 text-gray-700 dark:bg-white/10 dark:text-gray-300";
     default:
-      return "bg-gray-100 text-gray-700";
+      return "bg-gray-100 text-gray-700 dark:bg-white/10 dark:text-gray-300";
   }
 };
 
@@ -122,6 +123,7 @@ export default function SalesOrderListPage() {
 
   const [page, setPage] = useState(1);
   const [limit, setLimit] = useState(10);
+  const [refreshKey, setRefreshKey] = useState(0);
 
   const [sendModalOpen, setSendModalOpen] = useState(false);
   const [selectedOrder, setSelectedOrder] = useState<SalesOrder | null>(null);
@@ -178,7 +180,21 @@ export default function SalesOrderListPage() {
       }
     };
     fetchOrders();
-  }, [router, searchParams]);
+  }, [router, searchParams, refreshKey]);
+
+  // Refetch saat daftar brand berubah
+  useEffect(() => {
+    const handler = () => setRefreshKey((k) => k + 1);
+    window.addEventListener("brand-list:updated", handler);
+    return () => window.removeEventListener("brand-list:updated", handler);
+  }, []);
+
+  // Refetch saat brand aktif berganti
+  useEffect(() => {
+    const handler = () => setRefreshKey((k) => k + 1);
+    window.addEventListener("brand-modules:updated", handler);
+    return () => window.removeEventListener("brand-modules:updated", handler);
+  }, []);
 
   // 🔍 Filter + Pagination
   const filtered = useMemo(
@@ -221,8 +237,12 @@ export default function SalesOrderListPage() {
       const res = await fetch(`/api/sales-orders/${order.id}/pdf`);
       if (!res.ok) throw new Error('Gagal mengambil PDF');
       const blob = await res.blob();
-      const safePicName = order.customer.pic.replace(/\s+/g, "_").replace(/[^a-zA-Z0-9-_]/g, "");
-      const fileName = `${order.orderNumber} - ${safePicName}.pdf`;
+      const fileName = formatDownloadFileName(
+        order.orderNumber,
+        order.customer?.pic || order.customer?.company,
+        `SO-${order.id}`,
+        order.customer?.pic || order.customer?.company || "Customer"
+      );
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
@@ -306,7 +326,7 @@ export default function SalesOrderListPage() {
               { label: "Order Penjualan", href: "/penjualan/order-penjualan" },
             ]}
           />
-          <div className="rounded-2xl border border-gray-200 bg-white p-6 shadow-sm mt-4">
+          <div className="rounded-2xl border border-gray-200 bg-white p-6 shadow-sm mt-4 dark:border-gray-800 dark:bg-gray-900">
             {/* Toolbar skeleton */}
             <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
               <Skeleton className="h-11 w-full sm:w-64 rounded-lg" />
@@ -317,9 +337,9 @@ export default function SalesOrderListPage() {
             </div>
 
             {/* Table skeleton */}
-            <div className="overflow-x-auto overflow-y-visible rounded-lg border bg-white shadow-sm min-h-[50vh]">
+            <div className="overflow-x-auto overflow-y-visible rounded-lg border bg-white shadow-sm min-h-[50vh] dark:border-gray-800 dark:bg-gray-900">
               <table className="w-full text-sm">
-                <thead className="bg-gray-50">
+                <thead className="bg-gray-50 dark:bg-white/5 dark:text-white/80">
                   <tr>
                     <th className="px-4 py-3 text-left">Customer</th>
                     <th className="px-4 py-3 text-left">No. Order</th>
@@ -455,7 +475,7 @@ export default function SalesOrderListPage() {
            </div>
         ) : paginatedOrders.length === 0 ? (
           // Jika kosong
-          <div className="mt-20 flex flex-col items-center justify-center text-center text-gray-600">
+          <div className="mt-20 flex flex-col items-center justify-center text-center text-gray-600 dark:text-gray-300">
              <img src="/empty-state.svg" alt="Empty State" className="mb-4 w-64 opacity-90" />
              <p className="text-lg font-medium">Belum ada data yang ditampilkan</p>
              <p className="mt-2 max-w-md text-sm">
@@ -471,9 +491,9 @@ export default function SalesOrderListPage() {
           </div>
         ) : (
           <>
-            <div className="overflow-x-auto overflow-y-visible rounded-lg border bg-white shadow-sm min-h-[50vh] flex-1">
+            <div className="overflow-x-auto overflow-y-visible rounded-lg border bg-white shadow-sm min-h-[50vh] flex-1 dark:border-gray-800 dark:bg-gray-900">
               <table className="w-full text-sm">
-                <thead className="bg-gray-50 text-gray-700">
+                <thead className="bg-gray-50 text-gray-700 dark:bg-white/5 dark:text-white/80">
                   <tr>
                     {/* TUKAR POSISI: Customer dulu, baru No. Order */}
                     <th className="px-4 py-3 text-left">Customer</th>
@@ -489,16 +509,16 @@ export default function SalesOrderListPage() {
                   {paginatedOrders.map((order) => (
                     <tr
                       key={order.id}
-                      className="border-t hover:bg-gray-50 transition"
+                      className="border-t hover:bg-gray-50 transition dark:border-gray-800 dark:hover:bg-white/5"
                     >
                       {/* TUKAR POSISI: Customer dulu, baru No. Order */}
                       <td className="px-4 py-3">
                         {order.customer.pic} - {order.customer.company}
                       </td>
                       <td className="px-4 py-3">
-                        <div className="font-medium text-gray-800">{order.orderNumber}</div>
+                        <div className="font-medium text-gray-800 dark:text-gray-200">{order.orderNumber}</div>
                         {order.quotationNumber && (
-                          <div className="mt-0.5 text-[11px] text-gray-500">
+                          <div className="mt-0.5 text-[11px] text-gray-500 dark:text-gray-400">
                             Ref Quotation: <span className="font-medium">{order.quotationNumber}</span>
                           </div>
                         )}
@@ -526,28 +546,28 @@ export default function SalesOrderListPage() {
                         <div className="inline-flex gap-2">
                           <Link
                             href={`/penjualan/order-penjualan/${order.id}`}
-                            className="p-2 rounded-full hover:bg-gray-100"
+                            className="p-2 rounded-full hover:bg-gray-100 dark:hover:bg-white/5"
                           >
-                            <Eye className="h-4 w-4 text-gray-600" />
+                            <Eye className="h-4 w-4 text-gray-600 dark:text-gray-300" />
                           </Link>
                           <Link
                             href={`/penjualan/order-penjualan/edit/${order.id}?from=list`}
-                            className="p-2 rounded-full hover:bg-gray-100"
+                            className="p-2 rounded-full hover:bg-gray-100 dark:hover:bg-white/5"
                           >
-                            <Edit className="h-4 w-4 text-gray-600" />
+                            <Edit className="h-4 w-4 text-gray-600 dark:text-gray-300" />
                           </Link>
                           <button
                             onClick={() => generatePDF(order)}
                             title="Download PDF"
-                            className="p-2 rounded-full hover:bg-gray-100"
+                            className="p-2 rounded-full hover:bg-gray-100 dark:hover:bg-white/5"
                           >
-                            <Download className="h-4 w-4 text-emerald-600" />
+                            <Download className="h-4 w-4 text-emerald-600 dark:text-emerald-400" />
                           </button>
                           <button
                             onClick={() => handleDelete(order.id)}
-                            className="p-2 rounded-full hover:bg-gray-100"
+                            className="p-2 rounded-full hover:bg-gray-100 dark:hover:bg-white/5"
                           >
-                            <Trash2 className="h-4 w-4 text-red-600" />
+                            <Trash2 className="h-4 w-4 text-red-600 dark:text-red-400" />
                           </button>
                         </div>
                       </td>
@@ -575,7 +595,7 @@ export default function SalesOrderListPage() {
       {/* Modal Kirim (Dipertahankan) */}
       {sendModalOpen && selectedOrder && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-xl shadow-2xl w-full max-w-2xl overflow-hidden">
+          <div className="bg-white rounded-xl shadow-2xl w-full max-w-2xl overflow-hidden dark:bg-gray-900 dark:text-white">
             <div className="flex items-center justify-between border-b px-6 py-4">
               <h2 className="text-lg font-semibold">Kirim Sales Order</h2>
               <button
@@ -583,7 +603,7 @@ export default function SalesOrderListPage() {
                   setSendModalOpen(false);
                   setSendMethod("email");
                 }}
-                className="text-gray-400 hover:text-gray-600 text-xl"
+                className="text-gray-400 hover:text-gray-600 text-xl dark:text-gray-300 dark:hover:text-gray-200"
               >
                 ×
               </button>

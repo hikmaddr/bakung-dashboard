@@ -8,12 +8,14 @@ import toast from "react-hot-toast";
 import PageBreadcrumb from "@/components/common/PageBreadCrumb";
 import LoadingSpinner from "@/components/common/LoadingSpinner";
 import FeatureGuard from "@/components/FeatureGuard";
+import { Send } from "lucide-react";
 import {
   resolveTheme,
   resolveThankYou,
   resolvePaymentLines,
   DEFAULT_TERMS,
 } from "@/lib/quotationTheme";
+import { formatDownloadFileName } from "@/utils/downloadFilename";
 
 interface InvoiceItem {
   id?: number;
@@ -99,10 +101,98 @@ export default function InvoiceDetailPage() {
   const [dpChoice, setDpChoice] = useState<"50" | "30" | "100" | "custom">("50");
   const [dpValue, setDpValue] = useState("");
 
-  const savePdf = useCallback(() => {
-    if (!invoiceId) return;
-    window.open(`/api/invoices/${invoiceId}/pdf`, "_blank");
-  }, [invoiceId]);
+  // Kirim PDF (WA/Email/PDF) seperti Quotation
+  type SendMethod = "whatsapp" | "email" | "savepdf";
+  const [isSendModalOpen, setIsSendModalOpen] = useState(false);
+  const [method, setMethod] = useState<SendMethod>("whatsapp");
+  const [message, setMessage] = useState<string>("");
+
+  useEffect(() => {
+    if (!invoice) return;
+    const totalTxt = formatCurrency(invoice.total);
+    const dueTxt = formatDate(invoice.dueDate);
+    const cust = invoice.customer?.company || "Customer";
+    const invNo = invoice.invoiceNumber || `INV-${invoice.id}`;
+    const defaultMsg = `Halo ${cust},\n\nKami mengirimkan Invoice ${invNo} dengan total ${totalTxt}.\nJatuh tempo: ${dueTxt}. Mohon ditinjau.\n\nTerima kasih.`;
+    setMessage(defaultMsg);
+  }, [invoice]);
+
+  const markAsSent = async () => {
+    if (!invoice) return;
+    try {
+      const res = await fetch(`/api/invoices/${invoice.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status: "Sent" }),
+      });
+      if (!res.ok) throw new Error();
+      setInvoice((prev) => (prev ? { ...prev, status: "Sent" } : prev));
+    } catch {
+      toast.error("Gagal memperbarui status dokumen");
+    }
+  };
+
+  const downloadPdf = async () => {
+    if (!invoice) return;
+    try {
+      const res = await fetch(`/api/invoices/${invoice.id}/pdf`);
+      if (!res.ok) throw new Error("Gagal mengunduh PDF");
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      const fileName = formatDownloadFileName(
+        invoice.invoiceNumber,
+        invoice.customer?.pic || invoice.customer?.company,
+        `INV-${invoice.id}`,
+        invoice.customer?.pic || invoice.customer?.company || "Customer"
+      );
+      a.download = fileName;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+      toast.success("PDF invoice berhasil diunduh");
+    } catch (e: any) {
+      toast.error(e?.message || "Gagal mengunduh PDF");
+    }
+  };
+
+  const handleSend = async () => {
+    if (!invoice) return;
+    try {
+      if (method === "savepdf") {
+        await downloadPdf();
+        await markAsSent();
+        setIsSendModalOpen(false);
+        return;
+      }
+
+      if (method === "whatsapp") {
+        const phone = (invoice.customer?.phone || "").replace(/^0/, "62");
+        const encoded = encodeURIComponent(`${message}\n\n(Lampirkan PDF invoice secara manual.)`);
+        const waLink = `https://wa.me/${phone}?text=${encoded}`;
+        window.open(waLink, "_blank");
+        await markAsSent();
+        toast.success("Mengarahkan ke WhatsApp");
+        setIsSendModalOpen(false);
+        return;
+      }
+
+      if (method === "email") {
+        const email = invoice.customer?.email || "";
+        const subject = encodeURIComponent(`Invoice ${invoice.invoiceNumber || `INV-${invoice.id}`}`);
+        const body = encodeURIComponent(`${message}\n\n(Lampirkan PDF invoice secara manual.)`);
+        window.location.href = `mailto:${email}?subject=${subject}&body=${body}`;
+        await markAsSent();
+        toast.success("Mengarahkan ke Email");
+        setIsSendModalOpen(false);
+        return;
+      }
+    } catch {
+      toast.error("Gagal memproses pengiriman");
+    }
+  };
 
   useEffect(() => {
     let active = true;
@@ -255,11 +345,11 @@ export default function InvoiceDetailPage() {
 
   useEffect(() => {
     if (searchParams?.get("download") === "1" && invoice && !loading && !error) {
-      const handle = window.setTimeout(() => savePdf(), 400);
+      const handle = window.setTimeout(() => downloadPdf(), 400);
       return () => window.clearTimeout(handle);
     }
     return undefined;
-  }, [searchParams, invoice, loading, error, savePdf]);
+  }, [searchParams, invoice, loading, error, downloadPdf]);
   const renderPreview = () => {
     if (loading) {
       return <LoadingSpinner label="Memuat detail Invoice..." />;
@@ -393,11 +483,6 @@ export default function InvoiceDetailPage() {
                 <div className="font-semibold" style={{ color: theme.headerTextColor }}>
                   {actorHeading}
                 </div>
-                {actorContactLines.map((line) => (
-                  <div key={line} style={{ color: theme.mutedText }}>
-                    {line}
-                  </div>
-                ))}
                 {brand?.showBrandAddress !== false && brand?.address && (
                   <div
                     className="whitespace-pre-line text-xs"
@@ -406,6 +491,11 @@ export default function InvoiceDetailPage() {
                     {brand.address}
                   </div>
                 )}
+                {actorContactLines.map((line) => (
+                  <div key={line} style={{ color: theme.mutedText }}>
+                    {line}
+                  </div>
+                ))}
               </div>
             </div>
             <div>
@@ -515,14 +605,19 @@ export default function InvoiceDetailPage() {
                           >
                             {item.name || "-"}
                           </div>
-                          {item.description && (
-                            <p
-                              className="mt-2 text-xs leading-relaxed"
-                              style={{ color: theme.mutedText }}
-                            >
-                              {item.description}
-                            </p>
-                          )}
+                          {item.description &&
+                            item.description
+                              .split(/\r?\n/)
+                              .filter((line) => line.trim().length > 0)
+                              .map((line, idx) => (
+                                <p
+                                  key={`desc-${index}-${idx}`}
+                                  className={`${idx === 0 ? "mt-2" : "mt-1"} text-xs leading-relaxed`}
+                                  style={{ color: theme.mutedText }}
+                                >
+                                  {line}
+                                </p>
+                              ))}
                         </td>
                         <td className="px-4 py-4 text-center align-middle">
                           {qty.toLocaleString("id-ID")}
@@ -792,21 +887,25 @@ export default function InvoiceDetailPage() {
             </div>
           </div>
 
-          <div className="mt-4 flex flex-wrap items-center justify-end gap-2">
-            <button
-              onClick={savePdf}
-              disabled={!invoice || loading}
-              className="inline-flex items-center gap-2 rounded-full bg-blue-600 px-4 py-2 text-sm font-medium text-white shadow transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-60"
-            >
-              Unduh PDF
-            </button>
-            <button
+          <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <button
               onClick={() => setDpOpen(true)}
               disabled={!invoice || loading}
               className="inline-flex items-center gap-2 rounded-full border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-60"
             >
               Rekam DP
             </button>
+            </div>
+            <div className="flex flex-wrap items-center justify-end gap-2">
+              <button
+                onClick={() => setIsSendModalOpen(true)}
+                disabled={!invoice || loading}
+                className="inline-flex items-center gap-2 rounded-full bg-blue-600 px-4 py-2 text-sm font-medium text-white shadow transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                <Send className="h-4 w-4" />
+                Kirim
+              </button>
             {invoice && (
               <Link
                 href={`/penjualan/invoice-penjualan/edit/${invoice.id}?from=detail`}
@@ -821,6 +920,7 @@ export default function InvoiceDetailPage() {
             >
               Kembali
             </Link>
+            </div>
           </div>
         </div>
 
@@ -904,6 +1004,55 @@ export default function InvoiceDetailPage() {
                 >
                   Simpan
                 </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {isSendModalOpen && invoice && (
+          <div
+            className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
+            onClick={(e) => { if (e.target === e.currentTarget) setIsSendModalOpen(false); }}
+          >
+            <div className="w-full max-w-3xl overflow-hidden rounded-xl bg-white shadow-2xl">
+              <div className="flex items-center justify-between border-b px-6 py-4">
+                <h2 className="text-lg font-semibold">Kirim PDF</h2>
+                <button onClick={() => setIsSendModalOpen(false)} className="text-gray-400 hover:text-gray-600">×</button>
+              </div>
+              <div className="flex flex-col md:flex-row">
+                <div className="border-r p-6 md:w-1/3">
+                  <div className="space-y-3 text-sm">
+                    <label className="flex cursor-pointer items-center gap-2">
+                      <input type="radio" checked={method === "whatsapp"} onChange={() => setMethod("whatsapp")} />
+                      WhatsApp
+                    </label>
+                    <label className="flex cursor-pointer items-center gap-2">
+                      <input type="radio" checked={method === "email"} onChange={() => setMethod("email")} />
+                      Email
+                    </label>
+                    <label className="flex cursor-pointer items-center gap-2">
+                      <input type="radio" checked={method === "savepdf"} onChange={() => setMethod("savepdf")} />
+                      Simpan sebagai PDF
+                    </label>
+                  </div>
+                </div>
+                <div className="relative p-6 md:w-2/3">
+                  <button onClick={() => setIsSendModalOpen(false)} className="absolute right-3 top-3 text-gray-400 hover:text-gray-600">×</button>
+                  <h3 className="mb-2 font-semibold">{method === "savepdf" ? "Pratinjau Dokumen" : "Preview Pesan"}</h3>
+                  {method === "savepdf" ? (
+                    <div className="text-sm text-gray-600">
+                      PDF akan dibuat dari dokumen invoice. Klik <span className="font-semibold">"Simpan PDF"</span> untuk mengunduh, lalu lampirkan secara manual bila mengirim lewat WA/Email.
+                    </div>
+                  ) : (
+                    <textarea value={message} onChange={(e)=>setMessage(e.target.value)} className="min-h-[180px] w-full rounded-lg border bg-gray-50 p-3 text-sm" />
+                  )}
+                  <div className="mt-4 flex items-center justify-end gap-2">
+                    <button onClick={() => setIsSendModalOpen(false)} className="rounded border border-gray-300 px-4 py-2 hover:bg-gray-100">Batal</button>
+                    <button onClick={handleSend} className="rounded bg-blue-600 px-4 py-2 text-white transition hover:bg-blue-700">
+                      {method === "savepdf" ? "Simpan PDF" : method === "whatsapp" ? "Kirim via WhatsApp" : "Kirim via Email"}
+                    </button>
+                  </div>
+                </div>
               </div>
             </div>
           </div>

@@ -2,17 +2,25 @@ import { NextResponse, type NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getActiveBrandProfile } from "@/lib/brand";
 import { sendNotificationToRole } from "@/lib/notification";
-import { writeFile } from "fs/promises";
+import { writeFile, mkdir } from "fs/promises";
 import path from "path";
 import crypto from "crypto";
+// Ensure Node.js runtime for Prisma and fs operations
+export const runtime = "nodejs";
 
 // Helper untuk simpan file dan kembalikan URL
 async function saveFile(file: File, productName: string) {
   const bytes = await file.arrayBuffer();
   const buffer = Buffer.from(bytes);
-  const ext = file.name.split(".").pop();
-  const uniqueName = `${productName.replace(/\s+/g, "_").toLowerCase()}_${crypto.randomUUID()}.${ext}`;
-  const uploadPath = path.join(process.cwd(), "public/uploads", uniqueName);
+  const rawExt = file.name.split(".").pop();
+  const ext = (rawExt ? rawExt : "bin").toLowerCase();
+  const safeBase = String(productName || "file")
+    .toLowerCase()
+    .replace(/[^a-z0-9_\-]+/gi, "_");
+  const uniqueName = `${safeBase}_${crypto.randomUUID()}.${ext}`;
+  const uploadsDir = path.join(process.cwd(), "public", "uploads");
+  await mkdir(uploadsDir, { recursive: true });
+  const uploadPath = path.join(uploadsDir, uniqueName);
   await writeFile(uploadPath, buffer);
   return `/uploads/${uniqueName}`;
 }

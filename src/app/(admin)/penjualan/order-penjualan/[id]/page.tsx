@@ -22,6 +22,7 @@ import {
   resolvePaymentLines,
   DEFAULT_TERMS,
 } from "@/lib/quotationTheme";
+import { formatDownloadFileName } from "@/utils/downloadFilename";
 
 const normalizeNumber = (value: unknown): number => {
   const parsed = Number(value);
@@ -340,8 +341,12 @@ export default function SalesOrderDetailPage() {
       const res = await fetch(`/api/sales-orders/${order.id}/pdf`);
       if (!res.ok) throw new Error("Gagal mengambil PDF");
       const blob = await res.blob();
-      const safePicName = (order.customer?.pic || "").replace(/\s+/g, "_").replace(/[^a-zA-Z0-9-_]/g, "");
-      const fileName = `${order.orderNumber} - ${safePicName}.pdf`;
+      const fileName = formatDownloadFileName(
+        order.orderNumber,
+        order.customer?.pic || order.customer?.company,
+        `SO-${order.id}`,
+        order.customer?.pic || order.customer?.company || "Customer"
+      );
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;

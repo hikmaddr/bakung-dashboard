@@ -7,7 +7,7 @@ const { chromium } = require('playwright');
     ? ['cmd.exe', ['/c', 'npx next dev --hostname 127.0.0.1 --port 3005']]
     : ['npx', ['next', 'dev', '--hostname', '127.0.0.1', '--port', '3005']];
   const server = spawn(command[0], command[1], {
-    cwd: 'c:/tailadmin-dashboard',
+    cwd: 'c:/bakung-dashboard',
     stdio: ['ignore', 'pipe', 'pipe'],
   });
 

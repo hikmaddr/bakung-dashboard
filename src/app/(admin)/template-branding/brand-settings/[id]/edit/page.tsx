@@ -660,76 +660,7 @@ function EditBrandSettingsPage({ params }: PageProps) {
         </div>
       </section>
 
-      <section className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm">
-        <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
-          <div>
-            <h2 className="text-lg font-semibold text-gray-900 md:text-xl">
-              Switch Modul Fitur
-            </h2>
-            <p className="text-sm text-gray-500">
-              Aktifkan modul yang relevan dengan profil brand ini. Modul yang dimatikan
-              akan disembunyikan dari menu dan form terkait.
-            </p>
-          </div>
-        </div>
-
-        <div className="mt-4 space-y-4">
-          {moduleGroups.map((group) => (
-            <div
-              key={group.title}
-              className="rounded-2xl border border-gray-200 bg-gray-50 p-4 shadow-sm"
-            >
-              <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-                <div>
-                  <h3 className="text-base font-semibold text-gray-900">
-                    {group.title}
-                  </h3>
-                  <p className="text-sm text-gray-500">{group.description}</p>
-                </div>
-              </div>
-
-              <div className="mt-4 space-y-4">
-                {group.modules.map((module) => {
-                  const isActive = modulesState[module.id];
-                  return (
-                    <div
-                      key={module.id}
-                      className="flex items-center justify-between gap-4 rounded-xl border border-gray-200 bg-white p-4 transition hover:border-brand-200"
-                    >
-                      <div>
-                        <h4 className="text-sm font-semibold text-gray-800">
-                          {module.name}
-                        </h4>
-                        <p className="mt-1 text-xs text-gray-500">
-                          {module.description}
-                        </p>
-                      </div>
-                      <button
-                        type="button"
-                        role="switch"
-                        aria-checked={isActive}
-                        aria-label={`Toggle ${module.name}`}
-                        onClick={() => toggleModule(module.id)}
-                        className={cn(
-                          "relative inline-flex h-6 w-12 items-center rounded-full transition focus:outline-none focus:ring-2 focus:ring-brand-500 focus:ring-offset-2",
-                          isActive ? "bg-brand-500" : "bg-gray-300"
-                        )}
-                      >
-                        <span
-                          className={cn(
-                            "inline-block h-5 w-5 transform rounded-full bg-white shadow transition",
-                            isActive ? "translate-x-6" : "translate-x-1"
-                          )}
-                        />
-                      </button>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-          ))}
-        </div>
-      </section>
+      {/* Switch Modul Fitur dihapus sesuai permintaan */}
 
       <section className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm">
         <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">

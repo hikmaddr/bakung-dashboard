@@ -88,6 +88,11 @@ export default function BrandBadge() {
     } catch {}
   }, []);
 
+  // Muat opsi pada mount agar bisa menentukan visibilitas tombol
+  useEffect(() => {
+    loadOptions();
+  }, [loadOptions]);
+
   const activateBrand = useCallback(async (slug: string) => {
     if (!slug) return;
     try {
@@ -116,6 +121,16 @@ export default function BrandBadge() {
     window.addEventListener("brand-modules:updated", handler);
     return () => window.removeEventListener("brand-modules:updated", handler);
   }, [loadActive]);
+
+  // Dengarkan perubahan daftar brand untuk reload opsi dan brand aktif
+  useEffect(() => {
+    const handler = () => {
+      loadOptions();
+      loadActive();
+    };
+    window.addEventListener("brand-list:updated", handler);
+    return () => window.removeEventListener("brand-list:updated", handler);
+  }, [loadOptions, loadActive]);
 
   useEffect(() => {
     if (open && options.length === 0) {
@@ -175,13 +190,24 @@ export default function BrandBadge() {
   const logo = brand?.logoUrl || null;
   const color = brand?.primaryColor || "#0EA5E9";
 
+  // Jika tidak ada brand yang diassign untuk user (API sudah terfilter), sembunyikan tombol sama sekali
+  if (!options || options.length === 0) {
+    return null;
+  }
+
+  const canSwitch = options.length > 1;
+
   return (
     <div ref={containerRef} className="relative select-none">
       <button
         type="button"
-        onClick={() => setOpen((o) => !o)}
+        onClick={() => {
+          if (!canSwitch) return;
+          setOpen((o) => !o);
+        }}
         className="relative dropdown-toggle flex items-center justify-center text-gray-500 transition-colors bg-white border border-gray-200 rounded-full hover:text-gray-700 h-11 w-11 hover:bg-gray-100 dark:border-gray-800 dark:bg-gray-900 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-white"
         aria-label={displayName}
+        disabled={!canSwitch}
       >
         {logo ? (
           <Image

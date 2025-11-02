@@ -32,6 +32,36 @@ export function middleware(req: NextRequest) {
   try {
     const secret = process.env.JWT_SECRET || "dev_secret_change_me";
     jwt.verify(token, secret);
+
+    // Scope-based page guard: block certain modules when brand scope is CREATIVE
+    const isApiRoute = pathname.startsWith("/api");
+    const creativeBlockedPrefixes = [
+      "/penjualan/order-penjualan",
+      "/penjualan/kwitansi-penjualan",
+      "/penjualan/surat-jalan",
+      "/produk-stok",
+      "/pembelian",
+    ];
+    const isCreativeBlockedPage = !isApiRoute && creativeBlockedPrefixes.some((p) => pathname.startsWith(p));
+    if (isCreativeBlockedPage) {
+      const origin = req.nextUrl.origin;
+      const cookieHeader = req.headers.get("cookie") || "";
+      // Fetch active brand to read businessScope (API uses Node runtime for Prisma)
+      return fetch(`${origin}/api/brand-profiles/active`, { headers: { cookie: cookieHeader } })
+        .then(async (res) => {
+          if (!res.ok) return NextResponse.next();
+          const brand = await res.json().catch(() => null);
+          if (brand?.businessScope === "CREATIVE") {
+            const url = req.nextUrl.clone();
+            url.pathname = "/";
+            url.searchParams.set("error", "scope_creative_blocked");
+            url.searchParams.set("redirect", pathname);
+            return NextResponse.redirect(url);
+          }
+          return NextResponse.next();
+        })
+        .catch(() => NextResponse.next());
+    }
     
     // Brand transaction guard: cek akses brand untuk endpoint yang relevan
     const brandTxnPrefixes = [

@@ -3,7 +3,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getActiveBrandProfile, resolveAllowedBrandIds } from "@/lib/brand";
-import { initPdfWithBrandFonts, drawHeaderCommon, drawInfoSectionCommon, drawSignatureSectionCommon } from "@/lib/pdfCommon";
+import { initPdfWithBrandFonts, drawHeaderCommon, drawInfoSectionCommon, drawSignatureSectionCommon, formatPdfFileName } from "@/lib/pdfCommon";
 import { resolveTheme, resolveThankYou, resolvePaymentLines, DEFAULT_TERMS, toRgb255, type InvoiceTemplateTheme } from "@/lib/quotationTheme";
 import { getAuth } from "@/lib/auth";
 import { PDFDocument, rgb, type PDFFont, type PDFPage } from "pdf-lib";
@@ -346,7 +346,9 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
     );
 
     const bytes = await pdf.save();
-    const fileName = `Receipt-${String(invoice.invoiceNumber || "INV").replace(/[^a-zA-Z0-9-_]/g, "_")}.pdf`;
+    const invoiceNumber = invoice.invoiceNumber || `INV-${invoice.id}`;
+    const customerName = invoice.customer?.pic || invoice.customer?.company || "Customer";
+    const fileName = formatPdfFileName(invoiceNumber, customerName, `INV-${invoice.id}`);
     const buffer = bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength);
 
     return new Response(buffer, {

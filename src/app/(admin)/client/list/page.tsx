@@ -17,6 +17,14 @@ type Customer = {
   phone: string;
 };
 
+const createEmptyClientForm = () => ({
+  pic: "",
+  email: "",
+  company: "",
+  address: "",
+  phone: "",
+});
+
 export default function ClientListPageWithTemplate() {
   const [clients, setClients] = useState<Customer[]>([]);
   const [searchTerm, setSearchTerm] = useState("");
@@ -26,7 +34,7 @@ export default function ClientListPageWithTemplate() {
   const [isEditOpen, setIsEditOpen] = useState(false);
   const [saving, setSaving] = useState(false);
   const [editing, setEditing] = useState<Customer | null>(null);
-  const [form, setForm] = useState({ pic: "", email: "", company: "", address: "", phone: "" });
+  const [form, setForm] = useState(createEmptyClientForm);
   const [errors, setErrors] = useState<string[]>([]);
   const [confirmDeleteId, setConfirmDeleteId] = useState<number | null>(null);
 
@@ -81,7 +89,8 @@ export default function ClientListPageWithTemplate() {
   };
 
   const openAdd = () => {
-    setForm({ pic: "", email: "", company: "", address: "", phone: "" });
+    setForm(createEmptyClientForm());
+    setErrors([]);
     setIsAddOpen(true);
   };
 
@@ -94,6 +103,24 @@ export default function ClientListPageWithTemplate() {
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
     const { name, value } = e.target;
     setForm((prev) => ({ ...prev, [name]: value }));
+  };
+
+  const isAddFormDirty = useMemo(() => {
+    if (!isAddOpen) return false;
+    return Object.values(form).some((value) => value.trim() !== "");
+  }, [form, isAddOpen]);
+
+  const closeAddModal = (force = false) => {
+    if (!force && isAddFormDirty) {
+      const shouldExit =
+        typeof window === "undefined" ? true : window.confirm("Data belum disimpan. Yakin ingin keluar?");
+      if (!shouldExit) {
+        return;
+      }
+    }
+    setIsAddOpen(false);
+    setErrors([]);
+    setForm(createEmptyClientForm());
   };
 
   // Normalisasi nomor HP menjadi format Indonesia: harus diawali 62
@@ -142,7 +169,7 @@ export default function ClientListPageWithTemplate() {
       if (!res.ok) throw new Error("Gagal menambah client");
       const created = await res.json();
       setClients((prev) => [created, ...prev]);
-      setIsAddOpen(false);
+      closeAddModal(true);
     } catch (e) {
       console.error(e);
       toast.error("Gagal menyimpan. Cek input Anda.");
@@ -239,36 +266,36 @@ export default function ClientListPageWithTemplate() {
         </div>
 
         <div className="overflow-x-auto">
-          <table className="min-w-full border border-gray-200 text-sm">
-            <thead className="bg-gray-100">
+          <table className="min-w-full border border-gray-200 text-sm dark:border-gray-800">
+            <thead className="bg-gray-100 dark:bg-white/5 dark:text-white/80">
               <tr>
-                <th className="border-b px-4 py-2 text-left">#</th>
-                <th className="border-b px-4 py-2 text-left">PIC</th>
-                <th className="border-b px-4 py-2 text-left">Email</th>
-                <th className="border-b px-4 py-2 text-left">Perusahaan</th>
-                <th className="border-b px-4 py-2 text-left">Alamat</th>
-                <th className="border-b px-4 py-2 text-left">No HP</th>
-                <th className="border-b px-4 py-2 text-left">Aksi</th>
+                <th className="border-b px-4 py-2 text-left dark:border-gray-800">#</th>
+                <th className="border-b px-4 py-2 text-left dark:border-gray-800">PIC</th>
+                <th className="border-b px-4 py-2 text-left dark:border-gray-800">Email</th>
+                <th className="border-b px-4 py-2 text-left dark:border-gray-800">Perusahaan</th>
+                <th className="border-b px-4 py-2 text-left dark:border-gray-800">Alamat</th>
+                <th className="border-b px-4 py-2 text-left dark:border-gray-800">No HP</th>
+                <th className="border-b px-4 py-2 text-left dark:border-gray-800">Aksi</th>
               </tr>
             </thead>
             <tbody>
               {paginatedClients.length === 0 ? (
                 <tr>
-                  <td colSpan={7} className="py-6 text-center text-gray-500">Tidak ada data client.</td>
+                  <td colSpan={7} className="py-6 text-center text-gray-500 dark:text-gray-400">Tidak ada data client.</td>
                 </tr>
               ) : (
                 paginatedClients.map((client, index) => (
-                  <tr key={client.id} className="hover:bg-gray-50">
-                    <td className="border-b px-4 py-2">{(currentPage - 1) * limit + index + 1}</td>
-                    <td className="border-b px-4 py-2">{client.pic}</td>
-                    <td className="border-b px-4 py-2">{client.email ?? "-"}</td>
-                    <td className="border-b px-4 py-2">{client.company}</td>
-                    <td className="border-b px-4 py-2">{client.address}</td>
-                    <td className="border-b px-4 py-2">{client.phone}</td>
-                    <td className="flex gap-2 border-b px-4 py-2">
+                  <tr key={client.id} className="hover:bg-gray-50 dark:hover:bg-white/5">
+                    <td className="border-b px-4 py-2 dark:border-gray-800 dark:text-gray-200">{(currentPage - 1) * limit + index + 1}</td>
+                    <td className="border-b px-4 py-2 dark:border-gray-800 dark:text-gray-200">{client.pic}</td>
+                    <td className="border-b px-4 py-2 dark:border-gray-800 dark:text-gray-200">{client.email ?? "-"}</td>
+                    <td className="border-b px-4 py-2 dark:border-gray-800 dark:text-gray-200">{client.company}</td>
+                    <td className="border-b px-4 py-2 dark:border-gray-800 dark:text-gray-200">{client.address}</td>
+                    <td className="border-b px-4 py-2 dark:border-gray-800 dark:text-gray-200">{client.phone}</td>
+                    <td className="flex gap-2 border-b px-4 py-2 dark:border-gray-800">
                       <FeatureIf feature="system.user">
-                        <button onClick={() => openEdit(client)} title="Edit" className="rounded-full p-1 text-blue-600 hover:bg-blue-50"><Pencil className="h-4 w-4" /></button>
-                        <button onClick={() => handleDelete(client.id)} title="Hapus" className="rounded-full p-1 text-red-600 hover:bg-red-50"><Trash2 className="h-4 w-4" /></button>
+                        <button onClick={() => openEdit(client)} title="Edit" className="rounded-full p-1 text-blue-600 hover:bg-blue-50 dark:text-blue-400 dark:hover:bg-white/5"><Pencil className="h-4 w-4" /></button>
+                        <button onClick={() => handleDelete(client.id)} title="Hapus" className="rounded-full p-1 text-red-600 hover:bg-red-50 dark:text-red-400 dark:hover:bg-white/5"><Trash2 className="h-4 w-4" /></button>
                       </FeatureIf>
                     </td>
                   </tr>
@@ -293,12 +320,12 @@ export default function ClientListPageWithTemplate() {
       </div>
 
       {/* Modal Tambah Client */}
-      <Modal isOpen={isAddOpen} onClose={() => setIsAddOpen(false)} className="max-h-[88vh] w-[92vw] max-w-2xl overflow-hidden rounded-3xl shadow-xl">
+      <Modal isOpen={isAddOpen} onClose={() => closeAddModal()} className="max-h-[88vh] w-[92vw] max-w-2xl overflow-hidden rounded-3xl shadow-xl">
         <div className="max-h-[88vh] overflow-y-auto pb-2">
           <ModalHeader title="Tambah Client" subtitle="Lengkapi detail client untuk menambah data." />
           {FormBody}
         </div>
-        <Footer onClose={() => setIsAddOpen(false)} onSave={handleSubmitAdd} />
+        <Footer onClose={() => closeAddModal()} onSave={handleSubmitAdd} />
       </Modal>
 
       {/* Modal Edit Client */}

@@ -1,223 +1,91 @@
-<<<<<<< HEAD
-# TailAdmin Next.js - Free Next.js Tailwind Admin Dashboard Template
+# ?? Bakung Dashboard � Multi-Brand Business System by HDP Works
 
-TailAdmin is a free and open-source admin dashboard template built on **Next.js and Tailwind CSS** providing developers with everything they need to create a feature-rich and data-driven: back-end, dashboard, or admin panel solution for any sort of web project.
+Bakung Dashboard is an internal multi-brand management system built for **HDP Works**, a creative and procurement studio.  
+It centralizes quotation, invoicing, purchasing, and reporting processes across multiple business scopes: **Creative Service**, **Procurement**, and **Souvenir**.
 
-![TailAdmin - Next.js Dashboard Preview](./banner.png)
+---
 
-With TailAdmin Next.js, you get access to all the necessary dashboard UI components, elements, and pages required to build a high-quality and complete dashboard or admin panel. Whether you're building a dashboard or admin panel for a complex web application or a simple website. 
+## ?? Features
 
-TailAdmin utilizes the powerful features of **Next.js 15** and common features of Next.js such as server-side rendering (SSR), static site generation (SSG), and seamless API route integration. Combined with the advancements of **React 19** and the robustness of **TypeScript**, TailAdmin is the perfect solution to help get your project up and running quickly.
+### ?? Core Modules
+- **Authentication & Role Management**  
+  Multi-role access (Owner, Admin, Staff) with brand-based permissions.
+- **Multi-Brand Support**  
+  Each brand has its own scope (CREATIVE, PROCUREMENT, SOUVENIR) and independent data context.
+- **Sales System**  
+  Quotation ? Sales Order ? Invoice ? Receipt ? Delivery Note  
+  (Simplified to Quotation ? Invoice for Creative brands)
+- **Purchase & Inventory**  
+  Purchase Order, Supplier Management, and Stock Control.
+- **Brand Templates & Branding Manager**  
+  Custom document templates per brand (header, footer, signature, theme color).
+- **Notification System**  
+  Approval alerts, pending actions, and system feedback (toast + header badge).
+- **Reporting & Recap**  
+  Comprehensive summaries for sales, purchases, stock, and receivables.
 
-## Overview
+---
 
-TailAdmin provides essential UI components and layouts for building feature-rich, data-driven admin dashboards and control panels. It's built on:
+## ?? Brand Scopes
 
-- Next.js 15.x
-- React 19
-- TypeScript
-- Tailwind CSS V4
+| Scope | Description | Active Modules |
+|--------|--------------|----------------|
+| **Creative Service** | Focus on design & creative projects | Quotation, Invoice, Reporting |
+| **Procurement** | Full operational module | All modules |
+| **Souvenir** | Merchandise & finished products | All modules + product catalog |
 
-### Quick Links
-- [✨ Visit Website](https://tailadmin.com)
-- [📄 Documentation](https://tailadmin.com/docs)
-- [⬇️ Download](https://tailadmin.com/download)
-- [🖌️ Figma Design File (Community Edition)](https://www.figma.com/community/file/1463141366275764364)
-- [⚡ Get PRO Version](https://tailadmin.com/pricing)
+---
 
-### Demos
-- [Free Version](https://nextjs-free-demo.tailadmin.com)
-- [Pro Version](https://nextjs-demo.tailadmin.com)
+## ??? Tech Stack
 
-### Other Versions
-- [HTML Version](https://github.com/TailAdmin/tailadmin-free-tailwind-dashboard-template)
-- [React Version](https://github.com/TailAdmin/free-react-tailwind-admin-dashboard)
-- [Vue.js Version](https://github.com/TailAdmin/vue-tailwind-admin-dashboard)
+- **Frontend:** Next.js, TailwindCSS, shadcn/ui  
+- **Backend:** Node.js + Prisma ORM  
+- **Database:** MySQL  
+- **UI Library:** TypeScript, Zustand, Axios  
+- **Hosting:** Vercel (Frontend), Railway / VPS (Backend)  
+- **PDF & File Services:** Puppeteer, PDFKit  
+- **Notifications:** Toast & in-app badge system  
+- **Authentication:** Role-based login with activation approval
 
-## Installation
+---
 
-### Prerequisites
-To get started with TailAdmin, ensure you have the following prerequisites installed and set up:
+## ?? Installation
 
-- Node.js 18.x or later (recommended to use Node.js 20.x or later)
+1. Clone this repository:
+   `ash
+   git clone https://github.com/hikmaddr/bakung-dashboard.git
+   cd bakung-dashboard
+   `
+2. Install dependencies:
+   `ash
+   npm install
+   `
+3. Create .env file:
+   `env
+   DATABASE_URL="mysql://username:password@localhost:3306/bakung_dashboard"
+   NEXTAUTH_SECRET="your_secret_key"
+   `
+4. Run Prisma migrations:
+   `ash
+   npx prisma migrate dev
+   `
+5. Start development server:
+   `ash
+   npm run dev
+   `
 
-### Cloning the Repository
-Clone the repository using the following command:
+---
 
-```bash
-git clone https://github.com/TailAdmin/free-nextjs-admin-dashboard.git
-```
+## ????? Developer Guide
 
-> Windows Users: place the repository near the root of your drive if you face issues while cloning.
+Each brand profile has a field businessScope:
+`prisma
+businessScope String? // "CREATIVE" | "PROCUREMENT" | "SOUVENIR"
+`
+Sidebar and document flow adapt automatically based on the selected scope.
 
-1. Install dependencies:
-    ```bash
-    npm install
-    # or
-    yarn install
-    ```
-    > Use `--legacy-peer-deps` flag if you face peer-dependency error during installation.
+Creative scope skips Sales Order and directly allows Create Invoice from Quotation.
 
-2. Start the development server:
-    ```bash
-    npm run dev
-    # or
-    yarn dev
-    ```
+Owner can manage users, roles, and approve new sign-ups.
 
-## Components
-
-TailAdmin is a pre-designed starting point for building a web-based dashboard using Next.js and Tailwind CSS. The template includes:
-
-- Sophisticated and accessible sidebar
-- Data visualization components
-- Profile management and custom 404 page
-- Tables and Charts(Line and Bar)
-- Authentication forms and input elements
-- Alerts, Dropdowns, Modals, Buttons and more
-- Can't forget Dark Mode 🕶️
-
-All components are built with React and styled using Tailwind CSS for easy customization.
-
-## Feature Comparison
-
-### Free Version
-- 1 Unique Dashboard
-- 30+ dashboard components
-- 50+ UI elements
-- Basic Figma design files
-- Community support
-
-### Pro Version
-- 5 Unique Dashboards: Analytics, Ecommerce, Marketing, CRM, Stocks (more coming soon)
-- 400+ dashboard components and UI elements
-- Complete Figma design file
-- Email support
-
-To learn more about pro version features and pricing, visit our [pricing page](https://tailadmin.com/pricing).
-
-## Changelog
-
-### Version 2.0.2 - [March 25, 2025]
-
-- Upgraded to Next v15.2.3 for [CVE-2025-29927](https://nextjs.org/blog/cve-2025-29927) concerns
-- Included overrides vectormap for packages to prevent peer dependency errors during installation.
-- Migrated from react-flatpickr to flatpickr package for React 19 support
-
-### Version 2.0.1 - [February 27, 2025]
-
-#### Update Overview
-
-- Upgraded to Tailwind CSS v4 for better performance and efficiency.
-- Updated class usage to match the latest syntax and features.
-- Replaced deprecated class and optimized styles.
-
-#### Next Steps
-
-- Run npm install or yarn install to update dependencies.
-- Check for any style changes or compatibility issues.
-- Refer to the Tailwind CSS v4 [Migration Guide](https://tailwindcss.com/docs/upgrade-guide) on this release. if needed.
-- This update keeps the project up to date with the latest Tailwind improvements. 🚀
-
-### v2.0.0 (February 2025)
-A major update focused on Next.js 15 implementation and comprehensive redesign.
-
-#### Major Improvements
-- Complete redesign using Next.js 15 App Router and React Server Components
-- Enhanced user interface with Next.js-optimized components
-- Improved responsiveness and accessibility
-- New features including collapsible sidebar, chat screens, and calendar
-- Redesigned authentication using Next.js App Router and server actions
-- Updated data visualization using ApexCharts for React
-
-#### Breaking Changes
-
-- Migrated from Next.js 14 to Next.js 15
-- Chart components now use ApexCharts for React
-- Authentication flow updated to use Server Actions and middleware
-
-[Read more](https://tailadmin.com/docs/update-logs/nextjs) on this release.
-
-#### Breaking Changes
-- Migrated from Next.js 14 to Next.js 15
-- Chart components now use ApexCharts for React
-- Authentication flow updated to use Server Actions and middleware
-
-### v1.3.4 (July 01, 2024)
-- Fixed JSvectormap rendering issues
-
-### v1.3.3 (June 20, 2024)
-- Fixed build error related to Loader component
-
-### v1.3.2 (June 19, 2024)
-- Added ClickOutside component for dropdown menus
-- Refactored sidebar components
-- Updated Jsvectormap package
-
-### v1.3.1 (Feb 12, 2024)
-- Fixed layout naming consistency
-- Updated styles
-
-### v1.3.0 (Feb 05, 2024)
-- Upgraded to Next.js 14
-- Added Flatpickr integration
-- Improved form elements
-- Enhanced multiselect functionality
-- Added default layout component
-
-## License
-
-TailAdmin Next.js Free Version is released under the MIT License.
-
-## Support
-
-If you find this project helpful, please consider giving it a star on GitHub. Your support helps us continue developing and maintaining this template.
-=======
-# tailadmin-dashboard
-dashboard baru
- 
-## Deployment with PM2 (Windows & Ubuntu)
-
-Project ini menyertakan konfigurasi PM2 (`ecosystem.config.js`) untuk menjalankan build produksi secara stabil di Windows dan Ubuntu.
-
-### Prasyarat
-- Node.js 18+ (disarankan 20)
-- PM2 global (`npm i -g pm2`)
-- `DATABASE_URL` jika menggunakan Prisma
-
-### Windows
-- PowerShell:
-  - `npm run build:prod`
-  - `npm run pm2:start`
-  - `npm run pm2:save`
-- Skrip sekali jalan:
-  - `npm run deploy:win` (opsional parameter `-Port`, default `3000`)
-- Auto-start saat boot (opsional):
-  - `npm i -g pm2-windows-service`
-  - `pm2-service-install`
-
-### Ubuntu/Debian
-- Install PM2: `sudo npm i -g pm2`
-- Build & start:
-  - `npm run build:prod`
-  - `npm run pm2:start`
-  - `npm run pm2:save`
-- Skrip sekali jalan:
-  - `npm run deploy:ubuntu` (gunakan env `PORT`, default `3000`)
-- Auto-start saat boot:
-  - Jalankan perintah dari `pm2 startup systemd`, contoh: `sudo env PATH=$PATH:/usr/bin pm2 startup systemd -u <user> --hp <home>`
-  - `pm2 save`
-
-### Environment
-- `NODE_ENV=production` telah diset di `ecosystem.config.js`.
-- `PORT` default `3000`; override via env atau edit `ecosystem.config.js`.
-- Jika memakai Prisma, pastikan `DATABASE_URL` tersedia di `.env` atau `.env.production`.
-
-### PM2 Commands
-- `pm2 status` — lihat daftar proses
-- `pm2 logs tailadmin` — stream log
-- `pm2 restart tailadmin --update-env` — restart dengan env baru
-- `pm2 stop tailadmin` — hentikan proses
-- `pm2 save` / `pm2 resurrect` — simpan/pulihkan proses
-
->>>>>>> 35c405040b4b328cca77849143b8848a0bdc47b1
+Notification and Activity Log capture key system actions (approve, edit, delete).

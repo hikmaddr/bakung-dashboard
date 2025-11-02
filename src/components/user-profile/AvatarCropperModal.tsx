@@ -11,15 +11,20 @@ interface AvatarCropperModalProps {
   onApply: (blob: Blob) => void;
 }
 
-function getCroppedBlob(imageSrc: string, pixelCrop: { width: number; height: number; x: number; y: number; }) {
+function getCroppedBlob(
+  imageSrc: string,
+  pixelCrop: { width: number; height: number; x: number; y: number },
+  outputSize: number
+) {
   return new Promise<Blob>((resolve, reject) => {
     const image = new Image();
     image.crossOrigin = "anonymous";
     image.src = imageSrc;
     image.onload = () => {
       const canvas = document.createElement("canvas");
-      canvas.width = pixelCrop.width;
-      canvas.height = pixelCrop.height;
+      // Resize output to a fixed square size while preserving crop
+      canvas.width = outputSize;
+      canvas.height = outputSize;
       const ctx = canvas.getContext("2d");
       if (!ctx) return reject(new Error("Canvas context not available"));
 
@@ -31,8 +36,8 @@ function getCroppedBlob(imageSrc: string, pixelCrop: { width: number; height: nu
         pixelCrop.height,
         0,
         0,
-        pixelCrop.width,
-        pixelCrop.height
+        outputSize,
+        outputSize
       );
 
       canvas.toBlob((blob) => {
@@ -47,6 +52,7 @@ function getCroppedBlob(imageSrc: string, pixelCrop: { width: number; height: nu
 export default function AvatarCropperModal({ imageSrc, isOpen, onClose, onApply }: AvatarCropperModalProps) {
   const [crop, setCrop] = useState({ x: 0, y: 0 });
   const [zoom, setZoom] = useState(1);
+  const [outputSize, setOutputSize] = useState<number>(256);
   const [croppedAreaPixels, setCroppedAreaPixels] = useState<{ width: number; height: number; x: number; y: number } | null>(null);
 
   const onCropComplete = useCallback((
@@ -59,7 +65,7 @@ export default function AvatarCropperModal({ imageSrc, isOpen, onClose, onApply 
   const handleApply = async () => {
     if (!imageSrc || !croppedAreaPixels) return;
     try {
-      const blob = await getCroppedBlob(imageSrc, croppedAreaPixels);
+      const blob = await getCroppedBlob(imageSrc, croppedAreaPixels, outputSize);
       onApply(blob);
       onClose();
     } catch (e) {
@@ -97,6 +103,18 @@ export default function AvatarCropperModal({ imageSrc, isOpen, onClose, onApply 
               value={zoom}
               onChange={(e) => setZoom(Number(e.target.value))}
             />
+          </div>
+          <div className="flex items-center gap-2">
+            <label className="text-sm text-gray-600 dark:text-gray-300">Ukuran</label>
+            <select
+              className="rounded-md border border-gray-300 bg-white px-2 py-1 text-sm dark:border-gray-700 dark:bg-gray-800"
+              value={outputSize}
+              onChange={(e) => setOutputSize(Number(e.target.value))}
+            >
+              <option value={128}>128 px</option>
+              <option value={256}>256 px</option>
+              <option value={512}>512 px</option>
+            </select>
           </div>
           <div className="ml-auto flex items-center gap-3">
             <Button size="sm" variant="outline" onClick={onClose}>Batal</Button>

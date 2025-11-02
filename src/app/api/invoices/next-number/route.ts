@@ -1,19 +1,23 @@
 import { NextResponse, type NextRequest } from "next/server";
-import { prisma } from "@/lib/prisma";
+import { generateNextNumber } from "@/lib/documentNumber";
+import { getActiveBrandProfile } from "@/lib/brand";
 
 export async function GET(req: NextRequest) {
   try {
     const dateParam = req.nextUrl.searchParams.get("date");
-    const dt = dateParam ? new Date(dateParam) : new Date();
-    const year = dt.getFullYear();
-    const base = `INV-${year}`;
-    const count = await prisma.invoice.count({
-      where: { invoiceNumber: { startsWith: base } },
-    });
-    return NextResponse.json({ number: `${base}-${String(count + 1).padStart(4, "0")}` });
+    let dt: Date;
+    if (dateParam && /^\d{4}-\d{2}-\d{2}$/.test(dateParam)) {
+      const [y, m, d] = dateParam.split("-").map((v) => Number(v));
+      dt = new Date(y, (m || 1) - 1, d || 1);
+    } else {
+      dt = dateParam ? new Date(dateParam) : new Date();
+    }
+    const brandParam = req.nextUrl.searchParams.get("brandId");
+    const brandProfileId = brandParam ? Number(brandParam) : (await getActiveBrandProfile())?.id ?? undefined;
+    const number = await generateNextNumber("invoice", { brandProfileId, date: dt });
+    return NextResponse.json({ number });
   } catch (e) {
     console.error("GET /api/invoices/next-number error:", e);
     return NextResponse.json({ error: "Gagal menghitung nomor" }, { status: 500 });
   }
 }
-

@@ -1,11 +1,11 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Modal } from "@/components/ui/modal";
-import { Eye, Trash2, Edit, CheckCircle2, AlertTriangle, FileText } from "lucide-react";
+import { Eye, Trash2, Edit, AlertTriangle, FileText } from "lucide-react";
 import { Template, documentTypeLabels, categoryLabels } from "@/lib/templates";
 
 interface SVGTemplatePreviewProps {
@@ -14,10 +14,16 @@ interface SVGTemplatePreviewProps {
   onEdit?: (template: Template) => void;
   onPreviewPdf?: (template: Template) => void;
   enableEditForBuiltIn?: boolean;
+  previewVariant?: "default" | "compact";
 }
 
 const defaultPrimary = "#2563EB";
 const defaultSecondary = "#E0F2FE";
+
+const ensureColor = (color?: string, fallback = "#000000") => {
+  const trimmed = (color || "").trim();
+  return /^#([0-9A-Fa-f]{3}){1,2}$/.test(trimmed) ? trimmed : fallback;
+};
 
 const hexToRgb = (hex?: string) => {
   if (!hex) return { r: 0, g: 0, b: 0 };
@@ -47,6 +53,7 @@ export default function SVGTemplatePreview({
   onEdit,
   onPreviewPdf,
   enableEditForBuiltIn = false,
+  previewVariant = "default",
 }: SVGTemplatePreviewProps) {
   const [svgContent, setSvgContent] = useState<string>("");
   const [loading, setLoading] = useState(true);
@@ -73,19 +80,13 @@ export default function SVGTemplatePreview({
     }
   }, [template?.fileUrl]);
 
-  const placeholders = useMemo(() => {
-    if (!svgContent) return [];
-    const regex = /\{\{([^}]+)\}\}/g;
-    const result = new Set<string>();
-    let match: RegExpExecArray | null;
-    while ((match = regex.exec(svgContent)) !== null) {
-      result.add(match[1]);
-    }
-    return Array.from(result);
-  }, [svgContent]);
-
-  const primary = template?.primaryColor || defaultPrimary;
-  const secondary = template?.secondaryColor || defaultSecondary;
+  const primary = ensureColor(template?.primaryColor, defaultPrimary);
+  const secondary = ensureColor(template?.secondaryColor, defaultSecondary);
+  const previewAspect = "aspect-[210/297]";
+  const previewHeightClass =
+    previewVariant === "compact" ? "max-h-56" : "max-h-[420px]";
+  const previewWrapperClass =
+    previewVariant === "compact" ? "mx-auto w-full max-w-[200px]" : "w-full";
 
   const renderFallbackPreview = () => {
     const headerColor = rgba(primary, 0.85);
@@ -94,7 +95,7 @@ export default function SVGTemplatePreview({
 
     return (
       <div
-        className="relative aspect-[3/4] w-full overflow-hidden rounded-2xl border border-gray-200 bg-gradient-to-br from-white via-white to-[rgba(255,255,255,0.7)]"
+        className={`relative ${previewAspect} ${previewHeightClass} w-full overflow-hidden rounded-2xl border border-gray-200 bg-gradient-to-br from-white via-white to-[rgba(255,255,255,0.7)]`}
         style={{
           backgroundImage: `linear-gradient(135deg, ${lighten(primary, 0.65)} 0%, ${lighten(
             secondary,
@@ -146,14 +147,14 @@ export default function SVGTemplatePreview({
 
   const renderPreview = () => {
     if (loading) {
-      return (
-        <div className="aspect-[3/4] w-full animate-pulse overflow-hidden rounded-2xl border border-gray-200 bg-gradient-to-br from-gray-100 to-gray-200" />
-      );
-    }
+        return (
+          <div className={`${previewAspect} ${previewHeightClass} w-full animate-pulse overflow-hidden rounded-2xl border border-gray-200 bg-gradient-to-br from-gray-100 to-gray-200`} />
+        );
+      }
 
-    if (error) {
-      return (
-        <div className="relative aspect-[3/4] w-full overflow-hidden rounded-2xl border border-red-200 bg-red-50">
+      if (error) {
+        return (
+          <div className={`relative ${previewAspect} ${previewHeightClass} w-full overflow-hidden rounded-2xl border border-red-200 bg-red-50`}>
           <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 text-red-600">
             <AlertTriangle className="h-6 w-6" />
             <p className="text-xs font-medium">Preview gagal dimuat</p>
@@ -162,18 +163,18 @@ export default function SVGTemplatePreview({
       );
     }
 
-    if (svgContent) {
-      return (
-        <div className="relative aspect-[3/4] w-full overflow-hidden rounded-2xl border border-gray-200 bg-white">
-          <div
-            className="absolute inset-0 flex items-center justify-center p-2"
-            dangerouslySetInnerHTML={{ __html: svgContent }}
-          />
-        </div>
-      );
-    }
+      if (svgContent) {
+        return (
+          <div className={`relative ${previewAspect} ${previewHeightClass} w-full overflow-hidden rounded-2xl border border-gray-200 bg-white`}>
+            <div
+              className="absolute inset-0 flex items-center justify-center p-2 [&>svg]:h-full [&>svg]:max-h-full [&>svg]:max-w-full [&>svg]:w-auto"
+              dangerouslySetInnerHTML={{ __html: svgContent }}
+            />
+          </div>
+        );
+      }
 
-    return renderFallbackPreview();
+      return renderFallbackPreview();
   };
 
   const showPreviewButton = Boolean(svgContent);
@@ -182,62 +183,20 @@ export default function SVGTemplatePreview({
 
   const typeLabel = documentTypeLabels[template.type as keyof typeof documentTypeLabels] ?? template.type;
   const categoryLabel = categoryLabels[template.category as keyof typeof categoryLabels] ?? template.category;
+  const editLabel = template.isUploaded ? "Edit Template" : "Kustomisasi";
 
   return (
-    <>
-      <Card className="flex h-full flex-col overflow-hidden border border-gray-200 shadow-sm transition hover:shadow-md">
-        <div className="relative">
-          {renderPreview()}
+      <>
+        <Card className="flex h-full flex-col overflow-hidden border border-gray-200 shadow-sm transition hover:shadow-md">
+          <div className={`relative ${previewWrapperClass}`}>
+            {renderPreview()}
 
-          <div className="absolute left-4 top-4">
-            <Badge variant={template.isUploaded ? "secondary" : "outline"} className="bg-white/80 backdrop-blur">
+            <div className="absolute left-4 top-4">
+              <Badge variant={template.isUploaded ? "secondary" : "outline"} className="bg-white/80 backdrop-blur">
               {template.isUploaded ? "Custom" : "Built-in"}
             </Badge>
           </div>
 
-          <div className="absolute right-4 top-4 flex gap-2">
-            {showPreviewButton && (
-              <Button
-                size="sm"
-                variant="secondary"
-                className="h-9 w-9 rounded-full border border-white/50 bg-white/80 p-0 text-indigo-600 shadow backdrop-blur hover:bg-white"
-                onClick={() => setShowFullPreview(true)}
-              >
-                <Eye className="h-4 w-4" />
-              </Button>
-            )}
-            {typeof onPreviewPdf === "function" && (
-              <Button
-                title="Preview PDF"
-                size="sm"
-                variant="secondary"
-                className="h-9 w-9 rounded-full border border-white/50 bg-white/80 p-0 text-blue-700 shadow backdrop-blur hover:bg-white"
-                onClick={() => onPreviewPdf?.(template)}
-              >
-                <FileText className="h-4 w-4" />
-              </Button>
-            )}
-            {allowEdit && (
-              <Button
-                size="sm"
-                variant="secondary"
-                className="h-9 w-9 rounded-full border border-white/50 bg-white/80 p-0 text-blue-600 shadow backdrop-blur hover:bg-white"
-                onClick={() => onEdit?.(template)}
-              >
-                <Edit className="h-4 w-4" />
-              </Button>
-            )}
-            {allowRemove && (
-              <Button
-                size="sm"
-                variant="secondary"
-                className="h-9 w-9 rounded-full border border-white/50 bg-white/80 p-0 text-red-600 shadow backdrop-blur hover:bg-white"
-                onClick={() => onRemove?.(template)}
-              >
-                <Trash2 className="h-4 w-4" />
-              </Button>
-            )}
-          </div>
         </div>
 
         <CardContent className="flex flex-1 flex-col gap-4 p-5">
@@ -259,20 +218,6 @@ export default function SVGTemplatePreview({
 
           <div className="mt-auto space-y-3 text-sm text-gray-500">
             <div className="flex items-center gap-2">
-              <span className="font-medium text-gray-600">Data merge:</span>
-              {placeholders.length > 0 ? (
-                <span className="flex items-center gap-1 text-emerald-600">
-                  <CheckCircle2 className="h-4 w-4" />
-                  {placeholders.length} placeholder
-                </span>
-              ) : (
-                <span className="flex items-center gap-1 text-orange-600">
-                  <AlertTriangle className="h-4 w-4" />
-                  Sesuaikan otomatis saat generate
-                </span>
-              )}
-            </div>
-            <div className="flex items-center gap-2">
               <span className="font-medium text-gray-600">Warna dasar:</span>
               <div className="flex items-center gap-2">
                 <span
@@ -287,6 +232,46 @@ export default function SVGTemplatePreview({
                 />
               </div>
             </div>
+          </div>
+
+          <div className="mt-4 flex flex-wrap gap-2">
+            {showPreviewButton && (
+              <Button
+                variant="outline"
+                className="border-indigo-200 text-indigo-600 hover:bg-indigo-50"
+                onClick={() => setShowFullPreview(true)}
+              >
+                <Eye className="mr-2 h-4 w-4" />
+                Preview
+              </Button>
+            )}
+            {typeof onPreviewPdf === "function" && (
+              <Button
+                className="bg-blue-600 text-white hover:bg-blue-700"
+                onClick={() => onPreviewPdf?.(template)}
+              >
+                <FileText className="mr-2 h-4 w-4" />
+                Preview PDF
+              </Button>
+            )}
+            {allowEdit && (
+              <Button
+                className="bg-emerald-600 text-white hover:bg-emerald-700"
+                onClick={() => onEdit?.(template)}
+              >
+                <Edit className="mr-2 h-4 w-4" />
+                {editLabel}
+              </Button>
+            )}
+            {allowRemove && (
+              <Button
+                variant="destructive"
+                onClick={() => onRemove?.(template)}
+              >
+                <Trash2 className="mr-2 h-4 w-4" />
+                Hapus
+              </Button>
+            )}
           </div>
         </CardContent>
       </Card>

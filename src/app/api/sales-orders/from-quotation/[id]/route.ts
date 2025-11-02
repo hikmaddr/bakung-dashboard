@@ -3,13 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { resolveAllowedBrandIds } from "@/lib/brand";
 import { getAuth } from "@/lib/auth";
 import { logActivity } from "@/lib/activity";
-
-function generateOrderNumber() {
-  const now = new Date();
-  const year = now.getFullYear();
-  const random = Math.floor(Math.random() * 10000).toString().padStart(4, "0");
-  return `SO-${year}-${random}`;
-}
+import { generateNextNumber } from "@/lib/documentNumber";
 
 // ✅ POST — convert quotation ke sales order
 export async function POST(
@@ -68,9 +62,11 @@ export async function POST(
     const taxAmount = 0;
     const totalAmount = subtotal;
 
+    const orderNumber = await generateNextNumber("salesOrder", { brandProfileId: quotation.brandProfileId ?? undefined, date: new Date() });
+
     const order = await prisma.salesOrder.create({
       data: {
-        orderNumber: generateOrderNumber(),
+        orderNumber,
         date: new Date(),
         status: "Draft",
         customerId: quotation.customerId,
@@ -81,6 +77,7 @@ export async function POST(
         taxMode,
         taxAmount,
         totalAmount,
+        brandProfileId: quotation.brandProfileId ?? undefined,
         items: {
           create: normalizedItems,
         },

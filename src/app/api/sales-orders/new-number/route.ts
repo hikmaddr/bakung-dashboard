@@ -1,47 +1,21 @@
 import { NextResponse } from "next/server";
-import { prisma } from "@/lib/prisma";
+import { generateNextNumber } from "@/lib/documentNumber";
+import { getActiveBrandProfile } from "@/lib/brand";
 
-function generateOrderNumber() {
-  const now = new Date();
-  const year = now.getFullYear();
-  const random = Math.floor(Math.random() * 10000)
-    .toString()
-    .padStart(4, "0");
-  return `SO-${year}-${random}`;
-}
-
-export async function GET() {
+export async function GET(req: Request) {
   try {
-    let orderNumber: string | null = null;
-    let attempts = 0;
-
-    while (attempts < 8) {
-      const candidate = generateOrderNumber();
-      const existing = await prisma.salesOrder.findUnique({
-        where: { orderNumber: candidate },
-        select: { id: true },
-      });
-      if (!existing) {
-        orderNumber = candidate;
-        break;
-      }
-      attempts += 1;
+    const url = new URL(req.url);
+    const dateParam = url.searchParams.get("date");
+    let dt: Date;
+    if (dateParam && /^\d{4}-\d{2}-\d{2}$/.test(dateParam)) {
+      const [y, m, d] = dateParam.split("-").map((v) => Number(v));
+      dt = new Date(y, (m || 1) - 1, d || 1);
+    } else {
+      dt = dateParam ? new Date(dateParam) : new Date();
     }
-
-    if (!orderNumber) {
-      return NextResponse.json(
-        {
-          success: false,
-          message: "Gagal menghasilkan nomor sales order unik",
-        },
-        { status: 500 }
-      );
-    }
-
-    return NextResponse.json({
-      success: true,
-      data: { orderNumber },
-    });
+    const active = await getActiveBrandProfile();
+    const orderNumber = await generateNextNumber("salesOrder", { brandProfileId: active?.id ?? undefined, date: dt });
+    return NextResponse.json({ success: true, data: { orderNumber } });
   } catch (error) {
     console.error("GET /api/sales-orders/new-number error:", error);
     return NextResponse.json(

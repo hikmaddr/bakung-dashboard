@@ -18,9 +18,11 @@ type Props = {
   disabled?: boolean;
   className?: string;
   onAddNew?: () => void;
+  reloadKey?: number | string | boolean;
+  valueDetail?: CustomerBasic | null;
 };
 
-export default function CustomerPicker({ value, onChange, placeholder = "Pilih Customer...", disabled, className = "", onAddNew }: Props) {
+export default function CustomerPicker({ value, onChange, placeholder = "Pilih Customer...", disabled, className = "", onAddNew, reloadKey, valueDetail }: Props) {
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(true);
   const [list, setList] = useState<CustomerBasic[]>([]);
@@ -29,6 +31,7 @@ export default function CustomerPicker({ value, onChange, placeholder = "Pilih C
 
   useEffect(() => {
     let alive = true;
+    setLoading(true);
     (async () => {
       try {
         const res = await fetch("/api/customers", { cache: "no-store" });
@@ -39,7 +42,7 @@ export default function CustomerPicker({ value, onChange, placeholder = "Pilih C
       } finally { if (alive) setLoading(false); }
     })();
     return () => { alive = false; };
-  }, []);
+  }, [reloadKey]);
 
   useEffect(() => {
     const handler = (e: MouseEvent) => {
@@ -50,7 +53,12 @@ export default function CustomerPicker({ value, onChange, placeholder = "Pilih C
     return () => document.removeEventListener("mousedown", handler);
   }, [open]);
 
-  const selected = useMemo(() => list.find((x) => x.id === (value ?? -1)) || null, [list, value]);
+  const selected = useMemo(() => {
+    const fromList = list.find((x) => x.id === (value ?? -1)) || null;
+    if (fromList) return fromList;
+    if (valueDetail && valueDetail.id === value) return valueDetail;
+    return null;
+  }, [list, value, valueDetail]);
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -134,4 +142,3 @@ export default function CustomerPicker({ value, onChange, placeholder = "Pilih C
     </div>
   );
 }
-

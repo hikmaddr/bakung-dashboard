@@ -53,9 +53,9 @@ export async function userCanAccessBrand(userId: number | null, brandId: number)
     include: { roles: { include: { role: true } } },
   });
   const roleNames = (user?.roles || []).map((ur) => ur.role.name.toLowerCase());
-  const isSystemAdmin = roleNames.includes("admin");
   const isOwner = roleNames.includes("owner");
-  if (isSystemAdmin || isOwner) return true;
+  // Hanya OWNER yang bypass akses ke semua brand.
+  if (isOwner) return true;
 
   const scope = await prisma.userBrandScope.findUnique({
     where: { userId_brandProfileId: { userId, brandProfileId: brandId } },
@@ -66,7 +66,8 @@ export async function userCanAccessBrand(userId: number | null, brandId: number)
 export function isOwnerOrAdmin(roles?: string[] | null): boolean {
   if (!Array.isArray(roles)) return false;
   const lower = roles.map((r) => r.toLowerCase());
-  return lower.includes("owner") || lower.includes("admin");
+  // Tidak lagi menganggap admin sebagai bypass global.
+  return lower.includes("owner");
 }
 
 export function isOwnerOnly(roles?: string[] | null): boolean {
@@ -76,6 +77,7 @@ export function isOwnerOnly(roles?: string[] | null): boolean {
 }
 
 export async function resolveAllowedBrandIds(userId: number | null, roles?: string[] | null, requestedBrandIds?: number[]) {
+  // OWNER: akses semua brand; selain itu hanya brand yang diassign.
   if (isOwnerOrAdmin(roles)) {
     if (requestedBrandIds && requestedBrandIds.length > 0) return requestedBrandIds;
     const all = await prisma.brandProfile.findMany({ select: { id: true } });
@@ -93,6 +95,7 @@ export async function resolveAllowedBrandIds(userId: number | null, roles?: stri
 
 export async function brandScopeWhere(field: string = "brandProfileId", userId?: number | null, roles?: string[] | null, requestedBrandIds?: number[]) {
   const allowed = await resolveAllowedBrandIds(userId ?? null, roles ?? [], requestedBrandIds);
+  // OWNER bypass filter; selain OWNER harus memiliki brand yang diassign.
   if (isOwnerOrAdmin(roles)) return {} as any;
   if (!allowed || allowed.length === 0) return { [field]: -1 } as any; // no access
   return { [field]: { in: allowed } } as any;

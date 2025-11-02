@@ -67,6 +67,7 @@ export async function PATCH(
       templateDefaults,
       numberFormats,
       modules,
+      businessScope,
       primaryColor,
       secondaryColor,
       isActive,
@@ -98,6 +99,7 @@ export async function PATCH(
           ? toJson(numberFormats)
           : undefined,
         modules: modules ? toJson(modules) : undefined,
+        businessScope,
         primaryColor,
         secondaryColor,
         isActive,

@@ -32,7 +32,7 @@ echo "Building production..."
 npm run build
 
 echo "Starting app with PM2..."
-pm2 start ecosystem.config.js || pm2 restart tailadmin --update-env
+pm2 start ecosystem.config.js || pm2 restart bakung-dashboard --update-env
 pm2 save
 
 echo "To auto-start on boot, run:"

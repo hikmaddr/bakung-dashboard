@@ -9,7 +9,7 @@ import FeatureGuard from "@/components/FeatureGuard";
 import { ChevronDown, PlusCircle, Trash2 } from "lucide-react";
 import { useProductUnits } from "@/hooks/useProductUnits";
 
-import CustomerPicker from "@/components/CustomerPicker";
+import CustomerPicker, { type CustomerBasic } from "@/components/CustomerPicker";
 import { fmtIDR } from "@/lib/format";
 
 type ProductLine = {
@@ -62,7 +62,14 @@ export default function AddSalesInvoicePage() {
   const router = useRouter();
   const searchParams = typeof window !== 'undefined' ? new URLSearchParams(window.location.search) : null;
   const [invoiceNumber, setInvoiceNumber] = useState("");
-  const [invoiceDate, setInvoiceDate] = useState(new Date().toISOString().slice(0, 10));
+  const [numberLocked, setNumberLocked] = useState<boolean>(true);
+  const formatLocalYMD = (d: Date) => {
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, "0");
+    const day = String(d.getDate()).padStart(2, "0");
+    return `${y}-${m}-${day}`;
+  };
+  const [invoiceDate, setInvoiceDate] = useState(formatLocalYMD(new Date()));
   const [dueDate, setDueDate] = useState(""); // default disamakan setelah mount
   const [client, setClient] = useState("");
   const [clientReadOnly, setClientReadOnly] = useState(false);
@@ -237,6 +244,28 @@ export default function AddSalesInvoicePage() {
     loadSuggestion();
   }, [invoiceDate]);
 
+  // Fetch active brand profile to determine invoice number lock status
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      try {
+        const res = await fetch('/api/brand-profiles/active', { cache: 'no-store' });
+        const json = await res.json();
+        const nf = json?.numberFormats || {};
+        const lockedVal = nf?.lockedInvoice ?? nf?.invoiceLocked ?? nf?.numberFormatsLocked?.invoice;
+        const locked = String(lockedVal ?? 'true').toLowerCase() === 'true';
+        if (alive) setNumberLocked(locked);
+      } catch {}
+    })();
+    return () => { alive = false; };
+  }, []);
+
+  // Initialize editable invoice number from suggestion when unlocked
+  useEffect(() => {
+    if (numberLocked) return;
+    if (!invoiceNumber && suggestedNumber) setInvoiceNumber(suggestedNumber);
+  }, [numberLocked, suggestedNumber]);
+
   // Fetch quotations for linking
   useEffect(() => {
     let active = true;
@@ -390,8 +419,9 @@ export default function AddSalesInvoicePage() {
     }
     setSavingInvoice(true);
     try {
+      const finalInvoiceNumber = numberLocked ? suggestedNumber : invoiceNumber;
       const payload = {
-        invoiceNumber,
+        invoiceNumber: finalInvoiceNumber,
         invoiceDate,
         dueDate,
         customerId,
@@ -469,11 +499,15 @@ export default function AddSalesInvoicePage() {
             <label className="block mb-1 font-medium">No. Invoice *</label>
             <input
               type="text"
-              value={suggestedNumber}
-              readOnly
-              className="border px-3 py-2 rounded w-full bg-gray-50 text-gray-600"
+              value={numberLocked ? suggestedNumber : invoiceNumber}
+              readOnly={numberLocked}
+              onChange={(e) => !numberLocked && setInvoiceNumber(e.target.value)}
+              placeholder={numberLocked ? undefined : (suggestedNumber || undefined)}
+              className={`border px-3 py-2 rounded w-full ${numberLocked ? 'bg-gray-50 text-gray-600' : 'bg-white'}`}
             />
-            <p className="text-xs text-gray-500 mt-1">Nomor dibuat otomatis.</p>
+            <p className="text-xs text-gray-500 mt-1">
+              {numberLocked ? 'Nomor dibuat otomatis.' : 'Nomor dapat diedit; default mengikuti saran.'}
+            </p>
           </div>
           <div>
             <label className="block mb-1 font-medium">Tgl. Invoice *</label>
@@ -791,10 +825,12 @@ export default function AddSalesInvoicePage() {
                   <span>{taxAmount.toLocaleString("id-ID", { style: "currency", currency: "IDR" })}</span>
                 </div>
               )}
-              <div className="flex justify-between py-1 text-sm">
-                <span>Uang Muka</span>
-                <span>{(downPayment || 0).toLocaleString("id-ID", { style: "currency", currency: "IDR" })}</span>
-              </div>
+              {Number(downPayment) > 0 && (
+                <div className="flex justify-between py-1 text-sm">
+                  <span>Uang Muka</span>
+                  <span>{(downPayment || 0).toLocaleString("id-ID", { style: "currency", currency: "IDR" })}</span>
+                </div>
+              )}
               <div className="mt-2 border-t pt-3 flex justify-between items-center font-semibold text-lg">
                 <span>Total</span>
                 <span>{total.toLocaleString("id-ID", { style: "currency", currency: "IDR" })}</span>
@@ -1090,6 +1126,23 @@ function ClientCompanyPicker({ client, setClient, setCustomerId, setClientCompan
   const [openAdd, setOpenAdd] = useState(false);
   const [saving, setSaving] = useState(false);
   const [form, setForm] = useState({ pic: "", company: "", address: "", phone: "", email: "" });
+  const [customerPickerReloadKey, setCustomerPickerReloadKey] = useState(0);
+  const selectedDetail = useMemo<CustomerBasic | null>(() => {
+    if (typeof selectedId !== "number") return null;
+    const found = customers.find((c) => c.id === selectedId);
+    if (!found) return null;
+    return { id: found.id, pic: found.pic, company: found.company };
+  }, [selectedId, customers]);
+
+  const selectCustomer = (cust: { id: number; company: string; pic: string }) => {
+    const normalizedId = Number(cust.id);
+    if (!Number.isFinite(normalizedId) || normalizedId <= 0) return;
+    setSelectedId(normalizedId);
+    setClient(cust.pic || "");
+    setCompany(cust.company || "");
+    setCustomerId?.(normalizedId);
+    setClientCompany?.(cust.company || "");
+  };
 
   useEffect(() => {
     (async () => {
@@ -1101,34 +1154,11 @@ function ClientCompanyPicker({ client, setClient, setCustomerId, setClientCompan
         setCustomers(mapped);
         const found = mapped.find(c => c.pic.toLowerCase() === (client || '').toLowerCase());
         if (found) {
-          setSelectedId(found.id);
-          setCompany(found.company);
-          setCustomerId && setCustomerId(found.id);
-          setClientCompany && setClientCompany(found.company || '');
+          selectCustomer(found);
         }
       } catch {}
     })();
   }, []);
-
-  const refreshCustomers = async (preselectId?: number) => {
-    try {
-      const res = await fetch('/api/customers', { cache: 'no-store' });
-      const json = await res.json();
-        const rows = Array.isArray(json) ? json : (Array.isArray(json?.data) ? json.data : []);
-        const mapped: Array<{ id: number; company: string; pic: string }> = rows.map((c: any) => ({ id: Number(c.id), company: c.company || c.name || 'Unknown', pic: c.pic || '' }));
-        setCustomers(mapped);
-        if (preselectId) {
-          const chosen = mapped.find(c => c.id === preselectId);
-          if (chosen) {
-            setSelectedId(chosen.id);
-            setClient(chosen.pic || '');
-            setCompany(chosen.company || '');
-            setCustomerId && setCustomerId(chosen.id);
-            setClientCompany && setClientCompany(chosen.company || '');
-          }
-        }
-    } catch {}
-  };
 
   const saveNewCustomer = async () => {
     if (!form.pic || !form.company || !form.address || !form.phone) return;
@@ -1141,9 +1171,22 @@ function ClientCompanyPicker({ client, setClient, setCustomerId, setClientCompan
       });
       if (!res.ok) throw new Error('Gagal menyimpan');
       const created = await res.json();
+      const normalized = {
+        id: Number(created?.id),
+        company: created?.company || created?.name || '',
+        pic: created?.pic || '',
+      };
+      selectCustomer(normalized);
+      setCustomers((prev) => {
+        if (!Number.isFinite(normalized.id) || normalized.id <= 0) return prev;
+        const exists = prev.some((c) => c.id === normalized.id);
+        const cleaned = { id: normalized.id, pic: normalized.pic, company: normalized.company || 'Unknown' };
+        if (exists) return prev.map((c) => (c.id === normalized.id ? cleaned : c));
+        return [cleaned, ...prev];
+      });
+      setCustomerPickerReloadKey((prev) => prev + 1);
       setOpenAdd(false);
       setForm({ pic: '', company: '', address: '', phone: '', email: '' });
-      await refreshCustomers(created.id);
     } catch (e) {
       console.error(e);
     } finally {
@@ -1186,6 +1229,8 @@ function ClientCompanyPicker({ client, setClient, setCustomerId, setClientCompan
                 setClientCompany && setClientCompany(c?.company || '');
               }}
               onAddNew={() => setOpenAdd(true)}
+              reloadKey={customerPickerReloadKey}
+              valueDetail={selectedDetail}
             />
             <p className="text-xs text-gray-500 mt-1">Terhubung ke database /api/customers</p>
           </div>

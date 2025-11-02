@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, useCallback } from "react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { Edit, Copy, Send, X, ArrowLeft } from "lucide-react";
@@ -9,7 +9,7 @@ import jsPDF from "jspdf";
 import PageBreadcrumb from "@/components/common/PageBreadCrumb";
 import toast from "react-hot-toast";
 import { resolveTheme, resolveThankYou, resolvePaymentLines, DEFAULT_TERMS } from "@/lib/quotationTheme";
-
+import { formatDownloadFileName } from "@/utils/downloadFilename";
 
 type SendMethod = "whatsapp" | "email" | "savepdf";
 
@@ -43,27 +43,48 @@ export default function QuotationDetailPage() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id]);
 
-  useEffect(() => {
-    const fetchBrand = async () => {
-      setBrandLoading(true);
-      try {
+  const fetchBrand = useCallback(async () => {
+    setBrandLoading(true);
+    try {
+      // Prefer active endpoint for consistency across app
+      let active: any = null;
+      const resActive = await fetch("/api/brand-profiles/active", { cache: "no-store" });
+      if (resActive.ok) {
+        active = await resActive.json();
+      } else {
+        // Fallback to list endpoint and pick active or first
         const res = await fetch("/api/brand-profiles", { cache: "no-store" });
-        if (!res.ok) throw new Error();
-        const payload = await res.json();
-        const active =
-          Array.isArray(payload) && payload.length
-            ? payload.find((item: any) => item.isActive) ?? payload[0]
-            : null;
-        setBrand(active ?? null);
-      } catch (error) {
-        console.error("Failed to fetch brand profile", error);
-        setBrand(null);
-      } finally {
-        setBrandLoading(false);
+        if (res.ok) {
+          const payload = await res.json();
+          if (Array.isArray(payload) && payload.length) {
+            active = payload.find((item: any) => item.isActive) ?? payload[0];
+          } else if (Array.isArray(payload?.profiles)) {
+            const list = payload.profiles;
+            active = list.find((p: any) => p?.isActive) ?? list[0] ?? null;
+          } else if (Array.isArray(payload?.data)) {
+            const list = payload.data;
+            active = list.find((p: any) => p?.isActive) ?? list[0] ?? null;
+          } else if (payload && typeof payload === "object") {
+            active = payload;
+          }
+        }
       }
-    };
-    fetchBrand();
+      setBrand(active ?? null);
+    } catch (error) {
+      console.error("Failed to fetch brand profile", error);
+      setBrand(null);
+    } finally {
+      setBrandLoading(false);
+    }
   }, []);
+
+  useEffect(() => {
+    fetchBrand();
+    // Listen to brand module updates and refetch brand info
+    const handler = () => fetchBrand();
+    window.addEventListener("brand-modules:updated", handler);
+    return () => window.removeEventListener("brand-modules:updated", handler);
+  }, [fetchBrand]);
 
   useEffect(() => {
     const fetchActor = async () => {
@@ -108,7 +129,7 @@ export default function QuotationDetailPage() {
   // ========================
   // ACTION HANDLER (Menggunakan Toast Interaktif untuk Konfirmasi)
   // ========================
-  const handleAction = async (action: "convertToSO" | "edit") => {
+  const handleAction = async (action: "convertToSO" | "convertToInvoice" | "edit") => {
   if (action === "edit") {
     router.push(`/penjualan/quotation/edit/${id}`);
     return;
@@ -146,6 +167,49 @@ export default function QuotationDetailPage() {
                     loading: "Menyalin ke Sales Order...",
                     success: "Berhasil disalin dan status quotation menjadi Confirmed.",
                     error: "Gagal menyalin ke Sales Order.",
+                  }
+                );
+              }}
+              className="rounded bg-green-600 px-3 py-1 text-sm text-white hover:bg-green-700"
+            >
+              Ya, Lanjutkan
+            </button>
+          </div>
+        </div>
+      ),
+      { duration: 10000, position: "bottom-center" }
+    );
+  }
+  if (action === "convertToInvoice") {
+    toast(
+      (t) => (
+        <div className="flex flex-col gap-3">
+          <p className="text-sm font-medium">
+            Yakin ingin <b>Salin ke Invoice</b> dan mengubah status quotation menjadi <b>Confirmed</b>?
+          </p>
+          <div className="flex justify-end gap-2">
+            <button
+              onClick={() => toast.dismiss(t.id)}
+              className="rounded border border-gray-300 px-3 py-1 text-sm hover:bg-gray-100"
+            >
+              Batal
+            </button>
+            <button
+              onClick={async () => {
+                toast.dismiss(t.id);
+                await toast.promise(
+                  fetch(`/api/quotations/${id}/convert-to-invoice`, { method: "POST" }).then(async (res) => {
+                    if (!res.ok) {
+                      const errorText = await res.text();
+                      throw new Error(errorText || "Gagal salin.");
+                    }
+                    await fetchDetail();
+                    router.refresh();
+                  }),
+                  {
+                    loading: "Menyalin ke Invoice...",
+                    success: "Berhasil disalin ke Invoice.",
+                    error: "Gagal menyalin ke Invoice.",
                   }
                 );
               }}
@@ -269,11 +333,12 @@ const generatePDF = async (): Promise<string> => {
   pdf.addImage(imgData, "PNG", 0, 0, pdfWidth, pdfHeight);
 
   // Buat nama file dari nomor Quotation dan PIC
-  const safePicName = (quotation.customer?.pic || "Customer")
-    .replace(/\s+/g, "_")          // spasi jadi underscore
-    .replace(/[^a-zA-Z0-9-_]/g, ""); // hapus karakter aneh
-
-  const fileName = `${quotation.quotationNumber || "Quotation"} - ${safePicName}.pdf`;
+  const fileName = formatDownloadFileName(
+    quotation.quotationNumber,
+    quotation.customer?.pic || quotation.customer?.company,
+    quotation.quotationNumber || `QUO-${quotation.id}`,
+    quotation.customer?.pic || quotation.customer?.company || "Customer"
+  );
 
   pdf.save(fileName);
   return fileName;
@@ -372,13 +437,24 @@ const generatePDF = async (): Promise<string> => {
             <Send className="h-4 w-4" />
             Kirim
           </button>
-          <button
-            onClick={() => handleAction("convertToSO")}
-            className="inline-flex items-center gap-2 rounded-full bg-emerald-600 px-4 py-2 text-sm font-medium text-white shadow transition hover:bg-emerald-700"
-          >
-            <Copy className="h-4 w-4" />
-            Salin ke Sales Order
-          </button>
+          {/* Scope-based action buttons */}
+          {String(brand?.businessScope || "").toUpperCase() === "CREATIVE" ? (
+            <button
+              onClick={() => handleAction("convertToInvoice")}
+              className="inline-flex items-center gap-2 rounded-full bg-emerald-600 px-4 py-2 text-sm font-medium text-white shadow transition hover:bg-emerald-700"
+            >
+              <Copy className="h-4 w-4" />
+              Salin ke Invoice
+            </button>
+          ) : (
+            <button
+              onClick={() => handleAction("convertToSO")}
+              className="inline-flex items-center gap-2 rounded-full bg-emerald-600 px-4 py-2 text-sm font-medium text-white shadow transition hover:bg-emerald-700"
+            >
+              <Copy className="h-4 w-4" />
+              Salin ke Sales Order
+            </button>
+          )}
           <Link
             href={`/penjualan/quotation/edit/${id}`}
             className="inline-flex items-center gap-2 rounded-full bg-amber-500 px-4 py-2 text-sm font-medium text-white shadow transition hover:bg-amber-600"
@@ -650,7 +726,7 @@ const generatePDF = async (): Promise<string> => {
                   </div>
                   <div className="mt-3 space-y-2 text-sm" style={{ color: currentTheme.mutedText }}>
                     {(thankYouAndTerms.terms ?? DEFAULT_TERMS).map((line: string, idx: number) => (
-                      <div key={`${line}-${idx}`}>- {line}</div>
+                      <div key={`${line}-${idx}`}>{line}</div>
                     ))}
                   </div>
                 </div>

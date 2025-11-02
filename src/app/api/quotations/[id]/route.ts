@@ -4,7 +4,7 @@ import { resolveAllowedBrandIds } from "@/lib/brand";
 import { getAuth } from "@/lib/auth";
 import { logActivity } from "@/lib/activity";
 import { Prisma } from "@prisma/client"; // untuk tangani error
-import { writeFile } from "fs/promises";
+import { writeFile, mkdir } from "fs/promises";
 import path from "path";
 import crypto from "crypto";
 import { sendNotificationToRole } from "@/lib/notification";
@@ -13,9 +13,15 @@ import { sendNotificationToRole } from "@/lib/notification";
 async function saveUpload(file: File, baseName: string) {
   const bytes = await file.arrayBuffer();
   const buffer = Buffer.from(bytes);
-  const ext = (file.name.split(".").pop() || "").toLowerCase();
-  const unique = `${baseName}_${crypto.randomUUID()}.${ext}`;
-  const uploadPath = path.join(process.cwd(), "public", "uploads", unique);
+  const rawExt = file.name.split(".").pop();
+  const ext = (rawExt ? rawExt : "bin").toLowerCase();
+  const safeBase = String(baseName || "file")
+    .toLowerCase()
+    .replace(/[^a-z0-9_\-]+/gi, "_");
+  const unique = `${safeBase}_${crypto.randomUUID()}.${ext}`;
+  const uploadsDir = path.join(process.cwd(), "public", "uploads");
+  await mkdir(uploadsDir, { recursive: true });
+  const uploadPath = path.join(uploadsDir, unique);
   await writeFile(uploadPath, buffer);
   return `/uploads/${unique}`;
 }

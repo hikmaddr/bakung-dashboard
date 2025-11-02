@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState, useCallback } from "react";
 import Link from "next/link";
-import { useParams, useSearchParams } from "next/navigation";
+import { useParams, useSearchParams, useRouter } from "next/navigation";
 import { Truck } from "lucide-react";
 import toast from "react-hot-toast";
 import PageBreadcrumb from "@/components/common/PageBreadCrumb";
@@ -77,6 +77,7 @@ const formatDate = (value: string | Date | null | undefined) => {
 export default function ReceiptDetailPage() {
   const params = useParams();
   const searchParams = useSearchParams();
+  const router = useRouter();
 
   const receiptId = useMemo(() => {
     const raw = params?.id;
@@ -152,10 +153,16 @@ export default function ReceiptDetailPage() {
         const res = await fetch("/api/brand-profiles", { cache: "no-store" });
         if (!res.ok) throw new Error();
         const payload = await res.json();
-        const activeBrand = Array.isArray(payload)
-          ? payload.find((item: any) => item.isActive) ?? payload[0]
-          : null;
-        if (active) setBrand(activeBrand ?? null);
+        const list: any[] = Array.isArray(payload) ? payload : [];
+        // Prioritaskan brand yang terkait dengan invoice/kwitansi jika tersedia
+        let selected: any | null = null;
+        const receiptBrandId = (receipt as any)?.brandProfileId;
+        if (receiptBrandId != null) {
+          selected = list.find((item) => String(item.id) === String(receiptBrandId)) ?? null;
+        }
+        // Fallback ke brand aktif, lalu brand pertama
+        if (!selected) selected = list.find((item) => item.isActive) ?? list[0] ?? null;
+        if (active) setBrand(selected ?? null);
       } catch (err) {
         console.error("Failed to fetch brand", err);
         if (active) setBrand(null);
@@ -167,7 +174,7 @@ export default function ReceiptDetailPage() {
     return () => {
       active = false;
     };
-  }, []);
+  }, [receipt?.brandProfileId]);
 
   useEffect(() => {
     let active = true;
@@ -559,7 +566,7 @@ export default function ReceiptDetailPage() {
     );
   };
 
-  const simpanDraft = () => {
+  const simpanDraft = (redirectAfterSave: boolean = true) => {
     if (!receipt) return;
     try {
       const draftsRaw = localStorage.getItem("kwitansiDrafts") || "[]";
@@ -580,6 +587,9 @@ export default function ReceiptDetailPage() {
       });
       localStorage.setItem("kwitansiDrafts", JSON.stringify(drafts));
       toast.success("Draft kwitansi disimpan");
+      if (redirectAfterSave) {
+        router.push("/penjualan/kwitansi-penjualan");
+      }
     } catch {
       toast.error("Gagal menyimpan draft");
     }
@@ -588,8 +598,8 @@ export default function ReceiptDetailPage() {
   const handleSend = async () => {
     if (!receipt) return;
     try {
-      // Simpan otomatis ke list kwitansi saat submit kirim
-      simpanDraft();
+      // Simpan otomatis ke list kwitansi saat submit kirim (tanpa redirect)
+      simpanDraft(false);
       if (sendMethod === "pdf") {
         savePdf();
         setSendOpen(false);
@@ -682,7 +692,7 @@ export default function ReceiptDetailPage() {
               </button>
             )}
             <button
-              onClick={simpanDraft}
+              onClick={() => simpanDraft(true)}
               disabled={!receipt || loading}
               className="inline-flex items-center gap-2 rounded-full border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-60"
             >

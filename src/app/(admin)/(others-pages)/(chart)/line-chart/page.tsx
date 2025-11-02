@@ -5,9 +5,9 @@ import { Metadata } from "next";
 import React from "react";
 
 export const metadata: Metadata = {
-  title: "Next.js Line Chart | TailAdmin - Next.js Dashboard Template",
+  title: "Line Charts | Bakung Dashboard",
   description:
-    "This is Next.js Line Chart page for TailAdmin - Next.js Tailwind CSS Admin Dashboard Template",
+    "Line chart components used to highlight trends across HDP Works brands.",
 };
 export default function LineChart() {
   return (

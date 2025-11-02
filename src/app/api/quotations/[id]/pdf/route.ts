@@ -16,6 +16,7 @@ import {
   resolveTheme,
   toRgb255,
 } from "@/lib/quotationTheme";
+import { formatPdfFileName } from "@/lib/pdfCommon";
 
 interface BrandProfile {
   id: number;
@@ -201,10 +202,8 @@ const embedSignatureImage = async (
 ): Promise<{ image: PDFImage; width: number; height: number } | null> => {
   try {
     if (!imageUrl) return null;
-    const absoluteUrl = imageUrl.startsWith("http")
-      ? imageUrl
-      : `${process.env.NEXT_PUBLIC_BASE_URL || "http://localhost:3000"}${imageUrl.startsWith("/") ? imageUrl : `/${imageUrl}`}`;
-    const bytes = await loadImageBytes(absoluteUrl);
+    // Baca langsung memakai loader serbaguna (URL absolut atau path relatif ke `public/`)
+    const bytes = await loadImageBytes(imageUrl);
     if (!bytes) return null;
     let image: PDFImage;
     try {
@@ -244,42 +243,22 @@ const embedBrandLogo = async (
 ): Promise<{ image: PDFImage; width: number; height: number } | null> => {
   if (!brand.logoUrl) return null;
   try {
-    const logoUrl = brand.logoUrl.startsWith("http")
-      ? brand.logoUrl
-      : `${process.env.NEXT_PUBLIC_BASE_URL || "http://localhost:3000"}${brand.logoUrl}`;
-    const response = await fetch(logoUrl);
-    if (!response.ok) return null;
-    const buffer = await response.arrayBuffer();
-    const bytes = new Uint8Array(buffer);
-    const isPng = brand.logoUrl.toLowerCase().endsWith(".png") || response.headers.get("content-type")?.includes("png");
-    const isJpg =
-      brand.logoUrl.toLowerCase().endsWith(".jpg") ||
-      brand.logoUrl.toLowerCase().endsWith(".jpeg") ||
-      response.headers.get("content-type")?.includes("jpeg");
+    // Ambil bytes logo via helper yang mendukung URL absolut dan path lokal `public/`.
+    const bytes = await loadImageBytes(brand.logoUrl);
+    if (!bytes) return null;
 
     let image: PDFImage;
-    if (isPng) {
+    try {
       image = await pdfDoc.embedPng(bytes);
-    } else if (isJpg) {
+    } catch {
       image = await pdfDoc.embedJpg(bytes);
-    } else {
-      // attempt png first fallback to jpg
-      try {
-        image = await pdfDoc.embedPng(bytes);
-      } catch {
-        image = await pdfDoc.embedJpg(bytes);
-      }
     }
 
     const maxWidth = 90;
     const maxHeight = 50;
     const { width, height } = image.scale(1);
     const scale = Math.min(maxWidth / width, maxHeight / height, 1);
-    return {
-      image,
-      width: width * scale,
-      height: height * scale,
-    };
+    return { image, width: width * scale, height: height * scale };
   } catch (error) {
     console.error("Failed to embed brand logo:", error);
     return null;
@@ -1318,10 +1297,10 @@ export async function GET(
         { status: 400 }
       );
     }
-    const auth = await getAuth();
+    const authResult = await getAuth();
     const allowedBrandIds = await resolveAllowedBrandIds(
-      auth?.userId ?? null,
-      (auth?.roles as string[]) ?? [],
+      authResult?.userId ?? null,
+      (authResult?.roles as string[]) ?? [],
       []
     );
     const quotation = await prisma.quotation.findFirst({
@@ -1393,7 +1372,6 @@ export async function GET(
     const theme = resolveTheme(brand as BrandProfile, templateDefaults?.invoice);
 
     // Gunakan profil user login untuk bagian FROM & Signature, fallback ke brand
-    const auth = await getAuth();
     let actor: { name: string; email?: string | null; phone?: string | null } = {
       name: brand?.name ?? "Our Company",
       email: brand?.email ?? null,
@@ -1520,9 +1498,9 @@ export async function GET(
     }
 
     const pdfBytes = Buffer.from(await pdf.save());
-    const safeQuotationNumber = (quotation.quotationNumber || `QUO-${quotation.id}`).replace(/[^\w\-]+/g, "_");
-    const safeCustomer = (quotation.customer?.company || quotation.customer?.pic || "Customer").replace(/[^\w\-]+/g, "_");
-    const fileName = `Quotation-${safeQuotationNumber}-${safeCustomer}.pdf`;
+    const quotationNumber = quotation.quotationNumber || `QUO-${quotation.id}`;
+    const customerName = quotation.customer?.pic || quotation.customer?.company || "Customer";
+    const fileName = formatPdfFileName(quotationNumber, customerName, `QUO-${quotation.id}`);
 
     return new Response(pdfBytes, {
       headers: {

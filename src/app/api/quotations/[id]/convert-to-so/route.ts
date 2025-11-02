@@ -39,6 +39,18 @@ export async function POST(
       );
     }
 
+    // Scope check: blokir untuk brand Creative (flow langsung ke invoice)
+    const activeBrand = await getActiveBrandProfile();
+    const brandToCheck = quotation.brandProfileId
+      ? await prisma.brandProfile.findUnique({ where: { id: quotation.brandProfileId } })
+      : activeBrand;
+    if (brandToCheck && String(brandToCheck.businessScope || "").toUpperCase() === "CREATIVE") {
+      return NextResponse.json(
+        { success: false, message: "Konversi ke Sales Order diblokir untuk scope Creative" },
+        { status: 403 }
+      );
+    }
+
     // Lihat apakah sudah ada Sales Order untuk quotation ini
     const existingOrder = await prisma.salesOrder.findFirst({
       where: { quotationId: qid },

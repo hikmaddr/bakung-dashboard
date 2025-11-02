@@ -2,9 +2,11 @@ import { NextResponse, type NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
 
 // GET: Ambil semua data customer
-export async function GET(req: NextRequest, _ctx: { params: Promise<{}> }) {
+export async function GET(req: NextRequest) {
   try {
+    const includeDeleted = req.nextUrl.searchParams.get("includeDeleted") === "true";
     const customers = await prisma.customer.findMany({
+      where: includeDeleted ? undefined : { deletedAt: null },
       orderBy: { id: "desc" },
     });
     const fmt = req.nextUrl.searchParams.get("format");
@@ -17,7 +19,7 @@ export async function GET(req: NextRequest, _ctx: { params: Promise<{}> }) {
 }
 
 // POST: Tambah customer baru
-export async function POST(req: NextRequest, _ctx: { params: Promise<{}> }) {
+export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
     const { pic, email, company, address, phone } = body;

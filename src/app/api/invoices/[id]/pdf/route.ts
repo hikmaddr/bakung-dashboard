@@ -15,7 +15,7 @@ import {
   toRgb255,
   type InvoiceTemplateTheme,
 } from "@/lib/quotationTheme";
-import { toRgb, splitTextToSize } from "@/lib/pdfCommon";
+import { toRgb, splitTextToSize, formatPdfFileName } from "@/lib/pdfCommon";
 import { getAuth } from "@/lib/auth";
 
 const toRGB = ({ r, g, b }: { r: number; g: number; b: number }) => rgb(r / 255, g / 255, b / 255);
@@ -597,8 +597,8 @@ const drawSignatureSection = async (
   if (sigUrl) {
     const bytes = await (async () => {
       try {
-        const absoluteUrl = sigUrl.startsWith("http") ? sigUrl : `${process.env.NEXT_PUBLIC_BASE_URL || "http://localhost:3000"}${sigUrl.startsWith("/") ? sigUrl : `/${sigUrl}`}`;
-        return await loadImageBytes(absoluteUrl);
+        // Baca langsung dengan loader yang mendukung URL absolut dan path relatif ke `public/`
+        return await loadImageBytes(sigUrl);
       } catch {
         return null;
       }
@@ -890,9 +890,9 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
     }
 
     const pdfBytes = await pdf.save();
-    const safeInvoiceNumber = String(invoice.invoiceNumber || `INV-${invoice.id}`).replace(/[^\w\-]+/g, "_");
-    const safeCustomer = String(invoice.customer?.company || invoice.customer?.pic || "Customer").replace(/[^\w\-]+/g, "_");
-    const fileName = `Invoice-${safeInvoiceNumber}-${safeCustomer}.pdf`;
+    const invoiceNumber = invoice.invoiceNumber || `INV-${invoice.id}`;
+    const customerName = invoice.customer?.pic || invoice.customer?.company || "Customer";
+    const fileName = formatPdfFileName(invoiceNumber, customerName, `INV-${invoice.id}`);
 
     // Use ArrayBuffer slice to avoid Node Buffer and ensure Edge/Node compatibility
     const body = pdfBytes.buffer.slice(pdfBytes.byteOffset, pdfBytes.byteOffset + pdfBytes.byteLength);
