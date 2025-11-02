@@ -1,6 +1,7 @@
 import path from "path";
 import fs from "fs";
 import { put } from "@vercel/blob";
+import { del as blobDel } from "@vercel/blob";
 
 type SaveOptions = {
   prefix?: string; // e.g. "avatars/" or "logos/"
@@ -76,4 +77,59 @@ export async function saveFile(
 
   const publicUrl = `/uploads/${prefix}${filename}`;
   return { url: publicUrl, filename, size, contentType };
+}
+
+/**
+ * Delete a previously stored file.
+ * - If the URL points to Vercel Blob, use Blob API (requires BLOB_READ_WRITE_TOKEN).
+ * - If the URL is a local `/uploads/...` path, unlink from `public/uploads`.
+ * Returns `true` if deletion appears successful, `false` if skipped or not found.
+ */
+export async function deleteFile(urlOrPath: string | null | undefined): Promise<boolean> {
+  try {
+    const url = (urlOrPath || "").toString().trim();
+    if (!url) return false;
+
+    // Handle blob public URLs
+    if (/^https?:\/\//i.test(url)) {
+      const host = (() => {
+        try { return new URL(url).host; } catch { return ""; }
+      })();
+      if (/blob\.vercel-storage\.com|public\.blob\.vercel-storage\.com/i.test(host)) {
+        if (!process.env.BLOB_READ_WRITE_TOKEN) {
+          // Cannot delete without token; skip gracefully
+          return false;
+        }
+        try {
+          await blobDel(url, { token: process.env.BLOB_READ_WRITE_TOKEN });
+          return true;
+        } catch (err) {
+          // Fall through; report false but do not throw
+          return false;
+        }
+      }
+      // Non-blob remote URL: nothing to do
+      return false;
+    }
+
+    // Handle local uploads path
+    // Accept forms like "/uploads/.." or "uploads/.."
+    const uploadsMatch = url.replace(/^\/+/, "");
+    if (uploadsMatch.startsWith("uploads/")) {
+      const targetPath = path.join(process.cwd(), "public", uploadsMatch);
+      try {
+        if (fs.existsSync(targetPath)) {
+          fs.unlinkSync(targetPath);
+          return true;
+        }
+        return false;
+      } catch {
+        return false;
+      }
+    }
+
+    return false;
+  } catch {
+    return false;
+  }
 }

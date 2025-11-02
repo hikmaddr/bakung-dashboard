@@ -5,7 +5,7 @@ import { getAuth } from "@/lib/auth";
 import { logActivity } from "@/lib/activity";
 import { Prisma } from "@prisma/client"; // untuk tangani error
 import crypto from "crypto";
-import { saveFile } from "@/lib/storage";
+import { saveFile, deleteFile } from "@/lib/storage";
 import { sendNotificationToRole } from "@/lib/notification";
 
 // Helper upload file
@@ -351,11 +351,30 @@ export async function DELETE(
       );
     }
 
+    // Kumpulkan URL lampiran yang perlu dihapus (projectFile + item image)
+    const attachments = await prisma.quotation.findUnique({
+      where: { id },
+      select: {
+        projectFileUrl: true,
+        items: { select: { imageUrl: true } },
+      },
+    });
+
+    const urlsToDelete = [
+      attachments?.projectFileUrl || null,
+      ...((attachments?.items || []).map((i) => i.imageUrl || null)),
+    ].filter((u): u is string => typeof u === "string" && !!u);
+
     // Hapus semua item terkait quotation lalu quotation utama
     await prisma.$transaction([
       prisma.quotationItem.deleteMany({ where: { quotationId: id } }),
       prisma.quotation.delete({ where: { id } }),
     ]);
+
+    // Upayakan hapus file fisik (Blob atau lokal) — tidak memblokir operasi
+    try {
+      await Promise.allSettled(urlsToDelete.map((u) => deleteFile(u)));
+    } catch {}
 
     // Activity log untuk delete quotation
     try {
