@@ -47,6 +47,12 @@ const defaultModulesTop: Record<ModuleKey, boolean> = {
   inventory: true,
 };
 
+const defaultModules: Record<ModuleKey, boolean> = {
+  sales: defaultModulesTop.sales,
+  purchase: defaultModulesTop.purchase,
+  inventory: defaultModulesTop.inventory,
+};
+
 const FEATURES_BY_MODULE: Record<ModuleKey, Array<{ key: FeatureKey }>> = {
   sales: [
     { key: "sales.quotation" },
@@ -106,14 +112,6 @@ const staticNavItems: NavItem[] = [
     ],
   },
   {
-    icon: <PieChartIcon />,
-    name: "Finance",
-    subItems: [
-      { name: "Payment", path: "/finance/payment" },
-      { name: "Expense", path: "/finance/expense" },
-    ],
-  },
-  {
     icon: <ListIcon />,
     name: "Penjualan",
     moduleKey: "sales",
@@ -148,18 +146,26 @@ const staticNavItems: NavItem[] = [
     ],
   },
   {
+    icon: <PieChartIcon />,
+    name: "Finance",
+    subItems: [
+      { name: "Payment", path: "/finance/payment" },
+      { name: "Expense", path: "/finance/expense" },
+    ],
+  },
+  {
+    icon: <PieChartIcon />,
+    name: "Report & Rekap",
+    subItems: [
+      { name: "Rekap & Reporting", path: "/reporting/rekap" },
+    ],
+  },
+  {
     icon: <PageIcon />,
     name: "Template & Branding",
     subItems: [
       { name: "Template Manager", path: "/template-branding/template-manager" },
       { name: "Brand Settings", path: "/template-branding/brand-settings" },
-    ],
-  },
-  {
-    icon: <PieChartIcon />,
-    name: "Reporting & Rekap",
-    subItems: [
-      { name: "Rekap & Reporting", path: "/reporting/rekap" },
     ],
   },
   {
@@ -190,6 +196,7 @@ const AppSidebar: React.FC = () => {
     primaryColor: string;
     secondaryColor: string;
   } | null>(null);
+  const [noBrandAccess, setNoBrandAccess] = useState<boolean>(false);
 
   const fetchActiveBrandModules = useCallback(async () => {
     try {
@@ -250,6 +257,24 @@ const AppSidebar: React.FC = () => {
           });
         });
 
+        // Scope-based gating: Creative Service hides SO, PO, Receipts, Delivery, Inventory
+        const scope = String(activeProfile?.businessScope || "").toUpperCase();
+        if (scope === "CREATIVE") {
+          merged["sales.order"] = false;
+          merged["purchase.order"] = false;
+          merged["purchase"] = false;
+          merged["purchase.invoice"] = false;
+          merged["sales.receipt"] = false;
+          merged["purchase.receipt"] = false;
+          merged["purchase.receiving"] = false;
+          merged["sales.delivery"] = false;
+          // Hide entire inventory module
+          merged["inventory"] = false;
+          // Ensure inventory features follow
+          merged["inventory.products"] = false;
+          merged["inventory.stock"] = false;
+        }
+
         setModulesEnabled(merged);
 
         // Simpan info brand untuk logo/nama di sidebar
@@ -272,6 +297,23 @@ const AppSidebar: React.FC = () => {
     }
   }, []);
 
+  const checkBrandAccess = useCallback(async () => {
+    try {
+      const r = await fetch("/api/brand-profiles", { cache: "no-store" });
+      let profiles: any[] = [];
+      if (r.ok) {
+        const data = await r.json();
+        if (Array.isArray(data)) profiles = data;
+        else if (Array.isArray(data?.profiles)) profiles = data.profiles;
+        else if (Array.isArray(data?.data)) profiles = data.data;
+        else if (data) profiles = [data];
+      }
+      setNoBrandAccess(!profiles || profiles.length === 0);
+    } catch (e) {
+      setNoBrandAccess(false);
+    }
+  }, []);
+
   useEffect(() => {
     fetchActiveBrandModules();
     // Load current user roles to gate menu
@@ -285,29 +327,56 @@ const AppSidebar: React.FC = () => {
       }
     })();
 
-    // Load count of open (unpaid) sales invoices for badge
-    (async () => {
+    // Periksa apakah user memiliki brand yang diassign (API sudah terfilter oleh guard)
+    checkBrandAccess();
+
+    // Load count of open (unpaid) sales invoices for badge — adaptive by brand list
+    const refreshInvoiceOpen = async () => {
       try {
+        // Prefer active-brand endpoint (fast, scoped)
         const r = await fetch("/api/reporting/piutang", { cache: "no-store" });
         if (r.ok) {
           const j = await r.json();
           const c = j?.metrics?.invoiceOpen;
-          if (typeof c === "number") setInvoiceOpenCount(c);
+          if (typeof c === "number") {
+            setInvoiceOpenCount(c);
+            return;
+          }
         }
-      } catch (e) {
-        // ignore
-      }
-    })();
+      } catch {}
+
+      // Fallback: aggregate across allowed brand list via rekap API, counting only INV rows
+      try {
+        const rr = await fetch("/api/reports/rekap", { cache: "no-store" });
+        if (rr.ok) {
+          const jj = await rr.json();
+          const rows = Array.isArray(jj?.ar?.rows) ? jj.ar.rows : [];
+          const invCount = rows.filter((r: any) => r?.type === "INV").length;
+          setInvoiceOpenCount(invCount);
+        }
+      } catch {}
+    };
+    refreshInvoiceOpen();
 
     const handleModulesUpdated = () => {
       fetchActiveBrandModules();
+      // Brand switched → refresh invoice badge count for active brand
+      (async () => { try { await refreshInvoiceOpen(); } catch {} })();
     };
 
     window.addEventListener("brand-modules:updated", handleModulesUpdated);
+    const handleBrandListUpdated = () => {
+      // Daftar brand berubah: refresh modul aktif, akses brand, dan badge invoice
+      fetchActiveBrandModules();
+      checkBrandAccess();
+      (async () => { try { await refreshInvoiceOpen(); } catch {} })();
+    };
+    window.addEventListener("brand-list:updated", handleBrandListUpdated);
     return () => {
       window.removeEventListener("brand-modules:updated", handleModulesUpdated);
+      window.removeEventListener("brand-list:updated", handleBrandListUpdated);
     };
-  }, [fetchActiveBrandModules]);
+  }, [fetchActiveBrandModules, checkBrandAccess]);
 
   // Dropdown open state disediakan oleh SidebarContext melalui openMap
 
@@ -342,6 +411,8 @@ const AppSidebar: React.FC = () => {
     }
   };
 
+  // Gate menu items by brand modules (disabled features hidden) — except for Owner.
+  // Owners should be able to navigate to all features regardless of brand toggle.
   const gatedByModules = useMemo(() => (
     staticNavItems
       .filter((nav) => !nav.moduleKey || modulesEnabled[nav.moduleKey])
@@ -371,7 +442,7 @@ const AppSidebar: React.FC = () => {
         // Hide Finance except Owner, Admin, Finance
         if (nav.name === "Finance" && !(isAdmin || isFinance)) return false;
         // Hide Reporting for Warehouse
-        if (nav.name === "Reporting & Rekap" && isWarehouse) return false;
+        if (nav.name === "Report & Rekap" && isWarehouse) return false;
         return true;
       })
       .map((nav) => {
@@ -395,10 +466,15 @@ const AppSidebar: React.FC = () => {
       });
   };
 
-  const navItems = useMemo(
-    () => filterByRole(gatedByModules),
-    [gatedByModules, isOwner, isAdmin, isFinance, isWarehouse]
-  );
+  // If Owner, bypass module gating and show full navigation.
+  const navItems = useMemo(() => {
+    const filtered = filterByRole(gatedByModules);
+    // Jika bukan OWNER dan tidak memiliki brand ter-assign → sembunyikan semua modul (hanya Dashboard)
+    if (!isOwner && noBrandAccess) {
+      return staticNavItems.filter((n) => n.name === "Dashboard");
+    }
+    return filtered;
+  }, [gatedByModules, isOwner, isAdmin, isFinance, isWarehouse, noBrandAccess]);
 
   // Grid-based submenu animation removes need to pre-compute heights
 
@@ -447,52 +523,36 @@ const AppSidebar: React.FC = () => {
     >
       {/* Logo */}
       <div
-        className={`py-8 flex  ${
+        className={`py-8 flex ${
           !isExpanded && !isHovered ? "lg:justify-center" : "justify-start"
         }`}
       >
-        <Link href="/">
+        <Link href="/" aria-label={brandInfo?.name || "Bakung Dashboard"}>
           {isExpanded || isHovered || isMobileOpen ? (
-            brandInfo?.logo ? (
+            <>
               <Image
-                src={brandInfo.logo}
-                alt={brandInfo.name || "Brand"}
-                width={120}
-                height={32}
-                className="object-contain"
+                src="/branding/logo-bakung-color.png"
+                alt="Bakung Dashboard"
+                width={140}
+                height={36}
+                className="object-contain dark:hidden"
               />
-            ) : (
-              <div
-                className="flex items-center gap-3"
-              >
-                <div
-                  className="w-8 h-8 rounded-lg flex items-center justify-center text-white font-bold shadow"
-                  style={{ backgroundColor: brandInfo?.primaryColor || "#0EA5E9" }}
-                >
-                  {(brandInfo?.name || "B").charAt(0)}
-                </div>
-                <span className="text-base font-semibold text-gray-900 dark:text-white">
-                  {brandInfo?.name || "Brand"}
-                </span>
-              </div>
-            )
+              <Image
+                src="/branding/logo-bakung-white.png"
+                alt="Bakung Dashboard"
+                width={140}
+                height={36}
+                className="hidden object-contain dark:block"
+              />
+            </>
           ) : (
-            brandInfo?.logo ? (
-              <Image
-                src={brandInfo.logo}
-                alt={brandInfo.name || "Brand"}
-                width={24}
-                height={24}
-                className="object-contain"
-              />
-            ) : (
-              <Image
-                src="/images/logo/logo-icon.svg"
-                alt="Logo"
-                width={24}
-                height={24}
-              />
-            )
+            <Image
+              src="/branding/logomark-bakung.png"
+              alt="Bakung Dashboard"
+              width={32}
+              height={32}
+              className="h-8 w-8 object-contain"
+            />
           )}
         </Link>
       </div>
@@ -584,28 +644,28 @@ const AppSidebar: React.FC = () => {
                       >
                         <div className="overflow-hidden">
                           <ul className="mt-2 space-y-1 ml-9">
-                            {nav.subItems.map((subItem) => (
-                              <li key={subItem.name}>
-                                {(() => {
-                                  const active = isActive(subItem.path);
-                                  const baseCls = `menu-dropdown-item ${
-                                    active ? "menu-dropdown-item-active" : "menu-dropdown-item-inactive"
-                                  }`;
-                                  const showInvoiceBadge =
-                                    subItem.name === "Invoice Penjualan" && typeof invoiceOpenCount === "number" && invoiceOpenCount > 0;
-                                  return (
-                                    <Link href={subItem.path} className={baseCls}>
-                                      <span className="flex-1">{subItem.name}</span>
-                                      {showInvoiceBadge && (
-                                        <span className={`menu-dropdown-badge ${
-                                          active ? "menu-dropdown-badge-active" : "menu-dropdown-badge-inactive"
-                                        }`}>{invoiceOpenCount}</span>
-                                      )}
-                                    </Link>
-                                  );
-                                })()}
-                              </li>
-                            ))}
+                {nav.subItems.map((subItem) => (
+                  <li key={subItem.name}>
+                    {(() => {
+                      const active = isActive(subItem.path);
+                      const baseCls = `menu-dropdown-item ${
+                        active ? "menu-dropdown-item-active" : "menu-dropdown-item-inactive"
+                      }`;
+                      const showInvoiceBadge =
+                        subItem.name === "Invoice Penjualan" && typeof invoiceOpenCount === "number" && invoiceOpenCount > 0;
+                      return (
+                        <Link href={subItem.path} className={baseCls}>
+                          <span className="flex-1">{subItem.name}</span>
+                          {showInvoiceBadge && (
+                            <span className={`menu-dropdown-badge ${
+                              active ? "menu-dropdown-badge-active" : "menu-dropdown-badge-inactive"
+                            }`}>{invoiceOpenCount}</span>
+                          )}
+                        </Link>
+                      );
+                    })()}
+                  </li>
+                ))}
                           </ul>
                         </div>
                       </div>

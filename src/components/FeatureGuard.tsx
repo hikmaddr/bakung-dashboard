@@ -1,6 +1,7 @@
 "use client";
 import React, { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
+import LoadingSpinner from "@/components/common/LoadingSpinner";
 
 type ModuleKey = "sales" | "purchase" | "inventory" | "reporting" | "system";
 
@@ -85,7 +86,25 @@ export const FeatureGuard: React.FC<{
       const response = await fetch("/api/brand-profiles/active", { cache: "no-store" });
       if (!response.ok) throw new Error("Failed to fetch active brand profile");
       const active = await response.json();
+      // Normalize modules and then apply scope-based gating to ensure consistency
       const map = normalizeModulesAll(active?.modules);
+
+      const scope = String(active?.businessScope || "").toUpperCase();
+      if (scope === "CREATIVE") {
+        // Disable non-creative modules and features
+        map["sales.order"] = false;
+        map["sales.receipt"] = false;
+        map["sales.delivery"] = false;
+        map["purchase"] = false;
+        map["purchase.order"] = false;
+        map["purchase.invoice"] = false;
+        map["purchase.receipt"] = false;
+        map["purchase.receiving"] = false;
+        map["inventory"] = false;
+        map["inventory.products"] = false;
+        map["inventory.stock"] = false;
+      }
+
       setEnabled(Boolean(map[feature]));
       setError(null);
     } catch (err: any) {
@@ -105,9 +124,11 @@ export const FeatureGuard: React.FC<{
   if (enabled === null) {
     return (
       <div className="p-6">
-        <div className="rounded-2xl border border-gray-200 bg-white p-6">
-          <p className="text-sm text-gray-700">Memuat pengaturan modul…</p>
-          {error && <p className="mt-2 text-xs text-red-600">{String(error)}</p>}
+        <div className="rounded-2xl border border-gray-200 bg-white p-6 dark:border-gray-800 dark:bg-gray-900">
+          <LoadingSpinner inline size="sm" label="Memuat pengaturan modul…" />
+          {error && (
+            <p className="mt-3 text-xs text-red-600 dark:text-red-400">{String(error)}</p>
+          )}
         </div>
       </div>
     );

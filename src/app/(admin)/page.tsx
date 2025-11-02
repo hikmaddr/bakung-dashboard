@@ -7,7 +7,8 @@ import { TrendChart } from "@/components/dashboard/TrendChart";
 import EmptyState from "@/components/EmptyState";
 import { prisma } from "@/lib/prisma";
 import { getAuth } from "@/lib/auth";
-import { getActiveBrandProfile } from "@/lib/brand";
+import { getActiveBrandProfile, resolveAllowedBrandIds, isOwnerOnly } from "@/lib/brand";
+import AutoRefresh from "@/components/dashboard/AutoRefresh";
 
 
 const currencyFormatter = new Intl.NumberFormat("id-ID", {
@@ -605,7 +606,7 @@ async function getDashboardData(brandId?: number, rangeDays: number = 30): Promi
 }
 
 export const metadata: Metadata = {
-  title: "Dashboard Overview | TailAdmin",
+  title: "Dashboard Overview | Bakung Dashboard",
   description:
     "Ringkasan pipeline penjualan, faktur, dan status inventori untuk membantu pemantauan performa bisnis.",
 };
@@ -621,6 +622,21 @@ export default async function DashboardPage({
   const auth = await getAuth();
   if (!auth?.userId) {
     return redirect(`/signin?redirect=/`);
+  }
+  // Jika user bukan OWNER dan tidak memiliki brand yang diassign → tampilkan EmptyState
+  try {
+    const allowed = await resolveAllowedBrandIds(auth.userId, (auth.roles as string[]) ?? [], []);
+    const isOwner = isOwnerOnly(auth.roles);
+    if (!isOwner && (!allowed || allowed.length === 0)) {
+      return (
+        <EmptyState
+          title="Akses brand belum diatur"
+          description="Akun Anda belum diassign ke brand mana pun. Hubungi Owner untuk meminta akses brand agar dapat membuka modul dan melihat data."
+        />
+      );
+    }
+  } catch (err) {
+    // Jika terjadi error, fail-safe: lanjutkan, namun data kemungkinan kosong/terblokir oleh middleware
   }
   let activeBrand: Awaited<ReturnType<typeof getActiveBrandProfile>> | null = null;
   try {
@@ -650,13 +666,29 @@ export default async function DashboardPage({
 
   return (
     <div className="space-y-6">
+      <AutoRefresh intervalMs={60_000} />
       <header className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
         <div>
-          <h1 className="text-2xl font-semibold text-gray-900 dark:text-white/90">
+          <h1 className="text-2xl font-semibold text-gray-900 dark:text-white/90 flex items-center gap-2">
             Dashboard Overview
+            {activeBrand?.name ? (
+              <span
+                className="ml-1 inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-xs font-medium text-gray-700 dark:text-gray-300"
+                style={{ borderColor: activeBrand?.primaryColor || "#0EA5E9" }}
+              >
+                <span
+                  className="h-2 w-2 rounded-full"
+                  style={{ backgroundColor: activeBrand?.primaryColor || "#0EA5E9" }}
+                />
+                {activeBrand.name}
+              </span>
+            ) : null}
           </h1>
           <p className="text-sm text-gray-500 dark:text-gray-400">
-            Ringkasan penjualan, pipeline, dan kesehatan inventori perusahaan Anda.
+            Ringkasan penjualan, pipeline, dan kesehatan inventori perusahaan Anda
+            {activeBrand?.name
+              ? ` — brand aktif: ${activeBrand.name}.`
+              : "."}
           </p>
         </div>
         <div className="flex items-center gap-2">
