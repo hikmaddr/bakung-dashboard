@@ -8,7 +8,7 @@ import toast from "react-hot-toast";
 import PageBreadcrumb from "@/components/common/PageBreadCrumb";
 import LoadingSpinner from "@/components/common/LoadingSpinner";
 import FeatureGuard from "@/components/FeatureGuard";
-import { Send } from "lucide-react";
+import { Send, MessageCircle } from "lucide-react";
 import {
   resolveTheme,
   resolveThankYou,
@@ -16,6 +16,16 @@ import {
   DEFAULT_TERMS,
 } from "@/lib/quotationTheme";
 import { formatDownloadFileName } from "@/utils/downloadFilename";
+
+const normalizeWhatsappPhone = (value?: string | null) => {
+  if (!value) return "";
+  const trimmed = value.trim();
+  if (!trimmed) return "";
+  const digits = trimmed.replace(/\D/g, "");
+  if (!digits) return "";
+  if (digits.startsWith("0")) return `62${digits.slice(1)}`;
+  return digits;
+};
 
 interface InvoiceItem {
   id?: number;
@@ -58,6 +68,7 @@ interface InvoiceData {
   items?: InvoiceItem[];
   customer?: Customer | null;
   quotation?: { id: number; quotationNumber?: string | null } | null;
+  shareUrl?: string | null;
 }
 
 const normalizeNumber = (value: unknown): number => {
@@ -101,36 +112,107 @@ export default function InvoiceDetailPage() {
   const [dpChoice, setDpChoice] = useState<"50" | "30" | "100" | "custom">("50");
   const [dpValue, setDpValue] = useState("");
 
-  // Kirim PDF (WA/Email/PDF) seperti Quotation
-  type SendMethod = "whatsapp" | "email" | "savepdf";
+  // Kirim PDF (Email/PDF) – opsi WhatsApp tersedia lewat tombol cepat
+  type SendMethod = "email" | "savepdf";
   const [isSendModalOpen, setIsSendModalOpen] = useState(false);
-  const [method, setMethod] = useState<SendMethod>("whatsapp");
+  const [method, setMethod] = useState<SendMethod>("email");
   const [message, setMessage] = useState<string>("");
+  const [messageInitialized, setMessageInitialized] = useState(false);
+  const [sendingWhatsapp, setSendingWhatsapp] = useState(false);
 
   useEffect(() => {
-    if (!invoice) return;
+    if (!invoice || messageInitialized) return;
     const totalTxt = formatCurrency(invoice.total);
     const dueTxt = formatDate(invoice.dueDate);
     const cust = invoice.customer?.company || "Customer";
     const invNo = invoice.invoiceNumber || `INV-${invoice.id}`;
     const defaultMsg = `Halo ${cust},\n\nKami mengirimkan Invoice ${invNo} dengan total ${totalTxt}.\nJatuh tempo: ${dueTxt}. Mohon ditinjau.\n\nTerima kasih.`;
     setMessage(defaultMsg);
-  }, [invoice]);
+    setMessageInitialized(true);
+  }, [invoice, messageInitialized]);
 
-  const markAsSent = async () => {
+  useEffect(() => {
+    setMessageInitialized(false);
+  }, [invoiceId]);
+
+  const markAsSent = useCallback(async (via?: "whatsapp" | "email" | "pdf") => {
     if (!invoice) return;
     try {
       const res = await fetch(`/api/invoices/${invoice.id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ status: "Sent" }),
+        body: JSON.stringify({
+          status:
+            via === "whatsapp"
+              ? "Sent via WhatsApp"
+              : via === "email"
+              ? "Sent via Email"
+              : via === "pdf"
+              ? "Sent via PDF"
+              : "Sent",
+        }),
       });
-      if (!res.ok) throw new Error();
-      setInvoice((prev) => (prev ? { ...prev, status: "Sent" } : prev));
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok || json?.success === false) throw new Error();
+      const updatedStatus = json?.data?.status ?? "Sent";
+      setInvoice((prev) => (prev ? { ...prev, status: updatedStatus } : prev));
     } catch {
       toast.error("Gagal memperbarui status dokumen");
     }
-  };
+  }, [invoice]);
+
+  const ensureShareLink = useCallback(async (): Promise<string> => {
+    if (!invoice) throw new Error("Invoice tidak tersedia");
+    if (invoice.shareUrl) return invoice.shareUrl;
+
+    const res = await fetch(`/api/share/drive-upload`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ type: "invoice", id: invoice.id }),
+    });
+    const data = await res.json().catch(() => null);
+    if (!res.ok || data?.success !== true || !data?.url) {
+      throw new Error(data?.message || "Gagal membuat link dokumen");
+    }
+
+    const url: string = data.url;
+    setInvoice((prev) => (prev ? { ...prev, shareUrl: url } : prev));
+    return url;
+  }, [invoice]);
+
+  const createWhatsappLink = useCallback(async (): Promise<string> => {
+    if (!invoice) throw new Error("Invoice tidak tersedia");
+    const shareLink = await ensureShareLink();
+    const phone = normalizeWhatsappPhone(invoice.customer?.phone);
+    const encoded = encodeURIComponent(`${message}\n\nLink dokumen: ${shareLink}`);
+    return phone ? `https://wa.me/${phone}?text=${encoded}` : `https://wa.me/?text=${encoded}`;
+  }, [ensureShareLink, invoice, message]);
+
+  const handleWhatsappQuick = useCallback(async () => {
+    if (!invoice) return;
+    const win = typeof window !== "undefined" ? window.open("about:blank") : null;
+    setSendingWhatsapp(true);
+    try {
+      const waLink = await createWhatsappLink();
+      if (win) win.location.href = waLink;
+      else window.location.href = waLink;
+      await markAsSent("whatsapp");
+      toast.success("Mengarahkan ke WhatsApp");
+    } catch (err: any) {
+      const phone = normalizeWhatsappPhone(invoice.customer?.phone);
+      const fallbackMessage = encodeURIComponent(
+        `${message}\n\nLink dokumen tidak tersedia. Silakan hubungi kami.`
+      );
+      const fallbackLink = phone
+        ? `https://wa.me/${phone}?text=${fallbackMessage}`
+        : `https://wa.me/?text=${fallbackMessage}`;
+      if (win) win.location.href = fallbackLink;
+      else window.location.href = fallbackLink;
+      toast.error(err?.message || "Gagal membuat link dokumen, tetap membuka WhatsApp");
+    } finally {
+      setSendingWhatsapp(false);
+    }
+  }, [createWhatsappLink, invoice, message, markAsSent]);
 
   const downloadPdf = async () => {
     if (!invoice) return;
@@ -163,18 +245,7 @@ export default function InvoiceDetailPage() {
     try {
       if (method === "savepdf") {
         await downloadPdf();
-        await markAsSent();
-        setIsSendModalOpen(false);
-        return;
-      }
-
-      if (method === "whatsapp") {
-        const phone = (invoice.customer?.phone || "").replace(/^0/, "62");
-        const encoded = encodeURIComponent(`${message}\n\n(Lampirkan PDF invoice secara manual.)`);
-        const waLink = `https://wa.me/${phone}?text=${encoded}`;
-        window.open(waLink, "_blank");
-        await markAsSent();
-        toast.success("Mengarahkan ke WhatsApp");
+        await markAsSent("pdf");
         setIsSendModalOpen(false);
         return;
       }
@@ -184,7 +255,7 @@ export default function InvoiceDetailPage() {
         const subject = encodeURIComponent(`Invoice ${invoice.invoiceNumber || `INV-${invoice.id}`}`);
         const body = encodeURIComponent(`${message}\n\n(Lampirkan PDF invoice secara manual.)`);
         window.location.href = `mailto:${email}?subject=${subject}&body=${body}`;
-        await markAsSent();
+        await markAsSent("email");
         toast.success("Mengarahkan ke Email");
         setIsSendModalOpen(false);
         return;
@@ -899,12 +970,29 @@ export default function InvoiceDetailPage() {
             </div>
             <div className="flex flex-wrap items-center justify-end gap-2">
               <button
+                onClick={handleWhatsappQuick}
+                disabled={!invoice || loading || sendingWhatsapp}
+                className="inline-flex items-center gap-2 rounded-full bg-emerald-600 px-4 py-2 text-sm font-medium text-white shadow transition hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {sendingWhatsapp ? (
+                  <>
+                    <span className="h-4 w-4 animate-spin rounded-full border-2 border-white/60 border-t-white" />
+                    Mengirim...
+                  </>
+                ) : (
+                  <>
+                    <MessageCircle className="h-4 w-4" />
+                    Kirim via WhatsApp
+                  </>
+                )}
+              </button>
+              <button
                 onClick={() => setIsSendModalOpen(true)}
                 disabled={!invoice || loading}
                 className="inline-flex items-center gap-2 rounded-full bg-blue-600 px-4 py-2 text-sm font-medium text-white shadow transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-60"
               >
                 <Send className="h-4 w-4" />
-                Kirim
+                Opsi Kirim Lainnya
               </button>
             {invoice && (
               <Link
@@ -1023,10 +1111,6 @@ export default function InvoiceDetailPage() {
                 <div className="border-r p-6 md:w-1/3">
                   <div className="space-y-3 text-sm">
                     <label className="flex cursor-pointer items-center gap-2">
-                      <input type="radio" checked={method === "whatsapp"} onChange={() => setMethod("whatsapp")} />
-                      WhatsApp
-                    </label>
-                    <label className="flex cursor-pointer items-center gap-2">
                       <input type="radio" checked={method === "email"} onChange={() => setMethod("email")} />
                       Email
                     </label>
@@ -1049,7 +1133,7 @@ export default function InvoiceDetailPage() {
                   <div className="mt-4 flex items-center justify-end gap-2">
                     <button onClick={() => setIsSendModalOpen(false)} className="rounded border border-gray-300 px-4 py-2 hover:bg-gray-100">Batal</button>
                     <button onClick={handleSend} className="rounded bg-blue-600 px-4 py-2 text-white transition hover:bg-blue-700">
-                      {method === "savepdf" ? "Simpan PDF" : method === "whatsapp" ? "Kirim via WhatsApp" : "Kirim via Email"}
+                {method === "savepdf" ? "Simpan PDF" : "Kirim via Email"}
                     </button>
                   </div>
                 </div>

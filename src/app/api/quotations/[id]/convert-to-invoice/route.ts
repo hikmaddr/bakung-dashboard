@@ -106,6 +106,13 @@ export async function POST(
     }
 
     // Jika sudah ada, sinkronkan isi jika quotation lebih baru
+    // Pastikan status quotation menjadi Confirmed meskipun invoice sudah ada
+    try {
+      if (quotation.status !== "Confirmed") {
+        await prisma.quotation.update({ where: { id: qid }, data: { status: "Confirmed" } });
+      }
+    } catch {}
+
     if (new Date(quotation.updatedAt) <= new Date(existingInvoice.updatedAt)) {
       return NextResponse.json(
         { success: false, message: "Quotation belum berubah. Tidak disalin ulang." },
@@ -139,6 +146,13 @@ export async function POST(
       }),
     ]);
 
+    // Tegaskan status quotation menjadi Confirmed setelah sinkronisasi
+    try {
+      if (quotation.status !== "Confirmed") {
+        await prisma.quotation.update({ where: { id: qid }, data: { status: "Confirmed" } });
+      }
+    } catch {}
+
     return NextResponse.json({
       success: true,
       message: "Perubahan quotation tersinkron ke Invoice yang sudah ada.",
@@ -152,4 +166,3 @@ export async function POST(
     );
   }
 }
-

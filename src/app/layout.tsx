@@ -25,6 +25,11 @@ export const metadata: Metadata = {
     title: "Bakung Dashboard",
     description: "An integrated system for creative, procurement, and souvenir management.",
   },
+  icons: {
+    icon: "/branding/favicon-bakung.png",
+    shortcut: "/branding/favicon-bakung.png",
+    apple: "/branding/favicon-bakung.png",
+  },
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {

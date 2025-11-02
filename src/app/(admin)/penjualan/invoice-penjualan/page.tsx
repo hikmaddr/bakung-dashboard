@@ -147,12 +147,13 @@ function InvoicePageInner() {
   const start = (page - 1) * limit;
   const paged = activeData.slice(start, start + limit);
 
-  const markAsSent = async (id: number) => {
+  const markAsSent = async (id: number, via?: 'wa' | 'email' | 'pdf') => {
     try {
-      const res = await fetch(`/api/invoices/${id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ status: 'Sent' }) });
+      const statusValue = via === 'wa' ? 'Sent via WhatsApp' : via === 'email' ? 'Sent via Email' : via === 'pdf' ? 'Sent via PDF' : 'Sent';
+      const res = await fetch(`/api/invoices/${id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ status: statusValue }) });
       if (!res.ok) throw new Error();
-      setRows((prev) => prev.map((r) => (r.id === id ? { ...r, status: 'Sent' } : r)));
-      toast.success('Invoice ditandai sebagai Sent');
+      setRows((prev) => prev.map((r) => (r.id === id ? { ...r, status: statusValue } : r)));
+      toast.success(`Invoice ditandai sebagai ${statusValue}`);
     } catch { toast.error('Gagal mengubah status'); }
   };
 
@@ -464,7 +465,10 @@ function InvoicePageInner() {
                 {paged.map((r) => {
                   const paid = Number(r.downPayment || 0);
                   const due = Math.max(0, Number(r.total || 0) - paid);
-                  const docStatus = r.status === 'Sent' ? 'Sent' : 'Pending';
+                  const rawStatus = String(r.status || '').trim();
+                  const isSentLike = rawStatus.toLowerCase().startsWith('sent');
+                  const docStatusText = isSentLike ? rawStatus : (rawStatus || 'Draft');
+                  const docStatusColor = getDocumentStatusColor(isSentLike ? 'Sent' : docStatusText);
                   const invStatus = r.status === 'Paid' ? 'Paid' : (paid > 0 ? 'DP' : 'Unpaid');
                   return (
                     <tr key={r.id} className="border-t hover:bg-gray-50 transition dark:border-gray-800 dark:hover:bg-white/5">
@@ -474,7 +478,7 @@ function InvoicePageInner() {
                           <td className="px-4 py-3 text-gray-800 dark:text-gray-200">{r.invoiceNumber}</td>
                           <td className="px-4 py-3">{r.quotation?.id ? (<Link href={`/penjualan/quotation/${r.quotation.id}`} className="text-blue-600 hover:underline dark:text-blue-400">{r.quotation.quotationNumber || `Q-${r.quotation.id}`}</Link>) : ('-')}</td>
                           <td className="px-4 py-3 text-gray-700 dark:text-gray-300">{fmtDate(r.issueDate)}</td>
-                          <td className="px-4 py-3"><span className={`px-3 py-1 rounded-full text-xs font-medium ${getDocumentStatusColor(docStatus)}`}>{docStatus}</span></td>
+                          <td className="px-4 py-3"><span className={`px-3 py-1 rounded-full text-xs font-medium ${docStatusColor}`}>{docStatusText}</span></td>
                           <td className="px-4 py-3"><span className={`px-3 py-1 rounded-full text-xs font-medium ${getStatusColor(invStatus)}`}>{invStatus}</span></td>
                           <td className="px-4 py-3 text-right text-gray-800 dark:text-gray-200">{fmt(r.total)}</td>
                         </>
@@ -496,7 +500,7 @@ function InvoicePageInner() {
                           <td className="px-4 py-3 text-gray-800 dark:text-gray-200">{r.invoiceNumber}</td>
                           <td className="px-4 py-3 text-gray-700 dark:text-gray-300">{fmtDate(r.deletedAt || '')}</td>
                           <td className="px-4 py-3 text-gray-700 dark:text-gray-300">{fmtDate(r.issueDate)}</td>
-                          <td className="px-4 py-3"><span className={`px-3 py-1 rounded-full text-xs font-medium ${getDocumentStatusColor(docStatus)}`}>{docStatus}</span></td>
+                          <td className="px-4 py-3"><span className={`px-3 py-1 rounded-full text-xs font-medium ${docStatusColor}`}>{docStatusText}</span></td>
                           <td className="px-4 py-3"><span className={`px-3 py-1 rounded-full text-xs font-medium ${getStatusColor(invStatus)}`}>{invStatus}</span></td>
                           <td className="px-4 py-3 text-right text-gray-800 dark:text-gray-200">{fmt(r.total)}</td>
                         </>
@@ -613,7 +617,7 @@ function InvoicePageInner() {
                   } else {
                     window.open(`/penjualan/invoice-penjualan/${selectedRow.id}`, '_blank');
                   }
-                  await markAsSent(selectedRow.id);
+                  await markAsSent(selectedRow.id, sendMethod);
                 } finally { setSendModalOpen(false); }
               }} className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700">Kirim</button>
             </div>

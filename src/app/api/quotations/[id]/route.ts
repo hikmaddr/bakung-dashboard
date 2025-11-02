@@ -71,6 +71,7 @@ export async function GET(
     const transformed = {
       ...quotation,
       projectDescription: quotation.projectDesc,
+      shareUrl: quotation.shareUrl,
       customer: quotation.customer
         ? {
             id: quotation.customer.id,

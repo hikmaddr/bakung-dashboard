@@ -59,6 +59,7 @@ model Quotation {
   projectFileUrl  String?
   status          String
   totalAmount     Float           @default(0)
+  shareUrl        String?
   customer        Customer        @relation(fields: [customerId], references: [id], map: "Quotation_customerId_fkey")
   brand           BrandProfile?   @relation(fields: [brandProfileId], references: [id])
   items           QuotationItem[]
@@ -115,6 +116,7 @@ model SalesOrder {
   paymentsIn    PaymentIn[]
   // Back-relation to purchases
   purchases     PurchaseDirect[]
+  shareUrl      String?
 
   @@index([customerId], map: "SalesOrder_customerId_fkey")
   @@index([quotationId], map: "SalesOrder_quotationId_fkey")
@@ -166,6 +168,7 @@ model Invoice {
   createdAt          DateTime      @default(now())
   updatedAt          DateTime      @updatedAt
   deletedAt          DateTime?
+  shareUrl           String?
   customer           Customer      @relation(fields: [customerId], references: [id])
   quotation          Quotation?    @relation(fields: [quotationId], references: [id])
   brand              BrandProfile? @relation(fields: [brandProfileId], references: [id])
@@ -515,6 +518,7 @@ model Receipt {
   paymentId      Int            @unique
   receiptNumber  String
   pdfUrl         String?
+  shareUrl       String?
   createdAt      DateTime       @default(now())
 
   brand          BrandProfile?  @relation(fields: [brandProfileId], references: [id])

@@ -677,20 +677,26 @@ const drawItemsTable = async (
   const s = Math.max(0.6, Math.min(1, options.scale ?? 1));
   const headerHeight = Math.max(22, Math.floor(32 * s));
 
+  // Hanya tampilkan kolom image jika opsi mengizinkan DAN ada item yang memiliki imageUrl yang valid.
+  // Ini mencegah kolom gambar kosong ketika tidak ada gambar yang bisa dirender.
+  const showImageColumn = Boolean(
+    options.showImage && items && items.some((it) => typeof it?.imageUrl === "string" && it.imageUrl.trim() !== "")
+  );
+
   const columns = [
     {
       key: "description" as const,
       label: "Description",
-      width: options.showImage ? 0.34 : options.showDescription ? 0.46 : 0.5,
+      width: showImageColumn ? 0.34 : options.showDescription ? 0.46 : 0.5,
       align: "left" as const,
     },
-    ...(options.showImage
+    ...(showImageColumn
       ? [{ key: "image" as const, label: "Image", width: 0.18, align: "center" as const }]
       : []),
     { key: "qty" as const, label: "Qty", width: 0.1, align: "center" as const },
     { key: "unit" as const, label: "Unit", width: 0.1, align: "center" as const },
-    { key: "price" as const, label: "Price", width: options.showImage ? 0.14 : 0.16, align: "right" as const },
-    { key: "amount" as const, label: "Amount", width: options.showImage ? 0.14 : 0.18, align: "right" as const },
+    { key: "price" as const, label: "Price", width: showImageColumn ? 0.14 : 0.16, align: "right" as const },
+    { key: "amount" as const, label: "Amount", width: showImageColumn ? 0.14 : 0.18, align: "right" as const },
   ];
   const descriptionColumn = columns.find((column) => column.key === "description");
   const descriptionColumnWidth = descriptionColumn ? tableWidth * descriptionColumn.width : tableWidth * 0.4;
@@ -798,7 +804,7 @@ const drawItemsTable = async (
     const descriptionHeight = descriptionLines.length ? descriptionLines.length * lineGap + Math.max(4, Math.floor(6 * s)) : 0;
     let rowHeight = Math.max(Math.floor(32 * s), Math.floor(24 * s) + descriptionHeight);
 
-    const embeddedImage = options.showImage ? await embedItemImage(pdf, item.imageUrl) : null;
+    const embeddedImage = showImageColumn ? await embedItemImage(pdf, item.imageUrl) : null;
     if (embeddedImage) {
       rowHeight = Math.max(rowHeight, Math.floor(40 * s));
     }
@@ -1377,10 +1383,10 @@ export async function GET(
       email: brand?.email ?? null,
       phone: brand?.phone ?? null,
     };
-    if (auth?.userId) {
+    if (authResult?.userId) {
       try {
         const user = await prisma.user.findUnique({
-          where: { id: auth.userId },
+          where: { id: authResult.userId },
           select: { name: true, firstName: true, lastName: true, email: true, phone: true, company: true },
         });
         if (user) {

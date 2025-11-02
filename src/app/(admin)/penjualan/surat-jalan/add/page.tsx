@@ -187,10 +187,32 @@ function SuratJalanAddPageInner() {
           <div className="relative">
             <button type="button" onClick={()=>setSendOpen(v=>!v)} className="bg-blue-600 text-white px-3 py-1.5 rounded hover:bg-blue-700 text-sm">Kirim</button>
             {sendOpen && (
-              <div className="absolute right-0 mt-2 w-48 rounded border bg-white shadow z-10">
-                <button className="w-full text-left px-3 py-2 hover:bg-gray-50 text-sm" onClick={()=>{ const t=encodeURIComponent(`Surat Jalan ${sjNumber} tanggal ${sjDate}.`); window.open(`https://wa.me/?text=${t}`,'_blank'); setSendOpen(false); }}>WhatsApp</button>
-                <button className="w-full text-left px-3 py-2 hover:bg-gray-50 text-sm" onClick={()=>{ setIsPreviewOpen(true); setSendOpen(false); setTimeout(()=>{ savePdf(); }, 300); }}>PDF</button>
-                <button className="w-full text-left px-3 py-2 hover:bg-gray-50 text-sm" onClick={()=>{ const subject=encodeURIComponent(`Surat Jalan ${sjNumber}`); const body=encodeURIComponent(`Surat Jalan ${sjNumber} tanggal ${sjDate}.`); window.location.href=`mailto:?subject=${subject}&body=${body}`; setSendOpen(false); }}>Email</button>
+              <div className="absolute right-0 mt-2 w-48 rounded border bg-white shadow z-10"><button className="w-full text-left px-3 py-2 hover:bg-gray-50 text-sm" onClick={()=>{ setIsPreviewOpen(true); setSendOpen(false); setTimeout(()=>{ savePdf();
+                  // Update status draft menjadi "Dikirim via PDF"
+                  try {
+                    const raw = localStorage.getItem('sjDrafts') || '[]';
+                    let drafts: any[] = [];
+                    try { drafts = JSON.parse(raw); } catch { drafts = []; }
+                    drafts = Array.isArray(drafts) ? drafts.map((d:any)=> d?.sjNumber === sjNumber ? { ...d, status: 'Dikirim via PDF' } : d) : drafts;
+                    if (!Array.isArray(drafts) || !drafts.some((d:any)=> d?.sjNumber === sjNumber)) {
+                      drafts = (Array.isArray(drafts) ? drafts : []).concat([{ ts: Date.now(), sjNumber, sjDate, refInvoice, recvName, recvAddress, recvPhone, expedition: expeditionOpt, shipDate, etaDate, note, items, status: 'Dikirim via PDF' }]);
+                    }
+                    localStorage.setItem('sjDrafts', JSON.stringify(drafts));
+                  } catch {}
+                }, 300); }}>PDF</button>
+                <button className="w-full text-left px-3 py-2 hover:bg-gray-50 text-sm" onClick={()=>{ const subject=encodeURIComponent(`Surat Jalan ${sjNumber}`); const body=encodeURIComponent(`Surat Jalan ${sjNumber} tanggal ${sjDate}.`); window.location.href=`mailto:?subject=${subject}&body=${body}`; setSendOpen(false);
+                  // Update status draft menjadi "Dikirim via Email"
+                  try {
+                    const raw = localStorage.getItem('sjDrafts') || '[]';
+                    let drafts: any[] = [];
+                    try { drafts = JSON.parse(raw); } catch { drafts = []; }
+                    drafts = Array.isArray(drafts) ? drafts.map((d:any)=> d?.sjNumber === sjNumber ? { ...d, status: 'Dikirim via Email' } : d) : drafts;
+                    if (!Array.isArray(drafts) || !drafts.some((d:any)=> d?.sjNumber === sjNumber)) {
+                      drafts = (Array.isArray(drafts) ? drafts : []).concat([{ ts: Date.now(), sjNumber, sjDate, refInvoice, recvName, recvAddress, recvPhone, expedition: expeditionOpt, shipDate, etaDate, note, items, status: 'Dikirim via Email' }]);
+                    }
+                    localStorage.setItem('sjDrafts', JSON.stringify(drafts));
+                  } catch {}
+                }}>Email</button>
               </div>
             )}
           </div>
@@ -402,3 +424,4 @@ function AutoPreviewTrigger({ open, setOpen, searchParams, savePdf }: { open: bo
   }, [searchParams]);
   return null;
 }
+

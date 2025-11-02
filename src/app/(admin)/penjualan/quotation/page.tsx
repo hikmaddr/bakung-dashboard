@@ -31,6 +31,8 @@ type Quotation = {
   total: number;
   customer: string;
   attachmentUrl?: string | null;
+  hasInvoice?: boolean;
+  hasSalesOrder?: boolean;
 };
 
 // ================== EMPTY STATE ==================
@@ -71,7 +73,14 @@ function RowItem({
     <tr className="border-t border-gray-200 hover:bg-gray-50 dark:border-gray-800 dark:hover:bg-white/5">
       <td className="p-3 dark:text-gray-200">{quotation.customer}</td>
 
-      <td className="p-3 dark:text-gray-200">{quotation.quotationNumber}</td>
+      <td className="p-3 dark:text-gray-200">
+        <span className="mr-2">{quotation.quotationNumber}</span>
+        {(quotation.hasInvoice || quotation.hasSalesOrder) ? (
+          <span className="inline-flex items-center rounded-full bg-blue-100 px-2 py-0.5 text-[10px] font-semibold text-blue-700 dark:bg-blue-900/25 dark:text-blue-300">
+            Converted
+          </span>
+        ) : null}
+      </td>
 
       <td className="p-3 text-right dark:text-gray-200">
         {quotation.total
@@ -354,6 +363,9 @@ export default function QuotationPageWithTemplate() {
               ? item["totalAmount"]
               : 0;
 
+          const hasInvoice = typeof item["hasInvoice"] === "boolean" ? (item["hasInvoice"] as boolean) : false;
+          const hasSalesOrder = typeof item["hasSalesOrder"] === "boolean" ? (item["hasSalesOrder"] as boolean) : false;
+
           return {
             id: Number(item["id"] ?? 0),
             quotationNumber: String(item["quotationNumber"] ?? ""),
@@ -363,6 +375,8 @@ export default function QuotationPageWithTemplate() {
             customer: customerText,
             attachmentUrl:
               typeof item["projectFileUrl"] === "string" ? (item["projectFileUrl"] as string) : null,
+            hasInvoice,
+            hasSalesOrder,
           };
         });
         setQuotations(mapped);

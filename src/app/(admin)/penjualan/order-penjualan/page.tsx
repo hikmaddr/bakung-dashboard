@@ -263,28 +263,59 @@ export default function SalesOrderListPage() {
       if (!orderToSend) return;
 
       // 1. Ubah status di database
+      const statusValue =
+        method === "wa"
+          ? "Sent via WhatsApp"
+          : method === "email"
+          ? "Sent via Email"
+          : method === "pdf"
+          ? "Sent via PDF"
+          : "Sent";
       const res = await fetch(`/api/sales-orders/${id}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ status: "Sent" }),
+        body: JSON.stringify({ status: statusValue }),
       });
       if (!res.ok) throw new Error();
 
       // 2. Update state di frontend
       setOrders((prev) =>
-        prev.map((o) => (o.id === id ? { ...o, status: "Sent" } : o))
+        prev.map((o) => (o.id === id ? { ...o, status: statusValue } : o))
       );
 
       // 3. Aksi pengiriman
       if (method === "pdf") {
         await generatePDF(orderToSend);
-        toast.success("PDF disimpan & status diubah ke Sent");
+        toast.success("PDF disimpan & status: Sent via PDF");
+      } else if (method === "wa") {
+        const win = typeof window !== 'undefined' ? window.open('about:blank') : null;
+        try {
+          const resUpload = await fetch(`/api/share/drive-upload`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ type: "sales-order", id }),
+          });
+          const data = await resUpload.json();
+          if (!data?.success) throw new Error();
+          const link = data.webViewLink || data.webContentLink || `https://drive.google.com/file/d/${data.fileId}/view`;
+          const phone = (orderToSend.customer?.phone || "").replace(/^0/, "62");
+          const msg = encodeURIComponent(
+            `Hi ${orderToSend.customer?.pic || "Customer"},\nAnda telah menerima Sales Order ${orderToSend.orderNumber}.\nTotal: ${formatCurrency(orderToSend.totalAmount)}\n\nLink dokumen: ${link}`
+          );
+          const waUrl = phone ? `https://wa.me/${phone}?text=${msg}` : `https://wa.me/?text=${msg}`;
+          if (win) win.location.href = waUrl; else window.location.href = waUrl;
+          toast.success("Sales Order dikirim via WhatsApp & status: Sent via WhatsApp");
+        } catch {
+          const phone = (orderToSend.customer?.phone || "").replace(/^0/, "62");
+          const msg = encodeURIComponent(
+            `Hi ${orderToSend.customer?.pic || "Customer"},\nSales Order ${orderToSend.orderNumber}.\nTotal: ${formatCurrency(orderToSend.totalAmount)}\n\nLink dokumen tidak tersedia. Silakan hubungi kami.`
+          );
+          const waUrl = phone ? `https://wa.me/${phone}?text=${msg}` : `https://wa.me/?text=${msg}`;
+          if (win) win.location.href = waUrl; else window.location.href = waUrl;
+          toast.error("Gagal membuat link dokumen, tetap membuka WhatsApp");
+        }
       } else {
-        toast.success(
-          `Sales Order dikirim via ${
-            method === "wa" ? "WhatsApp" : "Email"
-          } (dummy) & status diubah ke Sent`
-        );
+        toast.success("Sales Order dikirim via Email & status: Sent via Email");
       }
     } catch (e) {
       console.error(e);

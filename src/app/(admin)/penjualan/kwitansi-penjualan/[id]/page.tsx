@@ -94,7 +94,7 @@ export default function ReceiptDetailPage() {
   const [actorLoading, setActorLoading] = useState(true);
 
   const [sendOpen, setSendOpen] = useState(false);
-  const [sendMethod, setSendMethod] = useState<"wa" | "email" | "pdf">("pdf");
+  const [sendMethod, setSendMethod] = useState<"email" | "pdf">("pdf");
   const [fromInvoiceContext, setFromInvoiceContext] = useState(false);
 
   const [spell, setSpell] = useState("-");
@@ -600,18 +600,46 @@ export default function ReceiptDetailPage() {
     try {
       // Simpan otomatis ke list kwitansi saat submit kirim (tanpa redirect)
       simpanDraft(false);
+      const statusValue =
+        sendMethod === "email"
+          ? "Sent via Email"
+          : sendMethod === "pdf"
+          ? "Sent via PDF"
+          : "Sent";
       if (sendMethod === "pdf") {
         savePdf();
+        // Tandai status invoice
+        try {
+          const res = await fetch(`/api/invoices/${receipt.id}`, {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ status: statusValue }),
+          });
+          const json = await res.json().catch(() => null);
+          if (res.ok && json?.success) {
+            setReceipt((prev) => (prev ? { ...prev, status: json.data?.status || statusValue } : prev));
+          }
+        } catch {}
         setSendOpen(false);
         return;
       }
-      if (sendMethod === "wa") {
-        const msg = encodeURIComponent(`Kwitansi ${receipt.invoiceNumber || receipt.id} sebesar ${formatCurrency(receipt.total)}.`);
-        window.open(`https://wa.me/?text=${msg}`, "_blank");
-      } else {
+      if (sendMethod === "email") {
         const subject = encodeURIComponent(`Kwitansi ${receipt.invoiceNumber || receipt.id}`);
-        const body = encodeURIComponent(`Kwitansi ${receipt.invoiceNumber || receipt.id} sebesar ${formatCurrency(receipt.total)}.`);
+        const body = encodeURIComponent(
+          `Kwitansi ${receipt.invoiceNumber || receipt.id} sebesar ${formatCurrency(receipt.total)}.`
+        );
         window.location.href = `mailto:?subject=${subject}&body=${body}`;
+        try {
+          const res = await fetch(`/api/invoices/${receipt.id}`, {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ status: statusValue }),
+          });
+          const json = await res.json().catch(() => null);
+          if (res.ok && json?.success) {
+            setReceipt((prev) => (prev ? { ...prev, status: json.data?.status || statusValue } : prev));
+          }
+        } catch {}
       }
       setSendOpen(false);
     } catch {
@@ -745,14 +773,6 @@ export default function ReceiptDetailPage() {
                 <div className="space-y-3 p-6">
                   <p className="mb-2 font-medium text-gray-800">Pilih metode</p>
                   <label
-                    onClick={() => setSendMethod("wa")}
-                    className={`flex items-center gap-3 rounded-lg border p-3 cursor-pointer transition ${
-                      sendMethod === "wa" ? "border-green-500 bg-green-50" : "border-gray-200 hover:border-gray-300"
-                    }`}
-                  >
-                    <span className="inline-block h-2.5 w-2.5 rounded-full bg-green-500" /> WhatsApp
-                  </label>
-                  <label
                     onClick={() => setSendMethod("email")}
                     className={`flex items-center gap-3 rounded-lg border p-3 cursor-pointer transition ${
                       sendMethod === "email" ? "border-blue-500 bg-blue-50" : "border-gray-200 hover:border-gray-300"
@@ -789,7 +809,7 @@ export default function ReceiptDetailPage() {
                   onClick={handleSend}
                   className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700"
                 >
-                  Kirim
+                  {sendMethod === "email" ? "Kirim via Email" : "Simpan PDF"}
                 </button>
               </div>
             </div>

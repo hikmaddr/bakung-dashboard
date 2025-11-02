@@ -100,6 +100,13 @@ export async function POST(
     }
 
     // Sudah ada: hanya update bila quotation berubah (bandingkan updatedAt)
+    // Pastikan status quotation menjadi Confirmed meskipun order sudah ada
+    try {
+      if (quotation.status !== "Confirmed") {
+        await prisma.quotation.update({ where: { id: qid }, data: { status: "Confirmed" } });
+      }
+    } catch {}
+
     if (new Date(quotation.updatedAt) <= new Date(existingOrder.updatedAt)) {
       return NextResponse.json(
         { success: false, message: "Quotation sudah dikonfirmasi dan belum ada perubahan. Tidak disalin ulang." },
@@ -131,6 +138,13 @@ export async function POST(
         include: { items: true, customer: true },
       }),
     ]);
+
+    // Tegaskan status quotation menjadi Confirmed setelah sinkronisasi
+    try {
+      if (quotation.status !== "Confirmed") {
+        await prisma.quotation.update({ where: { id: qid }, data: { status: "Confirmed" } });
+      }
+    } catch {}
 
     return NextResponse.json({
       success: true,

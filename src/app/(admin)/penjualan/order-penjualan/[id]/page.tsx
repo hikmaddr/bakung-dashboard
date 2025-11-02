@@ -58,7 +58,7 @@ export default function SalesOrderDetailPage() {
 
   // Kirim modal state
   const [sendOpen, setSendOpen] = useState(false);
-  const [sendMethod, setSendMethod] = useState<"wa" | "email" | "pdf">("email");
+  const [sendMethod, setSendMethod] = useState<"email" | "pdf">("email");
 
   // Dropdown tindakan (Invoice)
   const [actionOpen, setActionOpen] = useState(false);
@@ -361,33 +361,29 @@ export default function SalesOrderDetailPage() {
     }
   };
 
-  // Handle kirim: update status menjadi Sent lalu jalankan aksi sesuai metode
+  // Handle kirim: update status menjadi "Sent via ..." sesuai metode lalu jalankan aksi
   const handleSend = async () => {
     if (!order) return;
     try {
+      const statusValue = sendMethod === "email" ? "Sent via Email" : sendMethod === "pdf" ? "Sent via PDF" : "Sent";
       const res = await fetch(`/api/sales-orders/${order.id}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ status: "Sent" }),
+        body: JSON.stringify({ status: statusValue }),
       });
       if (!res.ok) throw new Error("Gagal memperbarui status");
-      setOrder((prev: any) => (prev ? { ...prev, status: "Sent" } : prev));
+      setOrder((prev: any) => (prev ? { ...prev, status: statusValue } : prev));
 
       if (sendMethod === "pdf") {
         await generatePDF();
-      } else if (sendMethod === "wa") {
-        const msg = encodeURIComponent(
-          `Hi ${order.customer?.pic || "Customer"},\nAnda telah menerima Sales Order:\nNo: ${order.orderNumber}\nTanggal: ${formatDate(order.date)}\nTotal: ${formatCurrency(totalAmount)}\n\nUntuk info lebih lanjut hubungi kami.\nTerima kasih.`
-        );
-        window.open(`https://wa.me/?text=${msg}`, "_blank");
-        toast.success("Sales Order dikirim via WhatsApp & status: Sent");
+        toast.success("Sales Order disimpan sebagai PDF & status: Sent via PDF");
       } else {
         const subject = encodeURIComponent(`Sales Order ${order.orderNumber}`);
         const body = encodeURIComponent(
           `Hi ${order.customer?.pic || "Customer"},\nAnda telah menerima Sales Order:\nNo: ${order.orderNumber}\nTanggal: ${formatDate(order.date)}\nTotal: ${formatCurrency(totalAmount)}\n\nUntuk info lebih lanjut hubungi kami.\nTerima kasih.`
         );
         window.location.href = `mailto:?subject=${subject}&body=${body}`;
-        toast.success("Sales Order dikirim via Email & status: Sent");
+        toast.success("Sales Order dikirim via Email & status: Sent via Email");
       }
     } catch (e) {
       toast.error("Gagal mengirim Sales Order");
@@ -1199,17 +1195,6 @@ export default function SalesOrderDetailPage() {
                 <div className="space-y-3 p-6">
                   <p className="mb-2 font-medium text-gray-800">Pilih metode</p>
                   <label
-                    onClick={() => setSendMethod("wa")}
-                    className={`flex cursor-pointer items-center gap-3 rounded-lg border p-3 transition ${
-                      sendMethod === "wa"
-                        ? "border-blue-500 bg-blue-50"
-                        : "border-gray-200 hover:border-gray-300"
-                    }`}
-                  >
-                    <span className="inline-block h-2.5 w-2.5 rounded-full bg-green-500" />
-                    <span>WhatsApp</span>
-                  </label>
-                  <label
                     onClick={() => setSendMethod("email")}
                     className={`flex cursor-pointer items-center gap-3 rounded-lg border p-3 transition ${
                       sendMethod === "email"
@@ -1264,11 +1249,7 @@ export default function SalesOrderDetailPage() {
                   onClick={handleSend}
                   className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700"
                 >
-                  {sendMethod === "wa"
-                    ? "Kirim via WhatsApp"
-                    : sendMethod === "email"
-                    ? "Kirim via Email"
-                    : "Simpan PDF"}
+                  {sendMethod === "email" ? "Kirim via Email" : "Simpan PDF"}
                 </button>
               </div>
             </div>

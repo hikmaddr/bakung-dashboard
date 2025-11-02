@@ -1,6 +1,7 @@
 "use server";
 
 import { NextResponse, type NextRequest } from "next/server";
+import { put } from "@vercel/blob";
 import { prisma } from "@/lib/prisma";
 import { getActiveBrandProfile, resolveAllowedBrandIds } from "@/lib/brand";
 import { PDFDocument, StandardFonts, rgb, type PDFFont, type PDFImage, type PDFPage } from "pdf-lib";
@@ -113,6 +114,12 @@ const toNumber = (value: unknown): number => {
 
 const formatCurrency = (value: number) => `Rp ${Math.round(Math.abs(value)).toLocaleString("id-ID")}`;
 const formatSignedCurrency = (value: number) => (value < 0 ? `- ${formatCurrency(value)}` : formatCurrency(value));
+
+const sanitizeFileName = (value: string, fallback: string) => {
+  const trimmed = value?.trim();
+  if (!trimmed) return fallback;
+  return trimmed.replace(/[^a-zA-Z0-9._-]/g, "_");
+};
 
 type TableOptions = {
   showImage?: boolean;
@@ -893,20 +900,49 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
     const invoiceNumber = invoice.invoiceNumber || `INV-${invoice.id}`;
     const customerName = invoice.customer?.pic || invoice.customer?.company || "Customer";
     const fileName = formatPdfFileName(invoiceNumber, customerName, `INV-${invoice.id}`);
+    let shareUrl: string | null = (invoice as any)?.shareUrl ?? null;
+
+    if (process.env.BLOB_READ_WRITE_TOKEN) {
+      try {
+        const safeStorageName = sanitizeFileName(
+          `${invoiceNumber}-${invoice.id}.pdf`,
+          `invoice-${invoice.id}.pdf`
+        );
+        const blob = await put(`invoices/${safeStorageName}`, Buffer.from(pdfBytes), {
+          access: "public",
+          addRandomSuffix: true,
+          token: process.env.BLOB_READ_WRITE_TOKEN,
+          contentType: "application/pdf",
+        });
+        shareUrl = blob.url;
+        if (!invoice.shareUrl || invoice.shareUrl !== blob.url) {
+          await prisma.invoice.update({
+            where: { id: invoice.id },
+            data: { shareUrl: blob.url },
+          }).catch((err) => {
+            console.error("[invoices/pdf] failed to persist shareUrl", err);
+          });
+        }
+      } catch (uploadErr) {
+        console.error("[invoices/pdf] failed to upload PDF to Blob", uploadErr);
+      }
+    }
 
     // Use ArrayBuffer slice to avoid Node Buffer and ensure Edge/Node compatibility
     const body = pdfBytes.buffer.slice(pdfBytes.byteOffset, pdfBytes.byteOffset + pdfBytes.byteLength);
     const sp = req.nextUrl.searchParams;
     const previewMode = sp.get("preview") === "1" || sp.get("disposition") === "inline";
     const disposition = previewMode ? "inline" : "attachment";
-    return new Response(body, {
-      headers: {
-        "Content-Type": "application/pdf",
-        "Content-Disposition": `${disposition}; filename="${fileName}"`,
-        "X-Content-Type-Options": "nosniff",
-        "Cache-Control": previewMode ? "no-store, max-age=0" : "private, max-age=0",
-      },
-    });
+    const headers: Record<string, string> = {
+      "Content-Type": "application/pdf",
+      "Content-Disposition": `${disposition}; filename="${fileName}"`,
+      "X-Content-Type-Options": "nosniff",
+      "Cache-Control": previewMode ? "no-store, max-age=0" : "private, max-age=0",
+    };
+    if (shareUrl) {
+      headers["X-Share-Url"] = shareUrl;
+    }
+    return new Response(body, { headers });
   } catch (error: any) {
     console.error("[invoices/pdf] error", error);
     const sp = req.nextUrl.searchParams;

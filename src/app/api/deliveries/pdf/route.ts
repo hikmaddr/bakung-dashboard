@@ -250,6 +250,13 @@ export async function POST(req: NextRequest) {
     return new Response(ab, { headers: { "Content-Type": "application/pdf", "Content-Disposition": `inline; filename="${fileName}"` } });
   } catch (error) {
     console.error("[deliveries/pdf] error", error);
-    return NextResponse.json({ success: false, message: "Gagal membuat PDF" }, { status: 500 });
+    try {
+      const sp = req.nextUrl.searchParams;
+      const debug = sp.get("debug") === "1";
+      const message = debug ? String((error as any)?.stack || (error as any)?.message || error || "Unknown error") : "Gagal membuat PDF";
+      return NextResponse.json({ success: false, message }, { status: 500 });
+    } catch {
+      return NextResponse.json({ success: false, message: "Gagal membuat PDF" }, { status: 500 });
+    }
   }
 }

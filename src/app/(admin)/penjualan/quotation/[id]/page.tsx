@@ -1,9 +1,9 @@
 "use client";
 
-import { useEffect, useMemo, useState, useCallback } from "react";
+import { useEffect, useMemo, useState, useCallback, useRef } from "react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
-import { Edit, Copy, Send, X, ArrowLeft } from "lucide-react";
+import { Edit, Copy, Send, X, ArrowLeft, MessageCircle } from "lucide-react";
 import html2canvas from "html2canvas";
 import jsPDF from "jspdf";
 import PageBreadcrumb from "@/components/common/PageBreadCrumb";
@@ -11,7 +11,15 @@ import toast from "react-hot-toast";
 import { resolveTheme, resolveThankYou, resolvePaymentLines, DEFAULT_TERMS } from "@/lib/quotationTheme";
 import { formatDownloadFileName } from "@/utils/downloadFilename";
 
-type SendMethod = "whatsapp" | "email" | "savepdf";
+const normalizeWhatsappPhone = (value?: string | null) => {
+  if (!value) return "";
+  const digits = value.replace(/\D/g, "");
+  if (!digits) return "";
+  if (digits.startsWith("0")) return `62${digits.slice(1)}`;
+  return digits.startsWith("62") ? digits : `62${digits}`;
+};
+
+type SendMethod = "email" | "savepdf";
 
 export default function QuotationDetailPage() {
   const { id } = useParams();
@@ -19,7 +27,11 @@ export default function QuotationDetailPage() {
   const [quotation, setQuotation] = useState<any>({ items: [] });
   const [loading, setLoading] = useState(true);
   const [isSendModalOpen, setIsSendModalOpen] = useState(false);
-  const [method, setMethod] = useState<SendMethod>("whatsapp");
+  const [method, setMethod] = useState<SendMethod>("email");
+  const [message, setMessage] = useState("");
+  const [messageInitialized, setMessageInitialized] = useState(false);
+  const [sendingWhatsapp, setSendingWhatsapp] = useState(false);
+  const lastDefaultMessageRef = useRef("");
 
   // Brand & Actor (untuk menyamakan tampilan dengan Sales Order)
   const [brand, setBrand] = useState<any | null>(null);
@@ -37,6 +49,10 @@ export default function QuotationDetailPage() {
   const toggleOption = (key: keyof typeof options) => {
     setOptions((prev) => ({ ...prev, [key]: !prev[key] }));
   };
+
+  useEffect(() => {
+    setMessageInitialized(false);
+  }, [id]);
 
   useEffect(() => {
     fetchDetail();
@@ -152,21 +168,37 @@ export default function QuotationDetailPage() {
             <button
               onClick={async () => {
                 toast.dismiss(t.id);
-                await toast.promise(
-                  fetch(`/api/quotations/${id}/convert-to-so`, {
-                    method: "POST",
-                  }).then(async (res) => {
+                toast.promise(
+                  fetch(`/api/quotations/${id}/convert-to-so`, { method: "POST" }).then(async (res) => {
                     if (!res.ok) {
-                      const errorText = await res.text();
-                      throw new Error(errorText || "Gagal salin.");
+                      let msg = "Gagal menyalin ke Sales Order.";
+                      try {
+                        const data = await res.json();
+                        msg = (data && typeof data === "object" && "message" in data)
+                          ? String((data as any).message || msg)
+                          : msg;
+                      } catch {
+                        const text = await res.text();
+                        try {
+                          const parsed = JSON.parse(text);
+                          msg = (parsed && typeof parsed === "object" && "message" in parsed)
+                            ? String((parsed as any).message || msg)
+                            : (text || msg);
+                        } catch {
+                          msg = text || msg;
+                        }
+                      }
+                      throw new Error(msg);
                     }
-                    await fetchDetail(); // refresh detail halaman ini
-                    router.refresh();   // refresh list di halaman utama
+                    await fetchDetail();
+                    router.refresh();
+                    // Setelah berhasil disalin, arahkan ke halaman daftar Sales Order
+                    router.push("/penjualan/order-penjualan");
                   }),
                   {
                     loading: "Menyalin ke Sales Order...",
-                    success: "Berhasil disalin dan status quotation menjadi Confirmed.",
-                    error: "Gagal menyalin ke Sales Order.",
+                    success: "Berhasil disalin ke Sales Order.",
+                    error: (e) => (e instanceof Error ? e.message : "Gagal menyalin ke Sales Order."),
                   }
                 );
               }}
@@ -197,19 +229,33 @@ export default function QuotationDetailPage() {
             <button
               onClick={async () => {
                 toast.dismiss(t.id);
-                await toast.promise(
+                toast.promise(
                   fetch(`/api/quotations/${id}/convert-to-invoice`, { method: "POST" }).then(async (res) => {
                     if (!res.ok) {
-                      const errorText = await res.text();
-                      throw new Error(errorText || "Gagal salin.");
+                      let msg = "Gagal menyalin ke Invoice.";
+                      try {
+                        const data = await res.json();
+                        msg = (data && typeof data === "object" && "message" in data) ? String((data as any).message || msg) : msg;
+                      } catch {
+                        const text = await res.text();
+                        try {
+                          const parsed = JSON.parse(text);
+                          msg = (parsed && typeof parsed === "object" && "message" in parsed) ? String((parsed as any).message || msg) : (text || msg);
+                        } catch {
+                          msg = text || msg;
+                        }
+                      }
+                      throw new Error(msg);
                     }
                     await fetchDetail();
                     router.refresh();
+                    // Setelah berhasil disalin, arahkan ke halaman daftar invoice
+                    router.push("/penjualan/invoice-penjualan");
                   }),
                   {
                     loading: "Menyalin ke Invoice...",
                     success: "Berhasil disalin ke Invoice.",
-                    error: "Gagal menyalin ke Invoice.",
+                    error: (e) => (e instanceof Error ? e.message : "Gagal menyalin ke Invoice."),
                   }
                 );
               }}
@@ -302,18 +348,99 @@ export default function QuotationDetailPage() {
     [quotation?.date]
   );
 
-  const message = useMemo(
-    () =>
-      `Hi ${quotation.customer?.pic ?? ""},
-${quotation.customer?.company ?? ""} telah menerima Quotation:
-No: ${quotation.quotationNumber}
-Tanggal: ${formattedDate}
-Total: Rp${total.toLocaleString("id-ID")}
+  useEffect(() => {
+    if (!quotation || !quotation.id) return;
+    const custName =
+      (quotation.customer?.pic || quotation.customer?.company || "Customer").trim() || "Customer";
+    const quotationNumber =
+      quotation.quotationNumber || (quotation.id ? `QUO-${quotation.id}` : "Quotation");
+    const formattedTotal = `Rp ${Number(total ?? 0).toLocaleString("id-ID")}`;
+    const dateText = formattedDate || "-";
+    const defaultMsg = `Halo ${custName},
 
-Untuk info lebih lanjut hubungi kami.
-Terima kasih.`,
-    [quotation, total, formattedDate]
-  );
+Kami mengirimkan quotation ${quotationNumber} dengan total ${formattedTotal}.
+Tanggal: ${dateText}.
+
+Mohon ditinjau dan beri tahu kami jika ada pertanyaan.
+
+Terima kasih.`;
+
+    const shouldUpdate =
+      !messageInitialized ||
+      !message ||
+      message === lastDefaultMessageRef.current;
+
+    if (shouldUpdate && message !== defaultMsg) {
+      setMessage(defaultMsg);
+    }
+    if (shouldUpdate) {
+      lastDefaultMessageRef.current = defaultMsg;
+      setMessageInitialized(true);
+    }
+  }, [quotation, total, formattedDate, messageInitialized, message]);
+
+  const ensureShareLink = useCallback(async (): Promise<string> => {
+    if (!quotation || !quotation.id) throw new Error("Quotation tidak tersedia");
+    if (quotation.shareUrl) return quotation.shareUrl as string;
+
+    const response = await fetch(`/api/share/drive-upload`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ type: "quotation", id: quotation.id }),
+    });
+    const json = await response.json().catch(() => null);
+    if (!response.ok || json?.success !== true || !json?.url) {
+      throw new Error(json?.message || "Gagal membuat link dokumen");
+    }
+    const url: string = json.url;
+    setQuotation((prev: any) => (prev ? { ...prev, shareUrl: url } : prev));
+    return url;
+  }, [quotation]);
+
+  const createWhatsappLink = useCallback(async (): Promise<string> => {
+    if (!quotation) throw new Error("Quotation tidak tersedia");
+    const shareLink = await ensureShareLink();
+    const phone = normalizeWhatsappPhone(quotation.customer?.phone);
+    const encoded = encodeURIComponent(`${message}\n\nLink dokumen: ${shareLink}`);
+    return phone ? `https://wa.me/${phone}?text=${encoded}` : `https://wa.me/?text=${encoded}`;
+  }, [ensureShareLink, quotation, message]);
+
+  const handleWhatsappQuick = useCallback(async () => {
+    if (!quotation) return;
+    const win = typeof window !== "undefined" ? window.open("about:blank") : null;
+    setSendingWhatsapp(true);
+    try {
+      const waLink = await createWhatsappLink();
+      if (win) win.location.href = waLink;
+      else window.location.href = waLink;
+      // Tandai status: Sent via WhatsApp
+      try {
+        const res = await fetch(`/api/quotations/${id}/send`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ via: "whatsapp" }),
+        });
+        const json = await res.json().catch(() => null);
+        if (res.ok && json?.success) {
+          setQuotation((prev: any) => (prev ? { ...prev, status: "Sent via WhatsApp" } : prev));
+        }
+      } catch {}
+      toast.success("Mengarahkan ke WhatsApp dan menandai status terkirim.");
+    } catch (err: any) {
+      const fallbackMsg = encodeURIComponent(
+        `${message}\n\nLink dokumen tidak tersedia. Silakan hubungi kami.`
+      );
+      const phone = normalizeWhatsappPhone(quotation.customer?.phone);
+      const fallbackLink = phone
+        ? `https://wa.me/${phone}?text=${fallbackMsg}`
+        : `https://wa.me/?text=${fallbackMsg}`;
+      if (win) win.location.href = fallbackLink;
+      else window.location.href = fallbackLink;
+      toast.error(err?.message || "Gagal membuat link dokumen, tetap membuka WhatsApp");
+    } finally {
+      setSendingWhatsapp(false);
+    }
+  }, [createWhatsappLink, quotation, message]);
 
   if (loading) return <div className="p-6 text-center">Loading...</div>;
 
@@ -351,38 +478,42 @@ const generatePDF = async (): Promise<string> => {
   const handleSend = async () => {
     if (method === "savepdf") {
       await generatePDF();
-      toast.success("File PDF berhasil diunduh.");
+      try {
+        const res = await fetch(`/api/quotations/${id}/send`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ via: "pdf" }),
+        });
+        const json = await res.json().catch(() => null);
+        if (res.ok && json?.success) {
+          setQuotation((prev: any) => (prev ? { ...prev, status: "Sent via PDF" } : prev));
+        }
+      } catch {}
+      toast.success("File PDF berhasil diunduh dan status diperbarui.");
       setIsSendModalOpen(false);
       return;
     }
 
-    if (method === "whatsapp") {
-      await generatePDF(); // sementara: hanya simpan file
-      const phone = quotation.customer?.phone?.replace(/^0/, "62") || "";
-      const encoded = encodeURIComponent(
-        `${message}\n\n(Lampiran PDF telah disimpan di perangkat Anda. Lampirkan secara manual ke chat ini.)`
-      );
-      const waLink = `https://wa.me/${phone}?text=${encoded}`;
-      window.open(waLink, "_blank");
-      toast.success("Mengarahkan ke WhatsApp.");
-      setIsSendModalOpen(false);
-      return;
-    }
-
-    if (method === "email") {
-      await generatePDF(); // sementara: hanya simpan file
-      const email = quotation.customer?.email || "";
-      const subject = encodeURIComponent(
-        `Quotation ${quotation.quotationNumber || ""}`
-      );
-      const body = encodeURIComponent(
-        `${message}\n\n(Lampiran PDF telah disimpan di perangkat Anda. Lampirkan secara manual ke email ini.)`
-      );
-      window.location.href = `mailto:${email}?subject=${subject}&body=${body}`;
-      toast.success("Mengarahkan ke Email.");
-      setIsSendModalOpen(false);
-      return;
-    }
+    await generatePDF(); // simpan file untuk dibagikan manual
+    const email = quotation.customer?.email || "";
+    const subject = encodeURIComponent(`Quotation ${quotation.quotationNumber || ""}`);
+    const body = encodeURIComponent(
+      `${message}\n\n(Lampiran PDF telah disimpan di perangkat Anda. Lampirkan secara manual ke email ini.)`
+    );
+    window.location.href = `mailto:${email}?subject=${subject}&body=${body}`;
+    try {
+      const res = await fetch(`/api/quotations/${id}/send`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ via: "email" }),
+      });
+      const json = await res.json().catch(() => null);
+      if (res.ok && json?.success) {
+        setQuotation((prev: any) => (prev ? { ...prev, status: "Sent via Email" } : prev));
+      }
+    } catch {}
+    toast.success("Mengarahkan ke Email dan menandai status terkirim.");
+    setIsSendModalOpen(false);
   };
   
 
@@ -431,11 +562,28 @@ const generatePDF = async (): Promise<string> => {
   
         <div className="mt-4 flex flex-wrap items-center justify-end gap-2">
           <button
+            onClick={handleWhatsappQuick}
+            disabled={loading || !quotation?.id || sendingWhatsapp}
+            className="inline-flex items-center gap-2 rounded-full bg-emerald-600 px-4 py-2 text-sm font-medium text-white shadow transition hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            {sendingWhatsapp ? (
+              <>
+                <span className="h-4 w-4 animate-spin rounded-full border-2 border-white/60 border-t-white" />
+                Mengirim...
+              </>
+            ) : (
+              <>
+                <MessageCircle className="h-4 w-4" />
+                Kirim via WhatsApp
+              </>
+            )}
+          </button>
+          <button
             onClick={() => setIsSendModalOpen(true)}
             className="inline-flex items-center gap-2 rounded-full bg-blue-600 px-4 py-2 text-sm font-medium text-white shadow transition hover:bg-blue-700"
           >
             <Send className="h-4 w-4" />
-            Kirim
+            Opsi Kirim Lainnya
           </button>
           {/* Scope-based action buttons */}
           {String(brand?.businessScope || "").toUpperCase() === "CREATIVE" ? (
@@ -783,15 +931,6 @@ const generatePDF = async (): Promise<string> => {
                 <label className="flex cursor-pointer items-center gap-2">
                   <input
                     type="radio"
-                    checked={method === "whatsapp"}
-                    onChange={() => setMethod("whatsapp")}
-                  />
-                  WhatsApp
-                </label>
-
-                <label className="flex cursor-pointer items-center gap-2">
-                  <input
-                    type="radio"
                     checked={method === "email"}
                     onChange={() => setMethod("email")}
                   />
@@ -880,11 +1019,7 @@ const generatePDF = async (): Promise<string> => {
                     onClick={handleSend}
                     className="rounded bg-blue-600 px-4 py-2 text-white transition hover:bg-blue-700"
                   >
-                    {method === "savepdf"
-                      ? "Simpan PDF"
-                      : method === "whatsapp"
-                      ? "Kirim via WhatsApp"
-                      : "Kirim via Email"}
+                    {method === "savepdf" ? "Simpan PDF" : "Kirim via Email"}
                   </button>
                 </div>
               </div>

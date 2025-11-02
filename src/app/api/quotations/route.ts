@@ -57,8 +57,35 @@ export async function GET(req: NextRequest, _ctx: { params: Promise<{}> }) {
       where,
       include: { customer: true, items: true },
     });
-    // Add 'total' alias expected by client list page
-    const data = rows.map((q: any) => ({ ...q, total: q.totalAmount ?? 0 }));
+
+    // Build conversion flags (hasInvoice / hasSalesOrder) efficiently
+    const quotationIds = rows.map((q) => q.id);
+    let invoiceByQuotation = new Set<number>();
+    let soByQuotation = new Set<number>();
+    if (quotationIds.length > 0) {
+      try {
+        const invoices = await prisma.invoice.findMany({
+          where: { quotationId: { in: quotationIds } },
+          select: { quotationId: true },
+        });
+        invoiceByQuotation = new Set(invoices.map((i) => i.quotationId));
+      } catch {}
+      try {
+        const salesOrders = await prisma.salesOrder.findMany({
+          where: { quotationId: { in: quotationIds } },
+          select: { quotationId: true },
+        });
+        soByQuotation = new Set(salesOrders.map((s) => s.quotationId));
+      } catch {}
+    }
+
+    // Add 'total' alias expected by client list page and conversion flags
+    const data = rows.map((q: any) => ({
+      ...q,
+      total: q.totalAmount ?? 0,
+      hasInvoice: invoiceByQuotation.has(q.id),
+      hasSalesOrder: soByQuotation.has(q.id),
+    }));
     const fmt = sp.get("format");
     if (fmt === "std") return NextResponse.json({ success: true, data });
     return NextResponse.json(data);

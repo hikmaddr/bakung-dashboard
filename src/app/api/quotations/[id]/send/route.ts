@@ -1,9 +1,9 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
 
-// POST /api/quotations/[id]/send -> set status to "Sent"
+// POST /api/quotations/[id]/send -> set status to "Sent via <method>"
 export async function POST(
-  _req: NextRequest,
+  req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
@@ -16,9 +16,23 @@ export async function POST(
       );
     }
 
+    let via = "";
+    try {
+      const body = await req.json().catch(() => ({}));
+      via = String(body?.via || "").toLowerCase();
+    } catch {}
+
+    const statusValue = via === "whatsapp"
+      ? "Sent via WhatsApp"
+      : via === "email"
+      ? "Sent via Email"
+      : via === "pdf"
+      ? "Sent via PDF"
+      : "Sent";
+
     const updated = await prisma.quotation.update({
       where: { id: qid },
-      data: { status: "Sent" },
+      data: { status: statusValue },
       include: { customer: true, items: true },
     });
 
@@ -31,4 +45,3 @@ export async function POST(
     );
   }
 }
-
