@@ -30,6 +30,14 @@ export default function BrandBadge() {
   const containerRef = useRef<HTMLDivElement>(null);
   const [menuStyles, setMenuStyles] = useState<React.CSSProperties | undefined>(undefined);
 
+  const sanitizeUrl = (u: string | null | undefined): string | null => {
+    if (!u) return null;
+    const s = String(u).trim();
+    // Remove wrapping quotes and trailing/leading parentheses or whitespace
+    const stripped = s.replace(/^["'()\s]+/, "").replace(/["'()\s]+$/, "");
+    return stripped || null;
+  };
+
   const applyBrandCssVars = useCallback(async () => {
     try {
       const res = await fetch("/api/brand-profiles/active", { cache: "no-store" });
@@ -54,7 +62,7 @@ export default function BrandBadge() {
         id: Number(data?.id || 0),
         slug: data?.slug ?? null,
         name: String(data?.name || "Brand"),
-        logoUrl: data?.logoUrl ?? data?.logo ?? null,
+        logoUrl: sanitizeUrl(data?.logoUrl ?? data?.logo ?? null),
         primaryColor: data?.primaryColor ?? null,
         secondaryColor: data?.secondaryColor ?? null,
       };
@@ -81,7 +89,7 @@ export default function BrandBadge() {
         id: Number(b?.id ?? 0),
         slug: String(b?.slug || ""),
         name: String(b?.name || "Unnamed"),
-        logoUrl: b?.logoUrl ?? b?.logo ?? null,
+        logoUrl: sanitizeUrl(b?.logoUrl ?? b?.logo ?? null),
         primaryColor: b?.primaryColor ?? null,
       }));
       setOptions(rows);
@@ -187,7 +195,7 @@ export default function BrandBadge() {
   }, [open]);
 
   const displayName = brand?.name || "Brand";
-  const logo = brand?.logoUrl || null;
+  const logo = sanitizeUrl(brand?.logoUrl || null);
   const color = brand?.primaryColor || "#0EA5E9";
 
   // Jika tidak ada brand yang diassign untuk user (API sudah terfilter), sembunyikan tombol sama sekali

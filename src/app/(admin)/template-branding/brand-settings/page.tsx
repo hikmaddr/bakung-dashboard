@@ -891,12 +891,48 @@ function BrandSettingsPage() {
         const uploadResult = await uploadResponse.json();
 
         // Update form data with the uploaded file URL
-        setFormData((prev) => ({
-          ...prev,
-          logo: uploadResult.url,
-        }));
+        const updated = { ...formData, logo: uploadResult.url };
+        setFormData(updated);
 
-        toast.success("Logo uploaded successfully");
+        // Auto-save perubahan logo bila profile sudah memiliki ID (mode edit)
+        if (updated.id) {
+          try {
+            const payloadProfile = buildPayloadFromProfile(updated);
+            const payload = {
+              ...payloadProfile,
+              id: updated.id,
+            };
+
+            const response = await fetch("/api/brand-profiles", {
+              method: "PUT",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify(payload),
+            });
+
+            if (!response.ok) {
+              const errorData = await response.json().catch(() => ({}));
+              throw new Error(errorData.message || "Failed to save brand logo");
+            }
+
+            const savedProfile = normalizeProfileFromApi(await response.json());
+
+            // Sinkronkan daftar profil lokal
+            setProfiles((prev) =>
+              prev.map((p) => (p.id === savedProfile.id ? savedProfile : p))
+            );
+
+            // Beritahu komponen lain untuk reload brand aktif dan opsi
+            notifyBrandListUpdated();
+            toast.success("Logo berhasil diunggah dan disimpan");
+          } catch (saveErr) {
+            console.error("Error saving brand logo:", saveErr);
+            const msg = saveErr instanceof Error ? saveErr.message : "Failed to save brand logo";
+            toast.error(msg);
+          }
+        } else {
+          // Jika belum ada ID (mode create), cukup update state; simpan saat pengguna klik Save
+          toast.success("Logo uploaded successfully");
+        }
       } catch (error) {
         console.error("Error uploading logo:", error);
         const errorMessage = error instanceof Error ? error.message : "Failed to upload logo";

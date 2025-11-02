@@ -16,8 +16,22 @@ const nextConfig = {
         protocol: 'https',
         hostname: 'blob.vercel-storage.com',
       },
+      // Allow project-specific Vercel Blob bucket host
+      {
+        protocol: 'https',
+        hostname: 'pzvwweq0cd5gjc1s.public.blob.vercel-storage.com',
+      },
+      // Also allow the generic public blob subdomain (other buckets if needed)
+      {
+        protocol: 'https',
+        hostname: 'public.blob.vercel-storage.com',
+      },
     ],
-    domains: ['blob.vercel-storage.com'],
+    domains: [
+      'blob.vercel-storage.com',
+      'pzvwweq0cd5gjc1s.public.blob.vercel-storage.com',
+      'public.blob.vercel-storage.com',
+    ],
   },
   turbopack: {},
   webpack(config) {
