@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { getActiveBrandProfile, resolveAllowedBrandIds } from "@/lib/brand";
 import { getAuth } from "@/lib/auth";
 import { logActivity } from "@/lib/activity";
+import { sendNotificationToRole } from "@/lib/notification";
 
 function genInvoiceNumberBase() {
   const now = new Date();
@@ -12,6 +13,7 @@ function genInvoiceNumberBase() {
 
 export async function GET(req: NextRequest) {
   try {
+    const auth = await getAuth();
     const active = await getActiveBrandProfile();
     const sp = req.nextUrl.searchParams;
     const includeDeleted = sp.get("includeDeleted") === "1";
@@ -33,6 +35,8 @@ export async function GET(req: NextRequest) {
     if (start) where.issueDate = { gte: start, lt: now };
     if (statuses.length > 0) where.status = { in: statuses };
     if (!includeDeleted) where.deletedAt = null;
+
+    await ensureInvoiceDueNotifications(active?.id ?? null);
 
     const rows = await prisma.invoice.findMany({ orderBy: { createdAt: "desc" }, where, include: { customer: true, items: true, quotation: true } });
     return NextResponse.json({ success: true, data: rows });
@@ -174,5 +178,48 @@ export async function POST(req: NextRequest) {
       ? 'Tabel invoice/invoiceitem belum ada di database. Jalankan prisma migrate.'
       : (e?.message || 'Gagal menyimpan invoice');
     return NextResponse.json({ success: false, message }, { status: 500 });
+  }
+}
+async function ensureInvoiceDueNotifications(brandId: number | null) {
+  const now = new Date();
+  const threshold = new Date(now.getTime() + 24 * 60 * 60 * 1000);
+  const where: any = {
+    deletedAt: null,
+    dueDate: { lte: threshold },
+    status: { notIn: ["Paid", "Void", "Cancelled"] },
+  };
+  if (brandId != null) {
+    where.brandProfileId = brandId;
+  }
+
+  const dueInvoices = await prisma.invoice.findMany({
+    where,
+    select: { id: true, invoiceNumber: true, dueDate: true, brandProfileId: true },
+  });
+
+  for (const invoice of dueInvoices) {
+    const targetUrl = `/penjualan/invoice-penjualan/${invoice.id}`;
+    const existing = await prisma.notification.findFirst({
+      where: {
+        targetUrl,
+        title: "Invoice jatuh tempo",
+      },
+    });
+    if (existing) continue;
+
+    const dueDate = invoice.dueDate ? new Date(invoice.dueDate) : null;
+    const isOverdue = dueDate ? dueDate.getTime() < now.getTime() : false;
+    const message = dueDate
+      ? `Invoice ${invoice.invoiceNumber} ${isOverdue ? "telah melewati" : "mendekati"} jatuh tempo (${dueDate.toLocaleDateString()}).`
+      : `Invoice ${invoice.invoiceNumber} mendekati jatuh tempo.`;
+
+    await sendNotificationToRole(
+      "Owner",
+      "Invoice jatuh tempo",
+      message,
+      "warning",
+      invoice.brandProfileId ?? undefined,
+      targetUrl,
+    );
   }
 }

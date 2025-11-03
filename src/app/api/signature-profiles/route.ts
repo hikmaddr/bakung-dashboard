@@ -1,13 +1,10 @@
 "use server";
 
 import { NextRequest, NextResponse } from "next/server";
-import { access, mkdir, readFile, writeFile } from "fs/promises";
-import { join } from "path";
+import { prisma } from "@/lib/prisma";
 
-const DATA_DIR = join(process.cwd(), "public", "uploads");
-const FILE_PATH = join(DATA_DIR, "signature-profiles.json");
-
-type SignatureProfile = {
+// Tipe untuk kompatibilitas dengan UI yang sudah ada
+type SignatureProfileResponse = {
   id: number;
   name: string;
   title?: string;
@@ -15,35 +12,23 @@ type SignatureProfile = {
   createdAt: string;
 };
 
-async function ensureStore() {
-  await mkdir(DATA_DIR, { recursive: true });
-  try {
-    await access(FILE_PATH);
-  } catch {
-    const seed: SignatureProfile[] = [];
-    await writeFile(FILE_PATH, JSON.stringify(seed, null, 2), "utf8");
-  }
-}
-
-async function readProfiles(): Promise<SignatureProfile[]> {
-  await ensureStore();
-  const raw = await readFile(FILE_PATH, "utf8");
-  try {
-    const parsed = JSON.parse(raw);
-    return Array.isArray(parsed) ? parsed : [];
-  } catch {
-    return [];
-  }
-}
-
-async function writeProfiles(profiles: SignatureProfile[]) {
-  await writeFile(FILE_PATH, JSON.stringify(profiles, null, 2), "utf8");
-}
-
 export async function GET() {
   try {
-    const profiles = await readProfiles();
-    return NextResponse.json({ success: true, data: profiles });
+    const profiles = await prisma.signatureProfile.findMany({
+      where: { deletedAt: null },
+      orderBy: { createdAt: 'desc' }
+    });
+    
+    // Format untuk kompatibilitas dengan UI yang sudah ada
+    const formattedProfiles: SignatureProfileResponse[] = profiles.map(profile => ({
+      id: profile.id,
+      name: profile.name,
+      title: profile.title || undefined,
+      imageUrl: profile.imageUrl,
+      createdAt: profile.createdAt.toISOString()
+    }));
+    
+    return NextResponse.json({ success: true, data: formattedProfiles });
   } catch (error) {
     console.error("[signature-profiles] GET error", error);
     return NextResponse.json(
@@ -59,6 +44,7 @@ export async function POST(request: NextRequest) {
     const name = String(body?.name || "").trim();
     const title = String(body?.title || "").trim();
     const imageUrl = String(body?.imageUrl || "").trim();
+    const brandProfileId = body?.brandProfileId ? Number(body.brandProfileId) : null;
 
     if (!name || !imageUrl) {
       return NextResponse.json(
@@ -67,19 +53,25 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const profiles = await readProfiles();
-    const now = Date.now();
-    const newProfile: SignatureProfile = {
-      id: now,
-      name,
-      title: title || undefined,
-      imageUrl,
-      createdAt: new Date(now).toISOString(),
-    };
-    profiles.push(newProfile);
-    await writeProfiles(profiles);
+    const newProfile = await prisma.signatureProfile.create({
+      data: {
+        name,
+        title: title || null,
+        imageUrl,
+        brandProfileId
+      }
+    });
 
-    return NextResponse.json({ success: true, data: newProfile });
+    // Format untuk kompatibilitas dengan UI yang sudah ada
+    const formattedProfile: SignatureProfileResponse = {
+      id: newProfile.id,
+      name: newProfile.name,
+      title: newProfile.title || undefined,
+      imageUrl: newProfile.imageUrl,
+      createdAt: newProfile.createdAt.toISOString()
+    };
+
+    return NextResponse.json({ success: true, data: formattedProfile });
   } catch (error) {
     console.error("[signature-profiles] POST error", error);
     return NextResponse.json(
@@ -98,9 +90,10 @@ export async function DELETE(request: NextRequest) {
       return NextResponse.json({ success: false, error: "ID tidak valid." }, { status: 400 });
     }
 
-    const profiles = await readProfiles();
-    const nextProfiles = profiles.filter((profile) => profile.id !== id);
-    await writeProfiles(nextProfiles);
+    await prisma.signatureProfile.update({
+      where: { id },
+      data: { deletedAt: new Date() }
+    });
 
     return NextResponse.json({ success: true });
   } catch (error) {
@@ -112,3 +105,54 @@ export async function DELETE(request: NextRequest) {
   }
 }
 
+export async function PUT(request: NextRequest) {
+  try {
+    const body = await request.json();
+    const id = Number(body?.id);
+    const name = String(body?.name || "").trim();
+    const title = String(body?.title || "").trim();
+    const imageUrl = String(body?.imageUrl || "").trim();
+    const brandProfileId = body?.brandProfileId ? Number(body.brandProfileId) : null;
+
+    if (!id || !Number.isFinite(id)) {
+      return NextResponse.json(
+        { success: false, error: "ID tidak valid." },
+        { status: 400 }
+      );
+    }
+
+    if (!name) {
+      return NextResponse.json(
+        { success: false, error: "Nama penanda tangan wajib diisi." },
+        { status: 400 }
+      );
+    }
+
+    const updatedProfile = await prisma.signatureProfile.update({
+      where: { id },
+      data: {
+        name,
+        title: title || null,
+        imageUrl,
+        brandProfileId
+      }
+    });
+
+    // Format untuk kompatibilitas dengan UI yang sudah ada
+    const formattedProfile: SignatureProfileResponse = {
+      id: updatedProfile.id,
+      name: updatedProfile.name,
+      title: updatedProfile.title || undefined,
+      imageUrl: updatedProfile.imageUrl,
+      createdAt: updatedProfile.createdAt.toISOString()
+    };
+
+    return NextResponse.json({ success: true, data: formattedProfile });
+  } catch (error) {
+    console.error("[signature-profiles] PUT error", error);
+    return NextResponse.json(
+      { success: false, error: "Gagal mengupdate signature profile." },
+      { status: 500 }
+    );
+  }
+}

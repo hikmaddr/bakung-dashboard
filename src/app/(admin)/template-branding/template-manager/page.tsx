@@ -80,6 +80,17 @@ export default function TemplateManagerPage() {
     file: null,
   });
   const [signaturePreview, setSignaturePreview] = useState<string>("");
+  // Edit signature dialog state
+  const [signatureEditDialogOpen, setSignatureEditDialogOpen] = useState(false);
+  const [signatureUpdating, setSignatureUpdating] = useState(false);
+  const [signatureEditForm, setSignatureEditForm] = useState<{ id: number | null; name: string; title: string; file: File | null; imageUrl: string }>({
+    id: null,
+    name: "",
+    title: "",
+    file: null,
+    imageUrl: "",
+  });
+  const [signatureEditPreview, setSignatureEditPreview] = useState<string>("");
 
   // Preview PDF dialog state
   const [pdfDialog, setPdfDialog] = useState<{
@@ -322,6 +333,14 @@ export default function TemplateManagerPage() {
     }
   };
 
+  const resetSignatureEditForm = () => {
+    setSignatureEditForm({ id: null, name: "", title: "", file: null, imageUrl: "" });
+    if (signatureEditPreview) {
+      URL.revokeObjectURL(signatureEditPreview);
+      setSignatureEditPreview("");
+    }
+  };
+
   const handleSignatureFileChange = (file: File | null) => {
     if (signaturePreview) {
       URL.revokeObjectURL(signaturePreview);
@@ -395,6 +414,76 @@ export default function TemplateManagerPage() {
     } catch (error) {
       const message = error instanceof Error ? error.message : "Gagal menghapus signature profile.";
       toast.error(message);
+    }
+  };
+
+  const handleSignatureEditFileChange = (file: File | null) => {
+    if (signatureEditPreview) {
+      URL.revokeObjectURL(signatureEditPreview);
+      setSignatureEditPreview("");
+    }
+    setSignatureEditForm((prev) => ({ ...prev, file }));
+    if (file) {
+      const objectUrl = URL.createObjectURL(file);
+      setSignatureEditPreview(objectUrl);
+    }
+  };
+
+  const openEditSignatureDialog = (profile: SignatureProfile) => {
+    resetSignatureEditForm();
+    setSignatureEditForm({ id: profile.id, name: profile.name, title: profile.title ?? "", file: null, imageUrl: profile.imageUrl });
+    setSignatureEditDialogOpen(true);
+  };
+
+  const handleUpdateSignatureProfile = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!signatureEditForm.id) {
+      toast.error("Profil signature tidak ditemukan.");
+      return;
+    }
+    if (!signatureEditForm.name.trim()) {
+      toast.error("Nama penanda tangan wajib diisi.");
+      return;
+    }
+    try {
+      setSignatureUpdating(true);
+      let imageUrl = signatureEditForm.imageUrl;
+      if (signatureEditForm.file) {
+        const fd = new FormData();
+        fd.append("signature", signatureEditForm.file);
+        const uploadRes = await fetch("/api/upload/signature", { method: "POST", body: fd });
+        const uploadJson = await uploadRes.json().catch(() => ({}));
+        if (!uploadRes.ok || uploadJson?.success === false || !uploadJson?.url) {
+          throw new Error(uploadJson?.error || "Gagal mengunggah file tanda tangan.");
+        }
+        imageUrl = uploadJson.url as string;
+      }
+
+      const saveRes = await fetch("/api/signature-profiles", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          id: signatureEditForm.id,
+          name: signatureEditForm.name.trim(),
+          title: signatureEditForm.title.trim(),
+          imageUrl,
+        }),
+      });
+      const saveJson = await saveRes.json().catch(() => ({}));
+      if (!saveRes.ok || saveJson?.success === false || !saveJson?.data) {
+        throw new Error(saveJson?.error || "Gagal menyimpan signature profile.");
+      }
+
+      const updated = saveJson.data as SignatureProfile;
+      setSignatureProfiles((prev) => prev.map((p) => (p.id === updated.id ? updated : p)));
+      toast.success("Signature profile berhasil diperbarui.");
+      setSignatureEditDialogOpen(false);
+      resetSignatureEditForm();
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Gagal memperbarui signature profile.";
+      toast.error(message);
+    } finally {
+      setSignatureUpdating(false);
     }
   };
 
@@ -925,6 +1014,15 @@ export default function TemplateManagerPage() {
                       <Button
                         variant="outline"
                         size="sm"
+                        className="mr-2 text-gray-700 border-gray-200 hover:bg-gray-50"
+                        onClick={() => openEditSignatureDialog(profile)}
+                      >
+                        <PenTool className="h-4 w-4 mr-2" />
+                        Edit
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="sm"
                         className="text-red-600 border-red-200 hover:bg-red-50"
                         onClick={() => handleDeleteSignatureProfile(profile)}
                       >
@@ -1025,6 +1123,106 @@ export default function TemplateManagerPage() {
               >
                 {signatureUploading && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
                 Simpan Signature
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
+
+      {/* Signature edit dialog */}
+      <Dialog
+        open={signatureEditDialogOpen}
+        onOpenChange={(open) => {
+          if (open) {
+            setSignatureEditDialogOpen(true);
+          } else {
+            setSignatureEditDialogOpen(false);
+            resetSignatureEditForm();
+          }
+        }}
+      >
+        <DialogContent className="max-w-lg bg-white border border-gray-200 rounded-2xl shadow-xl">
+          <DialogHeader className="px-6 py-4 border-b border-gray-200">
+            <DialogTitle className="text-lg font-semibold text-gray-900">Edit Signature Profile</DialogTitle>
+          </DialogHeader>
+          <form onSubmit={handleUpdateSignatureProfile}>
+            <div className="px-6 py-4 space-y-4">
+              <div className="space-y-2">
+                <Label htmlFor="signature-edit-name">Nama Penanda Tangan</Label>
+                <Input
+                  id="signature-edit-name"
+                  value={signatureEditForm.name}
+                  onChange={(event) =>
+                    setSignatureEditForm((prev) => ({
+                      ...prev,
+                      name: event.target.value,
+                    }))
+                  }
+                  placeholder="Contoh: Andi Saputra"
+                  required
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="signature-edit-title">Jabatan / Deskripsi (opsional)</Label>
+                <Input
+                  id="signature-edit-title"
+                  value={signatureEditForm.title}
+                  onChange={(event) =>
+                    setSignatureEditForm((prev) => ({
+                      ...prev,
+                      title: event.target.value,
+                    }))
+                  }
+                  placeholder="Contoh: Direktur Utama"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="signature-edit-file">File Tanda Tangan (opsional)</Label>
+                <Input
+                  id="signature-edit-file"
+                  type="file"
+                  accept="image/png,image/jpeg"
+                  onChange={(event) => handleSignatureEditFileChange(event.target.files?.[0] ?? null)}
+                />
+                <p className="text-xs text-gray-500">
+                  Biarkan kosong jika tidak mengganti file. Unggah PNG/JPG latar transparan, maksimal 5MB.
+                </p>
+                <div className="mt-2 grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div>
+                    <p className="text-xs text-gray-500 mb-1">Saat ini</p>
+                    <div className="rounded-xl border border-dashed border-gray-300 bg-gray-50 p-4 flex justify-center">
+                      <img src={signatureEditForm.imageUrl} alt="Signature current" className="h-32 object-contain" />
+                    </div>
+                  </div>
+                  {signatureEditPreview ? (
+                    <div>
+                      <p className="text-xs text-gray-500 mb-1">Preview baru</p>
+                      <div className="rounded-xl border border-dashed border-gray-300 bg-gray-50 p-4 flex justify-center">
+                        <img src={signatureEditPreview} alt="Signature preview" className="h-32 object-contain" />
+                      </div>
+                    </div>
+                  ) : null}
+                </div>
+              </div>
+            </div>
+            <DialogFooter className="px-6 py-4 border-t border-gray-200 bg-gray-50 rounded-b-2xl">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => {
+                  setSignatureEditDialogOpen(false);
+                  resetSignatureEditForm();
+                }}
+              >
+                Batal
+              </Button>
+              <Button
+                type="submit"
+                className="bg-blue-600 hover:bg-blue-700 text-white"
+                disabled={signatureUpdating}
+              >
+                {signatureUpdating && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+                Simpan Perubahan
               </Button>
             </DialogFooter>
           </form>

@@ -1,26 +1,34 @@
 "use client";
 import React, { useCallback, useEffect, useMemo, useState } from "react";
-import NotificationTable, { type NotificationRow } from "@/components/notifications/NotificationTable";
+import { useRouter, useSearchParams } from "next/navigation";
 import FeatureGuard from "@/components/FeatureGuard";
-import { Modal } from "@/components/ui/modal";
+import type { NotificationRow } from "@/components/notifications/NotificationTable";
 import { useGlobal } from "@/context/AppContext";
+import { toast } from "react-hot-toast";
+import { Modal } from "@/components/ui/modal";
 
-type Filter = "all" | "unread" | "read";
+type Tab = "all" | "unread";
 
 export default function UserNotificationsPage() {
-  const [items, setItems] = useState<NotificationRow[]>([]);
-  const [loading, setLoading] = useState<boolean>(false);
-  const [error, setError] = useState<string | null>(null);
-  const [filter, setFilter] = useState<Filter>("all");
+  const router = useRouter();
+  const searchParams = useSearchParams();
   const { hasRole } = useGlobal();
-  const [previewOpen, setPreviewOpen] = useState<boolean>(false);
+
+  const [items, setItems] = useState<NotificationRow[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [tab, setTab] = useState<Tab>("all");
   const [selected, setSelected] = useState<NotificationRow | null>(null);
-  const [roleModalOpen, setRoleModalOpen] = useState<boolean>(false);
+  const [detailModalOpen, setDetailModalOpen] = useState(false);
+  const [approvingId, setApprovingId] = useState<number | null>(null);
+  const [decliningId, setDecliningId] = useState<number | null>(null);
+  const [actionError, setActionError] = useState<{ id: number; type: "approve" | "decline"; message: string } | null>(null);
+  const [roleModalOpen, setRoleModalOpen] = useState(false);
   const [roleOptions, setRoleOptions] = useState<{ id: number; name: string }[]>([]);
   const [selectedRole, setSelectedRole] = useState<string>("User");
-  const [pendingApproval, setPendingApproval] = useState<{ notif: NotificationRow; userId: number } | null>(null);
+  const [pendingApproval, setPendingApproval] = useState<{ row: NotificationRow; userId: number } | null>(null);
 
-  const load = useCallback(async () => {
+  const loadNotifications = useCallback(async () => {
     try {
       setLoading(true);
       setError(null);
@@ -29,7 +37,7 @@ export default function UserNotificationsPage() {
       if (!json?.success) throw new Error(json?.message || "Gagal memuat notifikasi");
       const mapped: NotificationRow[] = Array.isArray(json.data)
         ? json.data.map((n: any) => ({
-            id: n.id,
+            id: Number(n.id),
             title: String(n.title ?? "Notifikasi"),
             message: String(n.message ?? ""),
             type: String(n.type ?? "info"),
@@ -47,226 +55,414 @@ export default function UserNotificationsPage() {
   }, []);
 
   useEffect(() => {
-    load();
-  }, [load]);
+    loadNotifications();
+  }, [loadNotifications]);
+
+  useEffect(() => {
+    const idParam = searchParams.get("id");
+    const id = idParam ? Number(idParam) : NaN;
+    if (!items.length) return;
+    let next = items.find((i) => i.id === id);
+    if (!next) next = items.find((i) => !i.read) ?? items[0] ?? null;
+    if (next) setSelected(next);
+  }, [items, searchParams]);
+
+  useEffect(() => {
+    if (!selected) {
+      setActionError(null);
+    } else if (actionError && actionError.id !== selected.id) {
+      setActionError(null);
+    }
+  }, [selected, actionError]);
 
   const filteredItems = useMemo(() => {
-    if (filter === "unread") return items.filter((i) => !i.read);
-    if (filter === "read") return items.filter((i) => i.read);
-    return items;
-  }, [items, filter]);
+    return tab === "unread" ? items.filter((i) => !i.read) : items;
+  }, [items, tab]);
 
-  const markRead = useCallback(async (ids: number[]) => {
-    try {
-      await fetch("/api/notifications", {
+  const setReadState = useCallback(
+    async (ids: number[], read: boolean) => {
+      if (!ids.length) return;
+      const res = await fetch("/api/notifications", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ids, read: true }),
+        body: JSON.stringify({ ids, read }),
       });
-    } catch {}
-    load();
-  }, [load]);
+      if (!res.ok) {
+        let message = "Gagal memperbarui status notifikasi.";
+        try {
+          const data = await res.json();
+          if (typeof data?.message === "string") message = data.message;
+        } catch {}
+        throw new Error(message);
+      }
+      setItems((prev) => prev.map((row) => (ids.includes(row.id) ? { ...row, read } : row)));
+    },
+    [],
+  );
 
-  const isApprovalNotification = (row: NotificationRow) => {
-    const t = `${row.title} ${row.message}`.toLowerCase();
-    const keys = [
-      "approve", "approval", "verifikasi", "aktivasi", "aktifkan",
-      "daftar", "pendaftaran", "signup", "register", "registrasi",
-    ];
-    return keys.some((k) => t.includes(k));
-  };
+  const markAllAsRead = useCallback(async () => {
+    const unreadIds = items.filter((i) => !i.read).map((i) => i.id);
+    if (!unreadIds.length) return;
+    try {
+      await setReadState(unreadIds, true);
+    } catch (err: any) {
+      toast.error(err?.message || "Gagal menandai semua notifikasi.");
+    }
+  }, [items, setReadState]);
+
+  const clearAllNotifications = useCallback(async () => {
+    try {
+      const res = await fetch("/api/notifications", { method: "DELETE" });
+      if (!res.ok) {
+        let message = "Gagal mengosongkan notifikasi.";
+        try {
+          const data = await res.json();
+          if (typeof data?.message === "string") message = data.message;
+        } catch {}
+        throw new Error(message);
+      }
+      setItems([]);
+      setSelected(null);
+      setDetailModalOpen(false);
+      toast.success("Daftar notifikasi dikosongkan.");
+    } catch (err: any) {
+      toast.error(err?.message || "Gagal mengosongkan notifikasi.");
+    }
+  }, []);
+
+  const handleOpenDetail = useCallback(
+    (row: NotificationRow) => {
+      setSelected(row);
+      setDetailModalOpen(true);
+      router.replace(`/system-user/notifications/user?id=${row.id}`);
+    },
+    [router],
+  );
 
   const extractEmailFromText = (text: string) => {
-    const m = text.match(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i);
-    return m ? m[0] : null;
+    const match = text.match(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i);
+    return match ? match[0] : null;
   };
 
-  const findPendingUserByEmail = async (email: string) => {
+  async function resolvePendingUserId(email: string) {
     const res = await fetch(`/api/users?status=pending`, { cache: "no-store" });
     const json = await res.json();
-    const list = Array.isArray(json?.data) ? json.data : [];
-    return list.find((u: any) => String(u.email).toLowerCase() === String(email).toLowerCase()) || null;
-  };
-
-  const handlePreview = async (row: NotificationRow) => {
-    // Hapus notifikasi saat dibuka (preview dianggap dibuka)
-    try { await markRead([row.id]); } catch {}
-    setSelected(row);
-    setPreviewOpen(true);
-  };
-
-  const handleApprove = async (row: NotificationRow) => {
-    try {
-      setError(null);
-      const email = extractEmailFromText(`${row.title} ${row.message}`);
-      if (!email) throw new Error("Email tidak ditemukan pada notifikasi");
-      const user = await findPendingUserByEmail(email);
-      if (!user) throw new Error("User pending tidak ditemukan");
-      const rolesRes = await fetch(`/api/roles`, { cache: "no-store" });
-      const rolesJson = await rolesRes.json();
-      const roles = Array.isArray(rolesJson?.data) ? rolesJson.data : [];
-      setRoleOptions(roles.map((r: any) => ({ id: r.id, name: r.name })));
-      setSelectedRole(roles[0]?.name || "User");
-      setPendingApproval({ notif: row, userId: Number(user.id) });
-      setRoleModalOpen(true);
-    } catch (err: any) {
-      console.error("[Approve] error:", err);
-      setError(err?.message || "Terjadi kesalahan menyiapkan approve");
+    if (!json?.success || !Array.isArray(json?.data)) {
+      throw new Error(json?.message || "Gagal memuat daftar user.");
     }
-  };
+    const target = json.data.find((u: any) => String(u.email).toLowerCase() === email.toLowerCase());
+    if (!target?.id) {
+      throw new Error("User dengan email tersebut tidak ditemukan dalam status pending.");
+    }
+    return Number(target.id);
+  }
 
-  const confirmApproveWithRole = async () => {
-    if (!pendingApproval) { setRoleModalOpen(false); return; }
-    const { notif, userId } = pendingApproval;
+  async function loadRoleOptions() {
+    const res = await fetch(`/api/roles`, { cache: "no-store" });
+    const json = await res.json();
+    if (!Array.isArray(json?.data)) return [];
+    return json.data.map((r: any) => ({ id: Number(r.id), name: String(r.name) }));
+  }
+
+  const beginApprove = useCallback(
+    async (row: NotificationRow) => {
+      if (detailModalOpen && approvingId && approvingId !== row.id) return;
+      setActionError(null);
+      const email = extractEmailFromText(`${row.title} ${row.message}`);
+      if (!email) {
+        const message = "Email tidak ditemukan di pesan notifikasi.";
+        setActionError({ id: row.id, type: "approve", message });
+        toast.error(message);
+        return;
+      }
+      try {
+        setApprovingId(row.id);
+        const userId = await resolvePendingUserId(email);
+        const roles = await loadRoleOptions();
+        const safeRoles = roles.length ? roles : [{ id: 0, name: "User" }];
+        setRoleOptions(safeRoles);
+        setSelectedRole(safeRoles[0]?.name || "User");
+        setPendingApproval({ row, userId });
+        setRoleModalOpen(true);
+      } catch (err: any) {
+        const message = err?.message || "Gagal memperbarui status user.";
+        setActionError({ id: row.id, type: "approve", message });
+        toast.error(message);
+      } finally {
+        setApprovingId(null);
+      }
+    },
+    [detailModalOpen, approvingId],
+  );
+
+  const confirmApprove = useCallback(async () => {
+    if (!pendingApproval) {
+      setRoleModalOpen(false);
+      return;
+    }
+    const { row, userId } = pendingApproval;
     try {
+      setApprovingId(row.id);
       const res = await fetch(`/api/users/${userId}/approve`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ roleName: selectedRole }),
       });
       const json = await res.json();
-      if (!json?.success) throw new Error(json?.message || "Gagal approve user");
-      await markRead([notif.id]);
-      setRoleModalOpen(false);
-      setPendingApproval(null);
+      if (!json?.success) {
+        throw new Error(json?.message || "Gagal memperbarui status user.");
+      }
+      toast.success("User berhasil disetujui.");
+      await setReadState([row.id], true);
+      setSelected((prev) => (prev && prev.id === row.id ? { ...prev, read: true } : prev));
     } catch (err: any) {
-      console.error("[Approve Confirm] error:", err);
-      setError(err?.message || "Terjadi kesalahan saat approve");
+      const message = err?.message || "Gagal memperbarui status user.";
+      setActionError({ id: row.id, type: "approve", message });
+      toast.error(message);
+    } finally {
+      setApprovingId(null);
+      setPendingApproval(null);
+      setRoleModalOpen(false);
     }
+  }, [pendingApproval, selectedRole, setReadState]);
+
+  const handleDecline = useCallback(
+    async (row: NotificationRow) => {
+      if (detailModalOpen && decliningId && decliningId !== row.id) return;
+      setActionError(null);
+      const email = extractEmailFromText(`${row.title} ${row.message}`);
+      if (!email) {
+        const message = "Email tidak ditemukan di pesan notifikasi.";
+        setActionError({ id: row.id, type: "decline", message });
+        toast.error(message);
+        return;
+      }
+      try {
+        setDecliningId(row.id);
+        const userId = await resolvePendingUserId(email);
+        const res = await fetch(`/api/users/${userId}`, { method: "DELETE" });
+        const json = await res.json();
+        if (!json?.success) {
+          throw new Error(json?.message || "Gagal memperbarui status user.");
+        }
+        toast.success("User berhasil ditolak.");
+        await setReadState([row.id], true);
+        setSelected((prev) => (prev && prev.id === row.id ? { ...prev, read: true } : prev));
+      } catch (err: any) {
+        const message = err?.message || "Gagal memperbarui status user.";
+        setActionError({ id: row.id, type: "decline", message });
+        toast.error(message);
+      } finally {
+        setDecliningId(null);
+      }
+    },
+    [detailModalOpen, decliningId, setReadState],
+  );
+
+  const isApprovalNotification = (row: NotificationRow) => {
+    const text = `${row.title} ${row.message}`.toLowerCase();
+    const keys = ["approve", "approval", "verifikasi", "aktivasi", "aktifkan", "daftar", "pendaftaran", "signup", "register", "registrasi"];
+    return keys.some((k) => text.includes(k));
   };
 
-  const handleDecline = async (row: NotificationRow) => {
-    try {
-      setError(null);
-      const email = extractEmailFromText(`${row.title} ${row.message}`);
-      if (!email) throw new Error("Email tidak ditemukan pada notifikasi");
-      const user = await findPendingUserByEmail(email);
-      if (!user) throw new Error("User pending tidak ditemukan");
-      const res = await fetch(`/api/users/${user.id}`, { method: "DELETE" });
-      const json = await res.json();
-      if (!json?.success) throw new Error(json?.message || "Gagal decline user");
-      await markRead([row.id]);
-    } catch (err: any) {
-      console.error("[Decline] error:", err);
-      setError(err?.message || "Terjadi kesalahan saat decline");
-    }
+  const closeRoleModal = () => {
+    setRoleModalOpen(false);
+    setPendingApproval(null);
   };
 
   return (
     <FeatureGuard feature="system.user">
-      <div className="p-6">
-        <div className="mb-4 flex items-center justify-between">
-          <h1 className="text-xl font-semibold">Notifikasi User</h1>
-          <div className="flex items-center gap-2">
+      <div className="space-y-4 p-6">
+        <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+          <div>
+            <h1 className="text-xl font-semibold">Notifikasi User</h1>
+            <p className="text-sm text-gray-500 dark:text-gray-400">Kelola notifikasi pribadi Anda dari halaman ini.</p>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            {(["all", "unread"] as Tab[]).map((key) => (
+              <button
+                key={key}
+                onClick={() => setTab(key)}
+                className={`rounded-full px-3 py-1 text-sm border ${
+                  tab === key
+                    ? "bg-gray-900 text-white dark:bg-white/10"
+                    : "bg-white text-gray-700 hover:bg-gray-100 dark:bg-gray-900 dark:text-gray-300 dark:hover:bg-gray-800"
+                }`}
+              >
+                {key === "all" ? "Semua" : "Belum dibaca"}
+              </button>
+            ))}
             <button
-              onClick={() => setFilter("all")}
-              className={`rounded-full px-3 py-1 text-sm border ${filter === "all" ? "bg-gray-800 text-white dark:bg-white/10" : "bg-white text-gray-700 dark:bg-gray-900 dark:text-gray-300"}`}
+              className="rounded-full px-3 py-1 text-sm border bg-white text-gray-700 hover:bg-gray-100 dark:bg-gray-900 dark:text-gray-300 dark:hover:bg-gray-800 disabled:opacity-50"
+              onClick={markAllAsRead}
+              disabled={!items.some((i) => !i.read)}
             >
-              Semua
+              Tandai semua dibaca
             </button>
             <button
-              onClick={() => setFilter("unread")}
-              className={`rounded-full px-3 py-1 text-sm border ${filter === "unread" ? "bg-gray-800 text-white dark:bg-white/10" : "bg-white text-gray-700 dark:bg-gray-900 dark:text-gray-300"}`}
+              className="rounded-full px-3 py-1 text-sm border bg-red-50 text-red-600 hover:bg-red-100 dark:bg-red-500/10 dark:text-red-300 dark:hover:bg-red-500/20 disabled:opacity-50"
+              onClick={clearAllNotifications}
+              disabled={!items.length}
             >
-              Belum Dibaca
-            </button>
-            <button
-              onClick={() => setFilter("read")}
-              className={`rounded-full px-3 py-1 text-sm border ${filter === "read" ? "bg-gray-800 text-white dark:bg-white/10" : "bg-white text-gray-700 dark:bg-gray-900 dark:text-gray-300"}`}
-            >
-              Sudah Dibaca
+              Kosongkan
             </button>
           </div>
         </div>
 
         {error && (
-          <div className="mb-4 rounded-lg border border-red-300 bg-red-50 p-3 text-sm text-red-800 dark:border-red-700/50 dark:bg-red-500/10 dark:text-red-300">
+          <div className="rounded-lg border border-red-300 bg-red-50 p-3 text-sm text-red-800 dark:border-red-700/50 dark:bg-red-500/10 dark:text-red-300">
             {error}
           </div>
         )}
 
-        <NotificationTable
-          items={filteredItems}
-          onMarkRead={markRead}
-          onPreview={handlePreview}
-          onApprove={hasRole("owner") ? handleApprove : undefined}
-          onDecline={hasRole("owner") ? handleDecline : undefined}
-        />
-        <Modal isOpen={previewOpen} onClose={() => setPreviewOpen(false)} className="max-w-xl">
-          <div className="p-6">
-            <h2 className="text-lg font-semibold text-gray-800 dark:text-white/90 mb-2">Preview Notifikasi</h2>
-            {selected ? (
-              <div className="space-y-3">
-                <div className="text-sm text-gray-500 dark:text-gray-400">{new Date(selected.createdAt).toLocaleString()}</div>
-                <div className="text-base font-medium text-gray-800 dark:text-white/90">{selected.title}</div>
-                <div className="text-gray-700 dark:text-gray-300 whitespace-pre-line">{selected.message}</div>
-                <div className="flex items-center gap-2 pt-2">
-                  {hasRole("owner") && isApprovalNotification(selected) && (
-                    <>
-                      <button
-                        className="rounded-full bg-green-600 px-3 py-1.5 text-white text-sm hover:bg-green-700"
-                        onClick={() => selected && handleApprove(selected)}
-                      >
-                        Approve
-                      </button>
-                      <button
-                        className="rounded-full bg-red-600 px-3 py-1.5 text-white text-sm hover:bg-red-700"
-                        onClick={() => selected && handleDecline(selected)}
-                      >
-                        Decline
-                      </button>
-                    </>
-                  )}
+        <div className="rounded-2xl border border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-900">
+          <ul className="divide-y divide-gray-100 dark:divide-gray-800">
+            {filteredItems.map((row) => {
+              const createdAt = typeof row.createdAt === "string" ? new Date(row.createdAt) : row.createdAt;
+              const isActive = selected?.id === row.id;
+              return (
+                <li key={row.id}>
                   <button
-                    className="rounded-full border px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-100 dark:text-gray-300 dark:border-gray-700 dark:hover:bg-gray-800"
-                    onClick={() => setPreviewOpen(false)}
+                    type="button"
+                    onClick={() => handleOpenDetail(row)}
+                    className={`flex w-full items-start gap-3 px-4 py-3 text-left transition ${
+                      isActive
+                        ? "bg-brand-500/10 ring-1 ring-brand-400 dark:bg-brand-500/20"
+                        : row.read
+                        ? "bg-white hover:bg-gray-50 dark:bg-gray-900 dark:hover:bg-gray-800"
+                        : "bg-brand-50/70 hover:bg-brand-50 dark:bg-brand-500/15 dark:hover:bg-brand-500/20"
+                    }`}
                   >
-                    Tutup
+                    <span
+                      className={`mt-1 h-2.5 w-2.5 rounded-full ${
+                        row.read ? "bg-gray-300 dark:bg-gray-600" : "bg-brand-500"
+                      }`}
+                    />
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center justify-between gap-3">
+                        <p className="truncate text-sm font-semibold text-gray-900 dark:text-gray-100">{row.title}</p>
+                        <span className="whitespace-nowrap text-xs text-gray-500 dark:text-gray-400">
+                          {createdAt.toLocaleString()}
+                        </span>
+                      </div>
+                      {row.message ? (
+                        <p className="mt-1 line-clamp-2 text-sm text-gray-600 dark:text-gray-300">{row.message}</p>
+                      ) : null}
+                    </div>
                   </button>
-                </div>
-              </div>
-            ) : (
-              <p className="text-sm text-gray-600 dark:text-gray-400">Tidak ada notifikasi dipilih.</p>
+                </li>
+              );
+            })}
+            {!filteredItems.length && (
+              <li className="px-4 py-6 text-center text-sm text-gray-500 dark:text-gray-400">
+                Tidak ada notifikasi pada filter ini.
+              </li>
+            )}
+          </ul>
+        </div>
+        {loading && <p className="text-sm text-gray-500 dark:text-gray-400">Memuat…</p>}
+      </div>
+
+      <Modal isOpen={detailModalOpen && !!selected} onClose={() => setDetailModalOpen(false)} className="max-w-xl">
+        {selected ? (
+          <div className="space-y-4 p-6">
+            <div className="space-y-1">
+              <p className="text-xs text-gray-500 dark:text-gray-400">
+                {(typeof selected.createdAt === "string" ? new Date(selected.createdAt) : selected.createdAt).toLocaleString()}
+              </p>
+              <h2 className="text-lg font-semibold text-gray-900 dark:text-white">{selected.title}</h2>
+            </div>
+            <p className="whitespace-pre-line text-sm text-gray-700 dark:text-gray-300">{selected.message}</p>
+            <div className="flex flex-wrap items-center gap-2 pt-1">
+              <button
+                className="rounded-full bg-brand-500 px-3 py-1.5 text-sm text-white hover:bg-brand-600 disabled:opacity-50"
+                onClick={async () => {
+                  try {
+                    await setReadState([selected.id], true);
+                    setSelected((prev) => (prev ? { ...prev, read: true } : prev));
+                  } catch (err: any) {
+                    toast.error(err?.message || "Gagal menandai notifikasi.");
+                  }
+                }}
+                disabled={selected.read}
+              >
+                Tandai dibaca
+              </button>
+              <button
+                className="rounded-full border px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-100 dark:text-gray-300 dark:border-gray-700 dark:hover:bg-gray-800 disabled:opacity-50"
+                onClick={async () => {
+                  try {
+                    await setReadState([selected.id], false);
+                    setSelected((prev) => (prev ? { ...prev, read: false } : prev));
+                  } catch (err: any) {
+                    toast.error(err?.message || "Gagal mengubah status notifikasi.");
+                  }
+                }}
+                disabled={!selected.read}
+              >
+                Tandai belum dibaca
+              </button>
+              {hasRole("owner") && isApprovalNotification(selected) && (
+                <>
+                  <button
+                    className="rounded-full bg-green-600 px-3 py-1.5 text-sm text-white hover:bg-green-700 disabled:opacity-60"
+                    onClick={() => beginApprove(selected)}
+                    disabled={approvingId === selected.id || decliningId === selected.id}
+                  >
+                    {approvingId === selected.id ? "Memproses..." : "Approve"}
+                  </button>
+                  <button
+                    className="rounded-full bg-red-600 px-3 py-1.5 text-sm text-white hover:bg-red-700 disabled:opacity-60"
+                    onClick={() => handleDecline(selected)}
+                    disabled={decliningId === selected.id || approvingId === selected.id}
+                  >
+                    {decliningId === selected.id ? "Memproses..." : "Decline"}
+                  </button>
+                </>
+              )}
+            </div>
+            {actionError && actionError.id === selected.id && (
+              <p className="text-xs text-red-500">{actionError.message}</p>
             )}
           </div>
-        </Modal>
-        {loading && (
-          <p className="mt-3 text-sm text-gray-500">Memuat…</p>
-        )}
-        {roleModalOpen && (
-          <Modal isOpen={roleModalOpen} onClose={() => setRoleModalOpen(false)} className="max-w-sm">
-            <div className="p-6">
-              <h2 className="text-lg font-semibold text-gray-800 dark:text-white/90 mb-3">Pilih Role untuk User</h2>
-              <div className="space-y-2">
-                <label className="text-sm text-gray-600 dark:text-gray-400">Role</label>
-                <select
-                  className="w-full rounded-md border px-3 py-2 text-sm dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200"
-                  value={selectedRole}
-                  onChange={(e) => setSelectedRole(e.target.value)}
-                >
-                  {roleOptions.map((r) => (
-                    <option key={r.id} value={r.name}>{r.name}</option>
-                  ))}
-                </select>
-              </div>
-              <div className="mt-4 flex items-center gap-2">
-                <button
-                  className="rounded-full bg-green-600 px-3 py-1.5 text-white text-sm hover:bg-green-700"
-                  onClick={confirmApproveWithRole}
-                >
-                  Konfirmasi
-                </button>
-                <button
-                  className="rounded-full border px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-100 dark:text-gray-300 dark:border-gray-700 dark:hover:bg-gray-800"
-                  onClick={() => setRoleModalOpen(false)}
-                >
-                  Batal
-                </button>
-              </div>
-            </div>
-          </Modal>
-        )}
-      </div>
+        ) : null}
+      </Modal>
+
+      <Modal isOpen={roleModalOpen} onClose={closeRoleModal} className="max-w-sm">
+        <div className="space-y-4 p-6">
+          <h2 className="text-lg font-semibold text-gray-900 dark:text-white">Pilih Role untuk User</h2>
+          <div className="space-y-2">
+            <label className="text-sm text-gray-600 dark:text-gray-400">Role</label>
+            <select
+              className="w-full rounded-md border px-3 py-2 text-sm dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200"
+              value={selectedRole}
+              onChange={(e) => setSelectedRole(e.target.value)}
+            >
+              {roleOptions.map((role) => (
+                <option key={role.id} value={role.name}>
+                  {role.name}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div className="flex items-center gap-2">
+            <button
+              className="rounded-full bg-green-600 px-3 py-1.5 text-sm text-white hover:bg-green-700 disabled:opacity-60"
+              onClick={confirmApprove}
+              disabled={approvingId === pendingApproval?.row.id}
+            >
+              {approvingId === pendingApproval?.row.id ? "Memproses..." : "Konfirmasi"}
+            </button>
+            <button
+              className="rounded-full border px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-100 dark:text-gray-300 dark:border-gray-700 dark:hover:bg-gray-800"
+              onClick={closeRoleModal}
+            >
+              Batal
+            </button>
+          </div>
+        </div>
+      </Modal>
     </FeatureGuard>
   );
 }
+

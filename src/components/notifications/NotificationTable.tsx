@@ -10,6 +10,7 @@ export type NotificationRow = {
   type: "info" | "success" | "warning" | "error" | string;
   read: boolean;
   createdAt: string | Date;
+  targetUrl?: string | null;
 };
 
 type Props = {
@@ -19,6 +20,7 @@ type Props = {
   onApprove?: (row: NotificationRow) => Promise<void> | void;
   onDecline?: (row: NotificationRow) => Promise<void> | void;
   className?: string;
+  showActionsColumn?: boolean;
 };
 
 const typeColor: Record<string, string> = {
@@ -37,10 +39,11 @@ function formatDate(value: string | Date) {
   }
 }
 
-export default function NotificationTable({ items, onMarkRead, onPreview, onApprove, onDecline, className }: Props) {
+export default function NotificationTable({ items, onMarkRead, onPreview, onApprove, onDecline, className, showActionsColumn = true }: Props) {
   const { hasRole } = useGlobal();
   const unreadIds = useMemo(() => items.filter((i) => !i.read).map((i) => i.id), [items]);
   const brandDotStyle: React.CSSProperties = { backgroundColor: "var(--brand-primary, #0EA5E9)" };
+  const hasAnyActions = Boolean(showActionsColumn && (onMarkRead || onPreview || onApprove || onDecline));
 
   const isApprovalNotification = (row: NotificationRow) => {
     const t = `${row.title} ${row.message}`.toLowerCase();
@@ -75,13 +78,19 @@ export default function NotificationTable({ items, onMarkRead, onPreview, onAppr
               <th className="px-3 py-2">Pesan</th>
               <th className="px-3 py-2">Tipe</th>
               <th className="px-3 py-2">Waktu</th>
-              <th className="px-3 py-2">Aksi</th>
+              {hasAnyActions && (
+                <th className="px-3 py-2">Aksi</th>
+              )}
             </tr>
           </thead>
           <tbody>
             {items.length ? (
               items.map((row) => (
-                <tr key={row.id} className="border-t border-gray-100 hover:bg-gray-50 dark:border-gray-800 dark:hover:bg-white/5">
+                <tr
+                  key={row.id}
+                  className={`border-t border-gray-100 dark:border-gray-800 ${typeof onPreview === "function" ? "hover:bg-gray-50 dark:hover:bg-white/5 cursor-pointer" : "hover:bg-gray-50 dark:hover:bg-white/5"}`}
+                  onClick={() => { if (typeof onPreview === "function") onPreview(row); }}
+                >
                   <td className="px-3 py-2">
                     <span
                       title={row.read ? "Sudah dibaca" : "Belum dibaca"}
@@ -97,47 +106,49 @@ export default function NotificationTable({ items, onMarkRead, onPreview, onAppr
                     <span className={`inline-block rounded-full px-2 py-0.5 text-xs ${typeColor[String(row.type).toLowerCase()] ?? typeColor.info}`}>{String(row.type).toUpperCase()}</span>
                   </td>
                   <td className="px-3 py-2 text-gray-600 dark:text-gray-400 whitespace-nowrap">{formatDate(row.createdAt)}</td>
-                  <td className="px-3 py-2">
-                    <div className="flex items-center gap-2">
-                      {onMarkRead && !row.read && (
-                        <button
-                          className="text-xs rounded-full bg-brand-500/90 px-3 py-1 text-white hover:bg-brand-600"
-                          onClick={() => onMarkRead([row.id])}
-                        >
-                          Tandai dibaca
-                        </button>
-                      )}
-                      {onMarkRead && row.read && (
-                        <span className="text-xs text-gray-500">—</span>
-                      )}
-                      {/* Preview */}
-                      {typeof onPreview === "function" && (
-                        <button
-                          className="text-xs rounded-full border px-3 py-1 text-gray-700 hover:bg-gray-100 dark:text-gray-300 dark:border-gray-700 dark:hover:bg-gray-800"
-                          onClick={() => onPreview(row)}
-                        >
-                          Preview
-                        </button>
-                      )}
-                      {/* Approve / Decline for owner on approval notifications */}
-                      {hasRole("owner") && typeof onApprove === "function" && isApprovalNotification(row) && (
-                        <button
-                          className="text-xs rounded-full bg-green-600 px-3 py-1 text-white hover:bg-green-700"
-                          onClick={() => onApprove(row)}
-                        >
-                          Approve
-                        </button>
-                      )}
-                      {hasRole("owner") && typeof onDecline === "function" && isApprovalNotification(row) && (
-                        <button
-                          className="text-xs rounded-full bg-red-600 px-3 py-1 text-white hover:bg-red-700"
-                          onClick={() => onDecline(row)}
-                        >
-                          Decline
-                        </button>
-                      )}
-                    </div>
-                  </td>
+                  {hasAnyActions && (
+                    <td className="px-3 py-2">
+                      <div className="flex items-center gap-2">
+                        {onMarkRead && !row.read && (
+                          <button
+                            className="text-xs rounded-full bg-brand-500/90 px-3 py-1 text-white hover:bg-brand-600"
+                            onClick={(e) => { e.stopPropagation(); onMarkRead([row.id]); }}
+                          >
+                            Tandai dibaca
+                          </button>
+                        )}
+                        {onMarkRead && row.read && (
+                          <span className="text-xs text-gray-500">—</span>
+                        )}
+                        {/* Preview */}
+                        {typeof onPreview === "function" && (
+                          <button
+                            className="text-xs rounded-full border px-3 py-1 text-gray-700 hover:bg-gray-100 dark:text-gray-300 dark:border-gray-700 dark:hover:bg-gray-800"
+                            onClick={(e) => { e.stopPropagation(); onPreview(row); }}
+                          >
+                            Preview
+                          </button>
+                        )}
+                        {/* Approve / Decline for owner on approval notifications */}
+                        {hasRole("owner") && typeof onApprove === "function" && isApprovalNotification(row) && (
+                          <button
+                            className="text-xs rounded-full bg-green-600 px-3 py-1 text-white hover:bg-green-700"
+                            onClick={(e) => { e.stopPropagation(); onApprove(row); }}
+                          >
+                            Approve
+                          </button>
+                        )}
+                        {hasRole("owner") && typeof onDecline === "function" && isApprovalNotification(row) && (
+                          <button
+                            className="text-xs rounded-full bg-red-600 px-3 py-1 text-white hover:bg-red-700"
+                            onClick={(e) => { e.stopPropagation(); onDecline(row); }}
+                          >
+                            Decline
+                          </button>
+                        )}
+                      </div>
+                    </td>
+                  )}
               </tr>
               ))
             ) : (

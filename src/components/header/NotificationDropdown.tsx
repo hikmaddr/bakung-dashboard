@@ -1,7 +1,10 @@
 "use client";
-import Image from "next/image";
 import Link from "next/link";
 import React, { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
+import { Dropdown } from "../ui/dropdown/Dropdown";
+import { toast } from "react-hot-toast";
+
 type NotificationItem = {
   id: number;
   title: string;
@@ -9,212 +12,180 @@ type NotificationItem = {
   type: string;
   read: boolean;
   createdAt: string;
+  targetUrl?: string | null;
 };
-import { Dropdown } from "../ui/dropdown/Dropdown";
-import { DropdownItem } from "../ui/dropdown/DropdownItem";
-import { useGlobal } from "@/context/AppContext";
-import { Modal } from "@/components/ui/modal";
 
 export default function NotificationDropdown() {
-  const { hasRole } = useGlobal();
+  const router = useRouter();
   const [isOpen, setIsOpen] = useState(false);
   const [notifying, setNotifying] = useState(false);
   const containerRef = useRef<HTMLDivElement | null>(null);
-  const [menuStyles, setMenuStyles] = useState<React.CSSProperties | undefined>(undefined);
+  const [menuStyles, setMenuStyles] = useState<React.CSSProperties>();
   const [items, setItems] = useState<NotificationItem[]>([]);
   const [loading, setLoading] = useState(false);
-  const [approvingId, setApprovingId] = useState<number | null>(null);
-  const [approveError, setApproveError] = useState<string | null>(null);
-  const [decliningId, setDecliningId] = useState<number | null>(null);
-  const [declineError, setDeclineError] = useState<string | null>(null);
-  const [previewOpen, setPreviewOpen] = useState<boolean>(false);
-  const [selected, setSelected] = useState<NotificationItem | null>(null);
-  const [roleModalOpen, setRoleModalOpen] = useState<boolean>(false);
-  const [roleOptions, setRoleOptions] = useState<{ id: number; name: string }[]>([]);
-  const [selectedRole, setSelectedRole] = useState<string>("User");
-  const [pendingApproval, setPendingApproval] = useState<{ notif: NotificationItem; userId: number } | null>(null);
+  const displayedToastIdsRef = useRef<Set<number>>(new Set());
+  const initialLoadRef = useRef(true);
 
-  async function loadNotifications() {
+  async function loadNotifications(options: { announceNew?: boolean } = {}) {
+    const { announceNew = true } = options;
     try {
       setLoading(true);
       const res = await fetch("/api/notifications", { cache: "no-store" });
+      if (!res.ok) throw new Error("Gagal memuat notifikasi.");
       const json = await res.json();
-      if (json?.success && Array.isArray(json.data)) {
-        const mapped = json.data.map((n: any) => ({
-          id: n.id,
-          title: n.title,
-          message: n.message,
-          type: n.type,
-          read: n.read ?? n.isRead ?? false,
-          createdAt: n.createdAt,
-        })) as NotificationItem[];
-        setItems(mapped);
-        setNotifying(mapped.some((n: NotificationItem) => !n.read));
+      if (!json?.success || !Array.isArray(json.data)) return;
+
+      const mapped = json.data.map((n: any) => ({
+        id: Number(n.id),
+        title: String(n.title ?? "Notifikasi"),
+        message: String(n.message ?? ""),
+        type: String(n.type ?? "info"),
+        read: Boolean(n.read ?? n.isRead ?? false),
+        createdAt: String(n.createdAt ?? new Date().toISOString()),
+        targetUrl: n.targetUrl ? String(n.targetUrl) : null,
+      })) as NotificationItem[];
+
+      setItems(mapped);
+      setNotifying(mapped.some((n) => !n.read));
+
+      if (announceNew && !initialLoadRef.current) {
+        mapped
+          .filter((n) => !n.read && !displayedToastIdsRef.current.has(n.id))
+          .forEach((notif) => {
+            displayedToastIdsRef.current.add(notif.id);
+            showNotificationToast(notif);
+          });
+      } else if (initialLoadRef.current) {
+        mapped
+          .filter((n) => !n.read)
+          .forEach((notif) => displayedToastIdsRef.current.add(notif.id));
       }
-    } catch (err) {
-      // silent
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Terjadi kesalahan saat memuat notifikasi.";
+      toast.error(message);
     } finally {
       setLoading(false);
+      initialLoadRef.current = false;
     }
   }
 
   function toggleDropdown() {
-    setIsOpen(!isOpen);
+    setIsOpen((prev) => !prev);
   }
 
   function closeDropdown() {
     setIsOpen(false);
   }
 
-  async function updateRead(ids: number[] | undefined, read: boolean = true) {
-    try {
-      await fetch("/api/notifications", {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ids: Array.isArray(ids) ? ids : [], read }),
-      });
-    } catch {}
-  }
-
-  const handleClick = async () => {
-    // Buka/tutup dropdown tanpa menandai seluruh notifikasi sebagai dibaca
-    toggleDropdown();
-    try {
-      await loadNotifications();
-    } catch {}
-  };
-
-  function isApprovalNotification(n: NotificationItem): boolean {
-    const s = `${n.title} ${n.message}`.toLowerCase();
-    // deteksi sederhana untuk notifikasi signup yang butuh approval
-    return s.includes("approve") || s.includes("approval") || s.includes("mendaftar");
-  }
-
-  function extractEmailFromText(text: string): string | null {
-    const match = text.match(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i);
-    return match ? match[0] : null;
-  }
-
-  async function approveFromNotification(n: NotificationItem) {
-    setApproveError(null);
-    const email = extractEmailFromText(`${n.title} ${n.message}`);
-    if (!email) {
-      setApproveError("Email tidak ditemukan di pesan notifikasi.");
-      return;
-    }
-    try {
-      setApprovingId(n.id);
-      // Cari user pending berdasarkan email
-      const listRes = await fetch(`/api/users?status=pending`, { cache: "no-store" });
-      const listJson = await listRes.json();
-      if (!listJson?.success || !Array.isArray(listJson?.data)) {
-        throw new Error(listJson?.message || "Gagal memuat daftar user.");
+  async function updateRead(ids: number[], read: boolean = true) {
+    if (!ids.length) return;
+    const res = await fetch("/api/notifications", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ids, read }),
+    });
+    if (!res.ok) throw new Error("Gagal memperbarui status notifikasi.");
+    const contentType = res.headers.get("content-type") ?? "";
+    if (contentType.includes("application/json")) {
+      const data = await res.json();
+      if (data?.success === false) {
+        throw new Error(data?.message || "Gagal memperbarui status notifikasi.");
       }
-      const target = listJson.data.find((u: any) => String(u.email).toLowerCase() === email.toLowerCase());
-      if (!target?.id) {
-        throw new Error("User dengan email tersebut tidak ditemukan dalam status pending.");
-      }
-      // Load role options, lalu buka modal pemilihan role
-      const rolesRes = await fetch(`/api/roles`, { cache: "no-store" });
-      const rolesJson = await rolesRes.json();
-      const roles = Array.isArray(rolesJson?.data) ? rolesJson.data : [];
-      setRoleOptions(roles.map((r: any) => ({ id: r.id, name: r.name })));
-      setSelectedRole(roles[0]?.name || "User");
-      setPendingApproval({ notif: n, userId: Number(target.id) });
-      setRoleModalOpen(true);
-    } catch (e: any) {
-      setApproveError(e?.message || "Terjadi kesalahan saat approval.");
-    } finally {
-      setApprovingId(null);
     }
   }
 
-  async function confirmApproveWithRole() {
-    if (!pendingApproval) { setRoleModalOpen(false); return; }
-    const { notif, userId } = pendingApproval;
+  async function handleItemClick(notification: NotificationItem) {
     try {
-      const approveRes = await fetch(`/api/users/${userId}/approve`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ roleName: selectedRole }),
-      });
-      const approveJson = await approveRes.json();
-      if (!approveJson?.success) {
-        throw new Error(approveJson?.message || "Gagal melakukan approval.");
-      }
-      // Hapus notifikasi (PATCH read=true kini menghapus)
-      await updateRead([notif.id], true);
+      await updateRead([notification.id], true);
       setItems((prev) => {
-        const next = prev.filter((it) => it.id !== notif.id);
+        const next = prev.map((it) => (it.id === notification.id ? { ...it, read: true } : it));
         setNotifying(next.some((it) => !it.read));
         return next;
       });
-    } catch (e: any) {
-      setApproveError(e?.message || "Terjadi kesalahan saat approval.");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Gagal menandai notifikasi.");
     } finally {
-      setRoleModalOpen(false);
-      setPendingApproval(null);
+      closeDropdown();
+      if (notification.targetUrl) {
+        router.push(notification.targetUrl);
+      } else {
+        router.push(`/system-user/notifications/user?id=${notification.id}`);
+      }
     }
   }
 
-  async function declineFromNotification(n: NotificationItem) {
-    setDeclineError(null);
-    const email = extractEmailFromText(`${n.title} ${n.message}`);
-    if (!email) {
-      setDeclineError("Email tidak ditemukan di pesan notifikasi.");
-      return;
-    }
+  async function clearAllNotifications() {
     try {
-      setDecliningId(n.id);
-      const listRes = await fetch(`/api/users?status=pending`, { cache: "no-store" });
-      const listJson = await listRes.json();
-      if (!listJson?.success || !Array.isArray(listJson?.data)) {
-        throw new Error(listJson?.message || "Gagal memuat daftar user.");
+      const res = await fetch("/api/notifications", { method: "DELETE" });
+      if (!res.ok) {
+        let message = "Gagal mengosongkan notifikasi.";
+        try {
+          const data = await res.json();
+          if (typeof data?.message === "string") message = data.message;
+        } catch {}
+        throw new Error(message);
       }
-      const target = listJson.data.find((u: any) => String(u.email).toLowerCase() === email.toLowerCase());
-      if (!target?.id) {
-        throw new Error("User dengan email tersebut tidak ditemukan dalam status pending.");
-      }
-      const res = await fetch(`/api/users/${target.id}`, { method: "DELETE" });
-      const json = await res.json();
-      if (!json?.success) {
-        throw new Error(json?.message || "Gagal melakukan decline.");
-      }
-      await updateRead([n.id], true);
-      setItems((prev) => {
-        const next = prev.map((it) => (it.id === n.id ? { ...it, read: true } : it));
-        setNotifying(next.some((it) => !it.read));
-        return next;
-      });
-    } catch (e: any) {
-      setDeclineError(e?.message || "Terjadi kesalahan saat decline.");
-    } finally {
-      setDecliningId(null);
+      setItems([]);
+      setNotifying(false);
+      toast.success("Daftar notifikasi dikosongkan.");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Gagal mengosongkan notifikasi.");
     }
   }
 
-  function openPreview(n: NotificationItem) {
-    setSelected(n);
-    setPreviewOpen(true);
+  function showNotificationToast(notification: NotificationItem) {
+    const toastId = `notification-toast-${notification.id}`;
+    const messagePreview =
+      notification.message.length > 140
+        ? `${notification.message.slice(0, 137).trimEnd()}…`
+        : notification.message;
+
+    toast.custom(
+      (t) => (
+        <div
+          className={`pointer-events-auto w-[320px] max-w-[92vw] rounded-xl border border-gray-200 bg-white shadow-lg transition-all duration-200 ease-out dark:border-gray-700 dark:bg-gray-900 ${
+            t.visible ? "translate-y-0 opacity-100" : "-translate-y-1 opacity-0"
+          }`}
+        >
+          <div className="flex flex-col gap-2 p-4">
+            <p className="text-sm font-semibold text-gray-900 dark:text-white">{notification.title}</p>
+            {messagePreview ? (
+              <p className="text-xs text-gray-600 dark:text-gray-300 line-clamp-3">{messagePreview}</p>
+            ) : null}
+            <button
+              type="button"
+              className="mt-1 inline-flex items-center justify-center rounded-lg bg-brand-500 px-3 py-1.5 text-xs font-medium text-white hover:bg-brand-600 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-400 focus-visible:ring-offset-2 dark:focus-visible:ring-offset-gray-900"
+              onClick={() => {
+                toast.dismiss(toastId);
+                router.push(notification.targetUrl || `/system-user/notifications/user?id=${notification.id}`);
+              }}
+            >
+              Buka Modul Notifikasi
+            </button>
+          </div>
+        </div>
+      ),
+      { id: toastId, duration: 6000 },
+    );
   }
+
   useLayoutEffect(() => {
     if (!isOpen) return;
     const updatePosition = () => {
       if (!containerRef.current) return;
       const rect = containerRef.current.getBoundingClientRect();
       const padding = 12;
-      const minWidth = 300;
-      const maxWidth = 380;
+      const minWidth = 280;
+      const maxWidth = 360;
       const available = window.innerWidth - padding * 2;
-      const width = Math.min(Math.max(minWidth, Math.min(maxWidth, available)), 400);
+      const width = Math.min(Math.max(minWidth, Math.min(maxWidth, available)), 380);
 
       const viewportLeft = padding;
       const viewportRight = window.innerWidth - padding - width;
-      // Align to the right edge of the trigger by default
       const preferredLeft = Math.round(rect.right - width);
       const left = Math.min(Math.max(preferredLeft, viewportLeft), viewportRight);
 
-      const estimatedHeight = Math.min(520, Math.round(window.innerHeight * 0.8));
+      const estimatedHeight = Math.min(460, Math.round(window.innerHeight * 0.75));
       const below = Math.round(rect.bottom + 8);
       const viewportBottom = window.innerHeight - padding;
       let top = below;
@@ -225,6 +196,7 @@ export default function NotificationDropdown() {
 
       setMenuStyles({ position: "fixed", top, left, width, zIndex: 60 });
     };
+
     updatePosition();
     const handler = () => updatePosition();
     window.addEventListener("resize", handler);
@@ -238,31 +210,43 @@ export default function NotificationDropdown() {
   useEffect(() => {
     if (!isOpen) return;
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") setIsOpen(false);
+      if (e.key === "Escape") closeDropdown();
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [isOpen]);
 
   useEffect(() => {
-    loadNotifications();
-    const t = setInterval(loadNotifications, 60000);
-    return () => clearInterval(t);
+    loadNotifications({ announceNew: false });
+    const interval = setInterval(() => loadNotifications({ announceNew: true }), 60000);
+    return () => clearInterval(interval);
   }, []);
+
+  const handleToggle = async () => {
+    toggleDropdown();
+    if (!isOpen) {
+      await loadNotifications({ announceNew: false });
+    }
+  };
 
   return (
     <div className="relative" ref={containerRef}>
       <button
+        type="button"
         className="relative dropdown-toggle flex items-center justify-center text-gray-500 transition-colors bg-white border border-gray-200 rounded-full hover:text-gray-700 h-11 w-11 hover:bg-gray-100 dark:border-gray-800 dark:bg-gray-900 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-white"
-        onClick={handleClick}
+        onClick={handleToggle}
+        aria-label="Buka notifikasi"
       >
         <span
           className={`absolute right-0 top-0.5 z-10 h-2 w-2 rounded-full ${
-            !notifying ? "hidden" : "flex"
+            notifying ? "flex" : "hidden"
           }`}
           style={{ backgroundColor: "var(--brand-primary, #0EA5E9)" }}
         >
-          <span className="absolute inline-flex w-full h-full rounded-full opacity-75 animate-ping" style={{ backgroundColor: "var(--brand-primary, #0EA5E9)" }}></span>
+          <span
+            className="absolute inline-flex w-full h-full rounded-full opacity-75 animate-ping"
+            style={{ backgroundColor: "var(--brand-primary, #0EA5E9)" }}
+          />
         </span>
         <svg
           className="fill-current"
@@ -279,28 +263,23 @@ export default function NotificationDropdown() {
           />
         </svg>
       </button>
+
       <Dropdown
         isOpen={isOpen}
         onClose={closeDropdown}
         position="fixed"
         style={menuStyles}
-        className="flex flex-col w-full max-w-[94vw] max-h-[80vh] rounded-2xl border border-gray-200 bg-white p-3 shadow-theme-lg dark:border-gray-800 dark:bg-gray-dark"
+        className="flex w-full max-w-[94vw] flex-col rounded-2xl border border-gray-200 bg-white p-3 shadow-theme-lg dark:border-gray-800 dark:bg-gray-900"
       >
-        <div className="flex items-center justify-between pb-3 mb-3 border-b border-gray-100 dark:border-gray-700">
-          <h5 className="text-lg font-semibold text-gray-800 dark:text-gray-200">
-            Notification
-          </h5>
+        <div className="flex items-center justify-between border-b border-gray-100 pb-3 dark:border-gray-800">
+          <h5 className="text-lg font-semibold text-gray-900 dark:text-gray-100">Notifikasi</h5>
           <button
-            onClick={toggleDropdown}
-            className="text-gray-500 transition dropdown-toggle dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200"
+            type="button"
+            onClick={closeDropdown}
+            className="rounded-full p-1 text-gray-500 transition hover:bg-gray-100 hover:text-gray-700 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-gray-200"
+            aria-label="Tutup notifikasi"
           >
-            <svg
-              className="fill-current"
-              width="24"
-              height="24"
-              viewBox="0 0 24 24"
-              xmlns="http://www.w3.org/2000/svg"
-            >
+            <svg className="h-5 w-5" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
               <path
                 fillRule="evenodd"
                 clipRule="evenodd"
@@ -310,469 +289,73 @@ export default function NotificationDropdown() {
             </svg>
           </button>
         </div>
-        <ul className="flex flex-col h-auto overflow-y-auto custom-scrollbar" style={{ maxHeight: "calc(80vh - 90px)" }}>
-          {loading && (
-            <li className="px-4 py-2 text-sm text-gray-500">Memuat...</li>
-          )}
-          {!loading && items.length > 0 && items.map((n) => (
-            <li key={n.id}>
-              <DropdownItem
-                onItemClick={async () => {
-                  await updateRead([n.id], true);
-                  setItems((prev) => {
-                    const next = prev.map((it) => (it.id === n.id ? { ...it, read: true } : it));
-                    setNotifying(next.some((it) => !it.read));
-                    return next;
-                  });
-                  closeDropdown();
-                }}
-                className="flex gap-3 rounded-lg border-b border-gray-100 p-3 px-4.5 py-3 hover:bg-gray-100 dark:border-gray-800 dark:hover:bg-white/5"
-              >
-                <span className="relative block w-full h-10 rounded-full z-1 max-w-10">
-                  <Image
-                    width={40}
-                    height={40}
-                    src="/images/user/user-02.jpg"
-                    alt="User"
-                    className="w-full overflow-hidden rounded-full"
-                  />
-                  <span className="absolute bottom-0 right-0 z-10 h-2.5 w-full max-w-2.5 rounded-full border-[1.5px] border-white dark:border-gray-900" style={{ backgroundColor: !n.read ? "var(--brand-primary, #0EA5E9)" : "#9CA3AF" }}></span>
-                </span>
+        <div className="mt-2 mb-1 flex items-center justify-between">
+          <button
+            type="button"
+            className="text-xs text-brand-600 hover:text-brand-700 dark:text-brand-300 dark:hover:text-brand-200 disabled:opacity-50"
+            onClick={clearAllNotifications}
+            disabled={!items.length}
+          >
+            Kosongkan notifikasi
+          </button>
+          <span className="text-xs text-gray-500 dark:text-gray-400">
+            {items.length} item
+          </span>
+        </div>
 
-                <span className="block">
-                  <span className="mb-1.5 space-x-1 block text-theme-sm text-gray-700 dark:text-gray-300">
-                    <span className="font-medium text-gray-900 dark:text-white">{n.title}</span>
-                    <span className="text-gray-600 dark:text-gray-400">{n.message}</span>
-                  </span>
-                  <span className="flex items-center gap-2 text-gray-500 text-theme-xs dark:text-gray-400">
-                    <span>{new Date(n.createdAt).toLocaleString()}</span>
-                    {!n.read && (
-                      <span
-                        className="inline-block w-1.5 h-1.5 rounded-full"
-                        style={{ backgroundColor: "var(--brand-primary, #0EA5E9)" }}
-                      />
-                    )}
-                  </span>
-                  {hasRole("owner") && isApprovalNotification(n) && (
-                    <div className="mt-2 flex items-center gap-2">
-                      <span
-                        role="button"
-                        tabIndex={0}
-                        className="px-3 py-1.5 text-sm inline-flex items-center justify-center rounded-md border border-gray-300 bg-white text-gray-800 hover:bg-gray-100 disabled:opacity-60 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200 dark:hover:bg-gray-700"
-                        onClick={(e) => { e.stopPropagation(); approveFromNotification(n); }}
-                        onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.stopPropagation(); approveFromNotification(n); } }}
-                        aria-label="Approve user"
-                        aria-disabled={approvingId === n.id}
-                      >
-                        {approvingId === n.id ? "Meng-approve..." : "Approve"}
-                      </span>
-                      <span
-                        role="button"
-                        tabIndex={0}
-                        className="px-3 py-1.5 text-sm inline-flex items-center justify-center rounded-md border border-gray-300 bg-white text-gray-800 hover:bg-gray-100 disabled:opacity-60 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200 dark:hover:bg-gray-700"
-                        onClick={(e) => { e.stopPropagation(); declineFromNotification(n); }}
-                        onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.stopPropagation(); declineFromNotification(n); } }}
-                        aria-label="Decline user"
-                        aria-disabled={decliningId === n.id}
-                      >
-                        {decliningId === n.id ? "Menolak..." : "Decline"}
-                      </span>
-                      <span
-                        role="button"
-                        tabIndex={0}
-                        className="px-3 py-1.5 text-sm inline-flex items-center justify-center rounded-md border border-gray-300 bg-white text-gray-800 hover:bg-gray-100 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200 dark:hover:bg-gray-700"
-                        onClick={(e) => { e.stopPropagation(); openPreview(n); }}
-                        onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.stopPropagation(); openPreview(n); } }}
-                        aria-label="Preview notification"
-                      >
-                        Preview
-                      </span>
-                      {approveError && approvingId === null && (
-                        <span className="text-xs text-red-600">{approveError}</span>
-                      )}
-                      {declineError && decliningId === null && (
-                        <span className="text-xs text-red-600">{declineError}</span>
-                      )}
+        <ul
+          className="custom-scrollbar mt-2 flex max-h-[60vh] flex-col gap-2 overflow-y-auto"
+          aria-label="Daftar notifikasi"
+        >
+          {loading ? (
+            <li className="px-3 py-2 text-sm text-gray-500 dark:text-gray-400">Memuat...</li>
+          ) : null}
+
+          {!loading &&
+            items.map((n) => (
+              <li key={n.id}>
+                <button
+                  type="button"
+                  onClick={() => handleItemClick(n)}
+                  className={`w-full rounded-xl border px-3 py-3 text-left transition focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 focus-visible:ring-offset-2 dark:focus-visible:ring-offset-gray-900 ${
+                    n.read
+                      ? "border-transparent bg-white hover:border-gray-200 hover:bg-gray-50 dark:bg-gray-900 dark:hover:bg-gray-800"
+                      : "border-brand-200 bg-brand-50/70 hover:border-brand-300 hover:bg-brand-50 dark:border-brand-500/40 dark:bg-brand-500/15 dark:hover:bg-brand-500/20"
+                  }`}
+                >
+                  <div className="flex items-start gap-3">
+                    <span
+                      className={`mt-1 h-2 w-2 shrink-0 rounded-full ${
+                        n.read ? "bg-gray-300 dark:bg-gray-600" : "bg-brand-500"
+                      }`}
+                    />
+                    <div className="flex-1">
+                      <p className="text-sm font-semibold text-gray-900 dark:text-gray-100">{n.title}</p>
+                      <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                        {new Date(n.createdAt).toLocaleString()}
+                      </p>
+                      {n.message ? (
+                        <p className="mt-1 line-clamp-2 text-sm text-gray-600 dark:text-gray-300">{n.message}</p>
+                      ) : null}
                     </div>
-                  )}
-                </span>
-              </DropdownItem>
-            </li>
-          ))}
-          {!loading && items.length === 0 && (
-            <li className="px-4 py-2 text-sm text-gray-500">Tidak ada notifikasi</li>
-          )}
-          {/* Placeholder examples (disabled) */}{false && (<>
-          <li>
-            <DropdownItem
-              onItemClick={closeDropdown}
-              className="flex gap-3 rounded-lg border-b border-gray-100 p-3 px-4.5 py-3 hover:bg-gray-100 dark:border-gray-800 dark:hover:bg-white/5"
-            >
-              <span className="relative block w-full h-10 rounded-full z-1 max-w-10">
-                <Image
-                  width={40}
-                  height={40}
-                  src="/images/user/user-02.jpg"
-                  alt="User"
-                  className="w-full overflow-hidden rounded-full"
-                />
-                <span className="absolute bottom-0 right-0 z-10 h-2.5 w-full max-w-2.5 rounded-full border-[1.5px] border-white bg-success-500 dark:border-gray-900"></span>
-              </span>
+                  </div>
+                </button>
+              </li>
+            ))}
 
-              <span className="block">
-                <span className="mb-1.5 space-x-1 block text-theme-sm text-gray-500 dark:text-gray-400">
-                  <span className="font-medium text-gray-800 dark:text-white/90">
-                    Terry Franci
-                  </span>
-                  <span>requests permission to change</span>
-                  <span className="font-medium text-gray-800 dark:text-white/90">
-                    Project - Nganter App
-                  </span>
-                </span>
-
-                <span className="flex items-center gap-2 text-gray-500 text-theme-xs dark:text-gray-400">
-                  <span>Project</span>
-                  <span className="w-1 h-1 bg-gray-400 rounded-full"></span>
-                  <span>5 min ago</span>
-                </span>
-              </span>
-            </DropdownItem>
-          </li>
-
-          <li>
-            <DropdownItem
-              onItemClick={closeDropdown}
-              className="flex gap-3 rounded-lg border-b border-gray-100 p-3 px-4.5 py-3 hover:bg-gray-100 dark:border-gray-800 dark:hover:bg-white/5"
-            >
-              <span className="relative block w-full h-10 rounded-full z-1 max-w-10">
-                <Image
-                  width={40}
-                  height={40}
-                  src="/images/user/user-03.jpg"
-                  alt="User"
-                  className="w-full overflow-hidden rounded-full"
-                />
-                <span className="absolute bottom-0 right-0 z-10 h-2.5 w-full max-w-2.5 rounded-full border-[1.5px] border-white bg-success-500 dark:border-gray-900"></span>
-              </span>
-
-              <span className="block">
-                <span className="mb-1.5 block space-x-1  text-theme-sm text-gray-500 dark:text-gray-400">
-                  <span className="font-medium text-gray-800 dark:text-white/90">
-                    Alena Franci
-                  </span>
-                  <span> requests permission to change</span>
-                  <span className="font-medium text-gray-800 dark:text-white/90">
-                    Project - Nganter App
-                  </span>
-                </span>
-
-                <span className="flex items-center gap-2 text-gray-500 text-theme-xs dark:text-gray-400">
-                  <span>Project</span>
-                  <span className="w-1 h-1 bg-gray-400 rounded-full"></span>
-                  <span>8 min ago</span>
-                </span>
-              </span>
-            </DropdownItem>
-          </li>
-
-          <li>
-            <DropdownItem
-              onItemClick={closeDropdown}
-              className="flex gap-3 rounded-lg border-b border-gray-100 p-3 px-4.5 py-3 hover:bg-gray-100 dark:border-gray-800 dark:hover:bg-white/5"
-              href="#"
-            >
-              <span className="relative block w-full h-10 rounded-full z-1 max-w-10">
-                <Image
-                  width={40}
-                  height={40}
-                  src="/images/user/user-04.jpg"
-                  alt="User"
-                  className="w-full overflow-hidden rounded-full"
-                />
-                <span className="absolute bottom-0 right-0 z-10 h-2.5 w-full max-w-2.5 rounded-full border-[1.5px] border-white bg-success-500 dark:border-gray-900"></span>
-              </span>
-
-              <span className="block">
-                <span className="mb-1.5 block space-x-1 text-theme-sm text-gray-500 dark:text-gray-400">
-                  <span className="font-medium text-gray-800 dark:text-white/90">
-                    Jocelyn Kenter
-                  </span>
-                  <span>requests permission to change</span>
-                  <span className="font-medium text-gray-800 dark:text-white/90">
-                    Project - Nganter App
-                  </span>
-                </span>
-
-                <span className="flex items-center gap-2 text-gray-500 text-theme-xs dark:text-gray-400">
-                  <span>Project</span>
-                  <span className="w-1 h-1 bg-gray-400 rounded-full"></span>
-                  <span>15 min ago</span>
-                </span>
-              </span>
-            </DropdownItem>
-          </li>
-
-          <li>
-            <DropdownItem
-              onItemClick={closeDropdown}
-              className="flex gap-3 rounded-lg border-b border-gray-100 p-3 px-4.5 py-3 hover:bg-gray-100 dark:border-gray-800 dark:hover:bg-white/5"
-              href="#"
-            >
-              <span className="relative block w-full h-10 rounded-full z-1 max-w-10">
-                <Image
-                  width={40}
-                  height={40}
-                  src="/images/user/user-05.jpg"
-                  alt="User"
-                  className="w-full overflow-hidden rounded-full"
-                />
-                <span className="absolute bottom-0 right-0 z-10 h-2.5 w-full max-w-2.5 rounded-full border-[1.5px] border-white bg-error-500 dark:border-gray-900"></span>
-              </span>
-
-              <span className="block">
-                <span className="mb-1.5 space-x-1 block text-theme-sm text-gray-500 dark:text-gray-400">
-                  <span className="font-medium text-gray-800 dark:text-white/90">
-                    Brandon Philips
-                  </span>
-                  <span> requests permission to change</span>
-                  <span className="font-medium text-gray-800 dark:text-white/90">
-                    Project - Nganter App
-                  </span>
-                </span>
-
-                <span className="flex items-center gap-2 text-gray-500 text-theme-xs dark:text-gray-400">
-                  <span>Project</span>
-                  <span className="w-1 h-1 bg-gray-400 rounded-full"></span>
-                  <span>1 hr ago</span>
-                </span>
-              </span>
-            </DropdownItem>
-          </li>
-
-          <li>
-            <DropdownItem
-              className="flex gap-3 rounded-lg border-b border-gray-100 p-3 px-4.5 py-3 hover:bg-gray-100 dark:border-gray-800 dark:hover:bg-white/5"
-              onItemClick={closeDropdown}
-            >
-              <span className="relative block w-full h-10 rounded-full z-1 max-w-10">
-                <Image
-                  width={40}
-                  height={40}
-                  src="/images/user/user-02.jpg"
-                  alt="User"
-                  className="w-full overflow-hidden rounded-full"
-                />
-                <span className="absolute bottom-0 right-0 z-10 h-2.5 w-full max-w-2.5 rounded-full border-[1.5px] border-white bg-success-500 dark:border-gray-900"></span>
-              </span>
-
-              <span className="block">
-                <span className="mb-1.5 space-x-1 block text-theme-sm text-gray-500 dark:text-gray-400">
-                  <span className="font-medium text-gray-800 dark:text-white/90">
-                    Terry Franci
-                  </span>
-                  <span>requests permission to change</span>
-                  <span className="font-medium text-gray-800 dark:text-white/90">
-                    Project - Nganter App
-                  </span>
-                </span>
-
-                <span className="flex items-center gap-2 text-gray-500 text-theme-xs dark:text-gray-400">
-                  <span>Project</span>
-                  <span className="w-1 h-1 bg-gray-400 rounded-full"></span>
-                  <span>5 min ago</span>
-                </span>
-              </span>
-            </DropdownItem>
-          </li>
-
-          <li>
-            <DropdownItem
-              onItemClick={closeDropdown}
-              className="flex gap-3 rounded-lg border-b border-gray-100 p-3 px-4.5 py-3 hover:bg-gray-100 dark:border-gray-800 dark:hover:bg-white/5"
-            >
-              <span className="relative block w-full h-10 rounded-full z-1 max-w-10">
-                <Image
-                  width={40}
-                  height={40}
-                  src="/images/user/user-03.jpg"
-                  alt="User"
-                  className="w-full overflow-hidden rounded-full"
-                />
-                <span className="absolute bottom-0 right-0 z-10 h-2.5 w-full max-w-2.5 rounded-full border-[1.5px] border-white bg-success-500 dark:border-gray-900"></span>
-              </span>
-
-              <span className="block">
-                <span className="mb-1.5 space-x-1 block text-theme-sm text-gray-500 dark:text-gray-400">
-                  <span className="font-medium text-gray-800 dark:text-white/90">
-                    Alena Franci
-                  </span>
-                  <span>requests permission to change</span>
-                  <span className="font-medium text-gray-800 dark:text-white/90">
-                    Project - Nganter App
-                  </span>
-                </span>
-
-                <span className="flex items-center gap-2 text-gray-500 text-theme-xs dark:text-gray-400">
-                  <span>Project</span>
-                  <span className="w-1 h-1 bg-gray-400 rounded-full"></span>
-                  <span>8 min ago</span>
-                </span>
-              </span>
-            </DropdownItem>
-          </li>
-
-          <li>
-            <DropdownItem
-              onItemClick={closeDropdown}
-              className="flex gap-3 rounded-lg border-b border-gray-100 p-3 px-4.5 py-3 hover:bg-gray-100 dark:border-gray-800 dark:hover:bg-white/5"
-            >
-              <span className="relative block w-full h-10 rounded-full z-1 max-w-10">
-                <Image
-                  width={40}
-                  height={40}
-                  src="/images/user/user-04.jpg"
-                  alt="User"
-                  className="w-full overflow-hidden rounded-full"
-                />
-                <span className="absolute bottom-0 right-0 z-10 h-2.5 w-full max-w-2.5 rounded-full border-[1.5px] border-white bg-success-500 dark:border-gray-900"></span>
-              </span>
-
-              <span className="block">
-                <span className="mb-1.5 space-x-1 block text-theme-sm text-gray-500 dark:text-gray-400">
-                  <span className="font-medium text-gray-800 dark:text-white/90">
-                    Jocelyn Kenter
-                  </span>
-                  <span>requests permission to change</span>
-                  <span className="font-medium text-gray-800 dark:text-white/90">
-                    Project - Nganter App
-                  </span>
-                </span>
-
-                <span className="flex items-center gap-2 text-gray-500 text-theme-xs dark:text-gray-400">
-                  <span>Project</span>
-                  <span className="w-1 h-1 bg-gray-400 rounded-full"></span>
-                  <span>15 min ago</span>
-                </span>
-              </span>
-            </DropdownItem>
-          </li>
-
-          <li>
-            <DropdownItem
-              onItemClick={closeDropdown}
-              className="flex gap-3 rounded-lg border-b border-gray-100 p-3 px-4.5 py-3 hover:bg-gray-100 dark:border-gray-800 dark:hover:bg-white/5"
-              href="#"
-            >
-              <span className="relative block w-full h-10 rounded-full z-1 max-w-10">
-                <Image
-                  width={40}
-                  height={40}
-                  src="/images/user/user-05.jpg"
-                  alt="User"
-                  className="overflow-hidden rounded-full"
-                />
-                <span className="absolute bottom-0 right-0 z-10 h-2.5 w-full max-w-2.5 rounded-full border-[1.5px] border-white bg-error-500 dark:border-gray-900"></span>
-              </span>
-
-              <span className="block">
-                <span className="mb-1.5 space-x-1 block text-theme-sm text-gray-500 dark:text-gray-400">
-                  <span className="font-medium text-gray-800 dark:text-white/90">
-                    Brandon Philips
-                  </span>
-                  <span>requests permission to change</span>
-                  <span className="font-medium text-gray-800 dark:text-white/90">
-                    Project - Nganter App
-                  </span>
-                </span>
-
-                <span className="flex items-center gap-2 text-gray-500 text-theme-xs dark:text-gray-400">
-                  <span>Project</span>
-                  <span className="w-1 h-1 bg-gray-400 rounded-full"></span>
-                  <span>1 hr ago</span>
-                </span>
-              </span>
-            </DropdownItem>
-          </li>
-          </>)}{/* Add more items as needed */}
+          {!loading && items.length === 0 ? (
+            <li className="px-3 py-2 text-sm text-gray-500 dark:text-gray-400">Tidak ada notifikasi</li>
+          ) : null}
         </ul>
+
         <Link
           href="/system-user/notifications/user"
-          className="block px-4 py-2 mt-3 text-sm font-medium text-center text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-100 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-400 dark:hover:bg-gray-700"
+          className="mt-3 inline-flex items-center justify-center rounded-xl border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 transition hover:bg-gray-100 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800"
+          onClick={closeDropdown}
         >
-          View All Notifications
+          Lihat Semua Notifikasi
         </Link>
       </Dropdown>
-      {roleModalOpen && (
-        <Modal isOpen={roleModalOpen} onClose={() => setRoleModalOpen(false)} className="max-w-sm">
-          <div className="p-6">
-            <h2 className="text-lg font-semibold text-gray-800 dark:text-white/90 mb-3">Pilih Role untuk User</h2>
-            <div className="space-y-2">
-              <label className="text-sm text-gray-600 dark:text-gray-400">Role</label>
-              <select
-                className="w-full rounded-md border px-3 py-2 text-sm dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200"
-                value={selectedRole}
-                onChange={(e) => setSelectedRole(e.target.value)}
-              >
-                {roleOptions.map((r) => (
-                  <option key={r.id} value={r.name}>{r.name}</option>
-                ))}
-              </select>
-            </div>
-            <div className="mt-4 flex items-center gap-2">
-              <button
-                className="rounded-full bg-green-600 px-3 py-1.5 text-white text-sm hover:bg-green-700"
-                onClick={confirmApproveWithRole}
-              >
-                Konfirmasi
-              </button>
-              <button
-                className="rounded-full border px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-100 dark:text-gray-300 dark:border-gray-700 dark:hover:bg-gray-800"
-                onClick={() => setRoleModalOpen(false)}
-              >
-                Batal
-              </button>
-            </div>
-          </div>
-        </Modal>
-      )}
-      <Modal isOpen={previewOpen} onClose={() => setPreviewOpen(false)} className="max-w-xl">
-        <div className="p-6">
-          <h2 className="text-lg font-semibold text-gray-800 dark:text-white/90 mb-2">Preview Notifikasi</h2>
-          {selected ? (
-            <div className="space-y-3">
-              <div className="text-sm text-gray-500 dark:text-gray-400">{new Date(selected.createdAt).toLocaleString()}</div>
-              <div className="text-base font-medium text-gray-800 dark:text-white/90">{selected.title}</div>
-              <div className="text-gray-700 dark:text-gray-300 whitespace-pre-line">{selected.message}</div>
-              <div className="flex items-center gap-2 pt-2">
-                {hasRole("owner") && isApprovalNotification(selected) && (
-                  <>
-                    <button
-                      className="rounded-full bg-green-600 px-3 py-1.5 text-white text-sm hover:bg-green-700"
-                      onClick={() => selected && approveFromNotification(selected)}
-                    >
-                      Approve
-                    </button>
-                    <button
-                      className="rounded-full bg-red-600 px-3 py-1.5 text-white text-sm hover:bg-red-700"
-                      onClick={() => selected && declineFromNotification(selected)}
-                    >
-                      Decline
-                    </button>
-                  </>
-                )}
-                <button
-                  className="rounded-full border px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-100 dark:text-gray-300 dark:border-gray-700 dark:hover:bg-gray-800"
-                  onClick={() => setPreviewOpen(false)}
-                >
-                  Tutup
-                </button>
-              </div>
-            </div>
-          ) : (
-            <p className="text-sm text-gray-600 dark:text-gray-400">Tidak ada notifikasi dipilih.</p>
-          )}
-        </div>
-      </Modal>
     </div>
   );
 }

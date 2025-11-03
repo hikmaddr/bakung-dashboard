@@ -6,6 +6,16 @@ export async function GET() {
   try {
     const auth = await getAuth();
     if (!auth?.userId) return NextResponse.json({ success: false, message: "Unauthorized" }, { status: 401 });
+
+    // Otomatis hapus notifikasi yang lebih lama dari 24 jam
+    const threshold = new Date(Date.now() - 24 * 60 * 60 * 1000);
+    await prisma.notification.deleteMany({
+      where: {
+        userId: auth.userId,
+        createdAt: { lt: threshold },
+      },
+    });
+
     const items = await prisma.notification.findMany({ where: { userId: auth.userId }, orderBy: { createdAt: "desc" } });
     return NextResponse.json({ success: true, data: items });
   } catch (err: any) {
@@ -36,11 +46,30 @@ export async function PATCH(req: NextRequest) {
 
     await prisma.notification.updateMany({
       where: { id: { in: ids }, userId: auth.userId },
-      data: { read },
+      data: {
+        isRead: read,
+        readAt: read ? new Date() : null,
+      },
     });
     return NextResponse.json({ success: true });
   } catch (err: any) {
     console.error("[notifications][PATCH]", err);
     return NextResponse.json({ success: false, message: err?.message || "Gagal update notif" }, { status: 500 });
+  }
+}
+
+export async function DELETE() {
+  try {
+    const auth = await getAuth();
+    if (!auth?.userId) return NextResponse.json({ success: false, message: "Unauthorized" }, { status: 401 });
+
+    const deleted = await prisma.notification.deleteMany({
+      where: { userId: auth.userId },
+    });
+
+    return NextResponse.json({ success: true, deleted: deleted.count });
+  } catch (err: any) {
+    console.error("[notifications][DELETE]", err);
+    return NextResponse.json({ success: false, message: err?.message || "Gagal mengosongkan notifikasi" }, { status: 500 });
   }
 }

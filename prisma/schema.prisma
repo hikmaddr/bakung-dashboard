@@ -297,6 +297,7 @@ model BrandProfile {
   // Opposite relations for User default brand & brand scopes
   defaultUsers    User[]           @relation("UserDefaultBrand")
   userBrandScopes UserBrandScope[]
+  signatureProfiles SignatureProfile[]
 
   @@map("brand_profile")
 }
@@ -714,6 +715,22 @@ model UserBrandScope {
   @@map("user_brand_scope")
 }
 
+// Tambahkan model SignatureProfile sebelum model ActivityLog
+model SignatureProfile {
+  id            Int          @id @default(autoincrement())
+  name          String
+  title         String?
+  imageUrl      String
+  brandProfileId Int?
+  createdAt     DateTime     @default(now())
+  updatedAt     DateTime     @updatedAt
+  deletedAt     DateTime?
+  brand         BrandProfile? @relation(fields: [brandProfileId], references: [id])
+
+  @@index([brandProfileId])
+  @@map("signatureprofile")
+}
+
 model ActivityLog {
   id        Int       @id @default(autoincrement())
   userId    Int?
@@ -756,6 +773,7 @@ model Notification {
   isRead         Boolean   @default(false)
   createdAt      DateTime  @default(now())
   readAt         DateTime?
+  targetUrl      String?   @db.VarChar(255)
 
   user           User?         @relation(fields: [userId], references: [id])
   brandProfile   BrandProfile? @relation(fields: [brandProfileId], references: [id])
