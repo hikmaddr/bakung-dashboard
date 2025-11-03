@@ -1,18 +1,21 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
-import path from "path";
-import { writeFile } from "fs/promises";
+import { saveFile } from "@/lib/storage";
 import crypto from "crypto";
 
-async function saveFile(file: File, productName: string) {
-  const bytes = await file.arrayBuffer();
-  const buffer = Buffer.from(bytes);
-  const ext = file.name.split(".").pop();
-  const safe = productName.replace(/\s+/g, "_").toLowerCase();
-  const unique = `${safe}_${crypto.randomUUID()}.${ext}`;
-  const uploadPath = path.join(process.cwd(), "public/uploads", unique);
-  await writeFile(uploadPath, buffer);
-  return `/uploads/${unique}`;
+async function saveProductImage(file: File, productName: string) {
+  const safe = (productName || "product").replace(/\s+/g, "_").toLowerCase();
+  const { url } = await saveFile(file, {
+    prefix: `products/${safe}/`,
+    allowedContentTypes: [
+      "image/png",
+      "image/jpeg",
+      "image/jpg",
+      "image/webp",
+    ],
+    maxSizeBytes: 10 * 1024 * 1024,
+  });
+  return url;
 }
 
 export async function GET(_req: NextRequest) {
@@ -39,7 +42,7 @@ export async function POST(req: NextRequest) {
       const qty = Number(fd.get('qty')||0);
       const file = fd.get('photo') as File | null;
       let imageUrl: string|undefined = undefined;
-      if (file && (file as any).size) imageUrl = await saveFile(file, name || sku || 'product');
+      if (file && (file as any).size) imageUrl = await saveProductImage(file, name || sku || 'product');
       const row = await prisma.product.create({ data: { sku, name, description: description || null, categoryId: categoryId || undefined, unit, buyPrice, sellPrice, qty, imageUrl } });
       return NextResponse.json(row, { status: 201 });
     } else {
@@ -52,4 +55,3 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: e?.message || 'Gagal menyimpan' }, { status: 500 });
   }
 }
-

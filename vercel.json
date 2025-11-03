@@ -1,0 +1,11 @@
+{
+  "regions": ["sin1"],
+  "functions": {
+    "api/**": {
+      "regions": ["sin1"]
+    }
+  },
+  "images": {
+    "formats": ["image/avif", "image/webp"]
+  }
+}

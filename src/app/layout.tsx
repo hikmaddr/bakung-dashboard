@@ -12,6 +12,7 @@ import NextTopLoader from "nextjs-toploader";
 // ✅ TAMBAHKAN: Import Provider yang sudah Anda buat
 import { ToastProvider } from "@/context/ToastContext"; 
 import { GlobalProvider } from "@/context/AppContext";
+import { Analytics } from "@vercel/analytics/react";
 
 
 const outfit = Outfit({
@@ -50,6 +51,8 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             <ToastProvider>
               <GlobalProvider>
                 {children}
+                {/* Vercel Analytics */}
+                <Analytics />
               </GlobalProvider>
             </ToastProvider>
 

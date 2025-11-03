@@ -1,6 +1,8 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
-  /* config options here */
+  compress: true,
+  poweredByHeader: false,
+  reactStrictMode: true,
   eslint: {
     // Skip ESLint during production builds to prevent build failures due to lint errors
     ignoreDuringBuilds: true,
@@ -11,6 +13,7 @@ const nextConfig = {
     ignoreBuildErrors: true,
   },
   images: {
+    formats: ["image/avif", "image/webp"],
     remotePatterns: [
       {
         protocol: 'https',
@@ -33,7 +36,41 @@ const nextConfig = {
       'public.blob.vercel-storage.com',
     ],
   },
+  experimental: {
+    optimizePackageImports: [
+      'lucide-react',
+      'date-fns',
+    ],
+  },
   turbopack: {},
+  async headers() {
+    return [
+      {
+        source: '/_next/static/:path*',
+        headers: [
+          { key: 'Cache-Control', value: 'public, max-age=31536000, immutable' },
+        ],
+      },
+      {
+        source: '/images/:path*',
+        headers: [
+          { key: 'Cache-Control', value: 'public, max-age=31536000, immutable' },
+        ],
+      },
+      {
+        source: '/assets/:path*',
+        headers: [
+          { key: 'Cache-Control', value: 'public, max-age=31536000, immutable' },
+        ],
+      },
+      {
+        source: '/uploads/:path*',
+        headers: [
+          { key: 'Cache-Control', value: 'public, max-age=31536000, immutable' },
+        ],
+      },
+    ];
+  },
   webpack(config) {
     // Temukan rule bawaan Next yang menangani asset, lalu kecualikan .svg
     const fileLoaderRule = config.module.rules.find(

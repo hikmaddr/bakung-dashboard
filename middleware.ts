@@ -19,7 +19,22 @@ export function middleware(req: NextRequest) {
     pathname === "/favicon.ico";
 
   // Allow public routes (signin, signup, auth APIs, static assets)
-  if (isPublic) return NextResponse.next();
+  if (isPublic) {
+    const res = NextResponse.next();
+    // Cache static assets aggressively; HTML pages will be covered below
+    if (
+      pathname.startsWith("/_next/static") ||
+      pathname.startsWith("/images") ||
+      pathname.startsWith("/assets") ||
+      pathname.startsWith("/uploads") ||
+      pathname.endsWith(".svg") ||
+      pathname === "/favicon.ico" ||
+      pathname === "/logo.png"
+    ) {
+      res.headers.set("Cache-Control", "public, max-age=31536000, immutable");
+    }
+    return res;
+  }
 
   const token = req.cookies.get(COOKIE)?.value;
   if (!token) {
@@ -58,7 +73,10 @@ export function middleware(req: NextRequest) {
             url.searchParams.set("redirect", pathname);
             return NextResponse.redirect(url);
           }
-          return NextResponse.next();
+          const nextRes = NextResponse.next();
+          // Default page caching for SSR/SSG responses
+          nextRes.headers.set("Cache-Control", "public, s-maxage=60, stale-while-revalidate=300");
+          return nextRes;
         })
         .catch(() => NextResponse.next());
     }
@@ -84,7 +102,9 @@ export function middleware(req: NextRequest) {
 
     const isBrandTxn = brandTxnPrefixes.some((p) => pathname.startsWith(p));
     if (!isBrandTxn) {
-      return NextResponse.next();
+      const nextRes = NextResponse.next();
+      nextRes.headers.set("Cache-Control", "public, s-maxage=60, stale-while-revalidate=300");
+      return nextRes;
     }
 
     // Forward cookies to brand-access-check endpoint
@@ -104,7 +124,11 @@ export function middleware(req: NextRequest) {
       .then(async (res) => {
         if (res.ok) {
           const data = await res.json().catch(() => ({}));
-          if (data?.allowed) return NextResponse.next();
+          if (data?.allowed) {
+            const nextRes = NextResponse.next();
+            nextRes.headers.set("Cache-Control", "public, s-maxage=60, stale-while-revalidate=300");
+            return nextRes;
+          }
         }
 
         // Jika bukan API route (page navigation), redirect ke forbidden
@@ -117,7 +141,9 @@ export function middleware(req: NextRequest) {
         }
 
         // Untuk API route, kembalikan 403 JSON
-        return NextResponse.json({ success: false, message: "Forbidden: brand scope" }, { status: 403 });
+        const jsonRes = NextResponse.json({ success: false, message: "Forbidden: brand scope" }, { status: 403 });
+        jsonRes.headers.set("Cache-Control", "no-store");
+        return jsonRes;
       })
       .catch(() => {
         // Jika terjadi error pada checker, fail-safe: block API, redirect page
@@ -128,13 +154,17 @@ export function middleware(req: NextRequest) {
           url.searchParams.set("redirect", pathname);
           return NextResponse.redirect(url);
         }
-        return NextResponse.json({ success: false, message: "Brand scope check error" }, { status: 403 });
+        const jsonRes = NextResponse.json({ success: false, message: "Brand scope check error" }, { status: 403 });
+        jsonRes.headers.set("Cache-Control", "no-store");
+        return jsonRes;
       });
   } catch {
     const url = req.nextUrl.clone();
     url.pathname = "/signin";
     url.searchParams.set("redirect", pathname);
-    return NextResponse.redirect(url);
+    const res = NextResponse.redirect(url);
+    res.headers.set("Cache-Control", "no-store");
+    return res;
   }
 }
 

@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { getActiveBrandProfile, resolveAllowedBrandIds } from "@/lib/brand";
 import { getAuth } from "@/lib/auth";
 import { logActivity } from "@/lib/activity";
+import { saveFile } from "@/lib/storage";
 
 async function saveAttachments(formData: FormData) {
   const files: File[] = [];
@@ -11,17 +12,11 @@ async function saveAttachments(formData: FormData) {
     if (key === "attachments" && value instanceof File) files.push(value);
   }
   for (const f of files) {
-    const arrayBuffer = await f.arrayBuffer();
-    const bytes = Buffer.from(arrayBuffer);
-    const ext = f.name.split(".").pop();
-    const fileName = `${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`;
-    const fs = await import("fs");
-    const path = await import("path");
-    const uploadDir = path.join(process.cwd(), "public", "uploads");
-    if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir, { recursive: true });
-    const fullPath = path.join(uploadDir, fileName);
-    fs.writeFileSync(fullPath, bytes);
-    attachments.push({ url: `/uploads/${fileName}`, name: f.name, type: f.type });
+    const result = await saveFile(f, {
+      prefix: "attachments/",
+      maxSizeBytes: 20 * 1024 * 1024,
+    });
+    attachments.push({ url: result.url, name: f.name, type: f.type });
   }
   return attachments;
 }

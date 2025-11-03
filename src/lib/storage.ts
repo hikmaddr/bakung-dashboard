@@ -68,7 +68,15 @@ export async function saveFile(
     }
   }
 
-  // Local filesystem fallback (works in dev; not persistent on serverless)
+  // Local filesystem fallback (works in dev; NOT suitable on Vercel serverless)
+  // Prevent EROFS on Vercel by requiring Blob token in production
+  if (process.env.VERCEL) {
+    throw new Error(
+      "Blob token belum dikonfigurasi. Set BLOB_READ_WRITE_TOKEN di Vercel Project Environment untuk mengaktifkan upload yang persisten."
+    );
+  }
+
+  // Development-only local write
   const uploadsRoot = path.join(process.cwd(), "public", "uploads");
   const targetDir = path.join(uploadsRoot, prefix);
   ensureDir(targetDir);

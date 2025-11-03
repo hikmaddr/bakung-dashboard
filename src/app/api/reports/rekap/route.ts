@@ -2,6 +2,9 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getAuth } from "@/lib/auth";
 
+// Cache hasil rekap selama 15 menit di edge/CDN, sambil SWR 5 menit
+export const revalidate = 900;
+
 function parseCsvNumbers(val?: string | null): number[] {
   if (!val) return [];
   return val
@@ -331,9 +334,13 @@ export async function GET(req: NextRequest) {
       brandSummary,
     };
     console.log("[reports/rekap] response ok");
-    return NextResponse.json(response);
+    const res = NextResponse.json(response);
+    res.headers.set("Cache-Control", "public, s-maxage=900, stale-while-revalidate=300");
+    return res;
   } catch (err: any) {
     console.error("[reports/rekap][GET]", err);
-    return NextResponse.json({ success: false, message: err?.message || "Gagal memuat rekap" }, { status: 500 });
+    const resErr = NextResponse.json({ success: false, message: err?.message || "Gagal memuat rekap" }, { status: 500 });
+    resErr.headers.set("Cache-Control", "no-store");
+    return resErr;
   }
 }
