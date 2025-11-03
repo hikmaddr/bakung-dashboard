@@ -2,8 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getAuth } from "@/lib/auth";
 
-// Cache hasil rekap selama 15 menit di edge/CDN, sambil SWR 5 menit
-export const revalidate = 900;
+export const dynamic = "force-dynamic";
 
 function parseCsvNumbers(val?: string | null): number[] {
   if (!val) return [];
@@ -42,10 +41,8 @@ async function resolveAllowedBrandIds(userId: number | null, roles?: string[] | 
 
 export async function GET(req: NextRequest) {
   try {
-    console.log("[reports/rekap] incoming", { url: req.url });
     const auth = await getAuth();
-    console.log("[reports/rekap] auth", { userId: auth?.userId, roles: auth?.roles });
-    const url = new URL(req.url);
+    const url = req.nextUrl;
     const dateFromStr = url.searchParams.get("dateFrom");
     const dateToStr = url.searchParams.get("dateTo");
     const brandIdsCsv = url.searchParams.get("brandIds");
@@ -106,7 +103,6 @@ export async function GET(req: NextRequest) {
 
     // client filter for sales/invoice
     const clientId = clientIdStr ? Number(clientIdStr) : undefined;
-    console.log("[reports/rekap] filters", { dateFrom, dateTo, requestedBrandIds, allowedBrandIds, aggregateMode, clientId, clientName, supplier, page, pageSize });
     if (clientId && !Number.isNaN(clientId)) {
       whereSales.customerId = clientId;
       whereInvoice.customerId = clientId;
