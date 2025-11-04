@@ -105,7 +105,23 @@ export default function PembelianLangsungDetailPage({ params }: { params: { id: 
                 </div>
                 <div>
                   {p.receipt ? (
-                    <a className="text-blue-600 underline" href={`/api/receipts/${p.receipt.id}/pdf`} target="_blank" rel="noreferrer">{p.receipt.receiptNumber}</a>
+                    <button
+                      type="button"
+                      className="text-blue-600 underline"
+                      onClick={async () => {
+                        const { formatDownloadFileName } = await import("@/utils/downloadFilename");
+                        const { downloadUrlAsFile } = await import("@/utils/downloadFile");
+                        const fileName = formatDownloadFileName(
+                          p.receipt?.receiptNumber,
+                          undefined,
+                          p.receipt?.receiptNumber || "Receipt",
+                          "Receipt"
+                        );
+                        await downloadUrlAsFile(`/api/receipts/${p.receipt.id}/pdf`, fileName);
+                      }}
+                    >
+                      {p.receipt.receiptNumber}
+                    </button>
                   ) : (
                     <span className="text-gray-500">Tanpa kwitansi</span>
                   )}

@@ -33,6 +33,7 @@ model Customer {
   createdAt   DateTime     @default(now())
   updatedAt   DateTime     @updatedAt
   deletedAt   DateTime?
+  isDeleted   Boolean      @default(false)
   email       String?
   brandProfileId Int?
   invoices    Invoice[]
@@ -41,6 +42,7 @@ model Customer {
   brand       BrandProfile? @relation(fields: [brandProfileId], references: [id])
 
   @@index([brandProfileId])
+  @@index([isDeleted])
   @@map("customer")
 }
 
@@ -56,6 +58,7 @@ model Quotation {
   createdAt       DateTime        @default(now())
   updatedAt       DateTime        @updatedAt
   deletedAt       DateTime?
+  isDeleted       Boolean         @default(false)
   projectFileUrl  String?
   status          String
   totalAmount     Float           @default(0)
@@ -68,6 +71,9 @@ model Quotation {
 
   @@index([customerId], map: "Quotation_customerId_fkey")
   @@index([brandProfileId])
+  @@index([date])
+  @@index([status])
+  @@index([isDeleted])
   @@map("quotation")
 }
 
@@ -104,6 +110,7 @@ model SalesOrder {
   createdAt     DateTime         @default(now())
   updatedAt     DateTime         @updatedAt
   deletedAt     DateTime?
+  isDeleted     Boolean          @default(false)
   extraDiscount Float            @default(0)
   lineDiscount  Float            @default(0)
   subtotal      Float            @default(0)
@@ -121,6 +128,10 @@ model SalesOrder {
   @@index([customerId], map: "SalesOrder_customerId_fkey")
   @@index([quotationId], map: "SalesOrder_quotationId_fkey")
   @@index([brandProfileId])
+  @@index([date])
+  @@index([status])
+  @@index([paymentStatus])
+  @@index([isDeleted])
   @@map("salesorder")
 }
 
@@ -168,6 +179,7 @@ model Invoice {
   createdAt          DateTime      @default(now())
   updatedAt          DateTime      @updatedAt
   deletedAt          DateTime?
+  isDeleted          Boolean       @default(false)
   shareUrl           String?
   customer           Customer      @relation(fields: [customerId], references: [id])
   quotation          Quotation?    @relation(fields: [quotationId], references: [id])
@@ -178,6 +190,10 @@ model Invoice {
   @@index([customerId])
   @@index([quotationId])
   @@index([brandProfileId])
+  @@index([issueDate])
+  @@index([status])
+  @@index([paymentStatus])
+  @@index([isDeleted])
   @@map("invoice")
 }
 
@@ -235,6 +251,7 @@ model Product {
   createdAt   DateTime         @default(now())
   updatedAt   DateTime         @updatedAt
   deletedAt   DateTime?
+  isDeleted   Boolean          @default(false)
   category    ProductCategory? @relation(fields: [categoryId], references: [id])
   brand       BrandProfile?    @relation(fields: [brandProfileId], references: [id])
   stockMutations StockMutation[]
@@ -243,6 +260,7 @@ model Product {
 
   @@index([categoryId])
   @@index([brandProfileId])
+  @@index([isDeleted])
   @@map("product")
 }
 
@@ -298,6 +316,8 @@ model BrandProfile {
   defaultUsers    User[]           @relation("UserDefaultBrand")
   userBrandScopes UserBrandScope[]
   signatureProfiles SignatureProfile[]
+  // Back-relation for ShortLink.brand
+  shortLinks      ShortLink[]
 
   @@map("brand_profile")
 }
@@ -347,6 +367,7 @@ model PurchaseDirect {
   createdAt       DateTime  @default(now())
   updatedAt       DateTime  @updatedAt
   deletedAt       DateTime?
+  isDeleted       Boolean   @default(false)
 
   items           PurchaseDirectItem[]
   brand           BrandProfile? @relation(fields: [brandProfileId], references: [id])
@@ -357,6 +378,10 @@ model PurchaseDirect {
   @@index([brandProfileId])
   @@index([salesOrderId])
   @@index([createdByUserId])
+  @@index([date])
+  @@index([status])
+  @@index([paymentStatus])
+  @@index([isDeleted])
   @@map("purchasedirect")
 }
 
@@ -417,6 +442,8 @@ model PurchaseInvoice {
 
   @@index([brandProfileId])
   @@index([purchaseDirectId])
+  @@index([date])
+  @@index([status])
   @@unique([brandProfileId, invoiceNumber])
   @@map("purchaseinvoice")
 }
@@ -568,6 +595,8 @@ model PaymentIn {
   @@index([invoiceId])
   @@index([salesOrderId])
   @@index([createdById])
+  @@index([paidAt])
+  @@index([status])
   @@map("paymentin")
 }
 
@@ -596,6 +625,8 @@ model PaymentOut {
   @@index([brandProfileId])
   @@index([purchaseInvoiceId])
   @@index([createdById])
+  @@index([paidAt])
+  @@index([status])
   @@map("paymentout")
 }
 
@@ -620,6 +651,7 @@ model Expense {
   @@index([brandProfileId])
   @@index([paymentId])
   @@index([paymentOutId])
+  @@index([paidAt])
   @@map("expense")
 }
 
@@ -725,6 +757,7 @@ model SignatureProfile {
   createdAt     DateTime     @default(now())
   updatedAt     DateTime     @updatedAt
   deletedAt     DateTime?
+  isDeleted     Boolean      @default(false)
   brand         BrandProfile? @relation(fields: [brandProfileId], references: [id])
 
   @@index([brandProfileId])
@@ -795,4 +828,28 @@ enum NotificationRoleTarget {
   ADMIN
   STAFF
   ALL
+}
+
+// =============================
+// ShortLink Model
+// =============================
+
+model ShortLink {
+  id              Int           @id @default(autoincrement())
+  slug            String        @unique
+  targetUrl       String
+  brandProfileId  Int?
+  entity          String?
+  entityId        Int?
+  visitCount      Int           @default(0)
+  lastAccessAt    DateTime?
+  isActive        Boolean       @default(true)
+  createdAt       DateTime      @default(now())
+  deletedAt       DateTime?
+
+  brand           BrandProfile? @relation(fields: [brandProfileId], references: [id])
+
+  @@index([brandProfileId])
+  @@index([entity, entityId])
+  @@map("shortlink")
 }

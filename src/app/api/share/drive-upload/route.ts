@@ -1,6 +1,8 @@
 import { NextResponse, type NextRequest } from "next/server";
+export const runtime = "nodejs";
 import { put } from "@vercel/blob";
 import { prisma } from "@/lib/prisma";
+import { createOrUpdateShortLink } from "@/lib/shortlink";
 
 type ShareRequest = {
   type: "quotation" | "invoice" | "sales-order" | "receipt" | "delivery";
@@ -92,18 +94,17 @@ export async function POST(req: NextRequest) {
 
     const buffer = Buffer.from(pdfBytes);
     const safeName = fileName.replace(/[^a-zA-Z0-9._-]/g, "_");
-    const blob = await put(
-      `${body.type || "document"}/${Date.now()}-${safeName}`,
-      buffer,
-      {
-        access: "public",
-        addRandomSuffix: true,
-        token: process.env.BLOB_READ_WRITE_TOKEN,
-        contentType: "application/pdf",
-      }
-    );
+    // Store with a concise, readable path and without random suffix.
+    // Keep a timestamp to avoid collisions while keeping URL short.
+    const blobPath = `${body.type || "document"}/${Date.now()}-${safeName}`;
+    const blob = await put(blobPath, buffer, {
+      access: "public",
+      addRandomSuffix: false,
+      token: process.env.BLOB_READ_WRITE_TOKEN,
+      contentType: "application/pdf",
+    });
 
-    const responsePayload = {
+    const responsePayload: any = {
       success: true,
       fileId: blob.pathname,
       webViewLink: blob.url,
@@ -114,26 +115,59 @@ export async function POST(req: NextRequest) {
 
     if (Number.isFinite(numericId)) {
       try {
+        let brandProfileId: number | null = null;
         if (body.type === "invoice") {
-          await prisma.invoice.update({
-            where: { id: numericId },
-            data: { shareUrl: blob.url },
+          const rec = await prisma.invoice.findUnique({ where: { id: numericId }, select: { brandProfileId: true, invoiceNumber: true } });
+          brandProfileId = rec?.brandProfileId ?? null;
+          const { shortUrl } = await createOrUpdateShortLink({
+            type: "invoice",
+            entityId: numericId,
+            brandProfileId,
+            targetUrl: blob.url,
+            hint: rec?.invoiceNumber || safeName,
+            origin,
           });
+          await prisma.invoice.update({ where: { id: numericId }, data: { shareUrl: shortUrl } });
+          responsePayload.shortUrl = shortUrl;
         } else if (body.type === "quotation") {
-          await prisma.quotation.update({
-            where: { id: numericId },
-            data: { shareUrl: blob.url },
+          const rec = await prisma.quotation.findUnique({ where: { id: numericId }, select: { brandProfileId: true, quotationNumber: true } as any });
+          brandProfileId = (rec as any)?.brandProfileId ?? null;
+          const { shortUrl } = await createOrUpdateShortLink({
+            type: "quotation",
+            entityId: numericId,
+            brandProfileId,
+            targetUrl: blob.url,
+            hint: (rec as any)?.quotationNumber || safeName,
+            origin,
           });
+          await prisma.quotation.update({ where: { id: numericId }, data: { shareUrl: shortUrl } });
+          responsePayload.shortUrl = shortUrl;
         } else if (body.type === "sales-order") {
-          await prisma.salesOrder.update({
-            where: { id: numericId },
-            data: { shareUrl: blob.url },
+          const rec = await prisma.salesOrder.findUnique({ where: { id: numericId }, select: { brandProfileId: true, soNumber: true } as any });
+          brandProfileId = (rec as any)?.brandProfileId ?? null;
+          const { shortUrl } = await createOrUpdateShortLink({
+            type: "sales-order",
+            entityId: numericId,
+            brandProfileId,
+            targetUrl: blob.url,
+            hint: (rec as any)?.soNumber || safeName,
+            origin,
           });
+          await prisma.salesOrder.update({ where: { id: numericId }, data: { shareUrl: shortUrl } });
+          responsePayload.shortUrl = shortUrl;
         } else if (body.type === "receipt") {
-          await prisma.receipt.update({
-            where: { id: numericId },
-            data: { shareUrl: blob.url },
+          const rec = await prisma.receipt.findUnique({ where: { id: numericId }, select: { brandProfileId: true, receiptNumber: true } as any });
+          brandProfileId = (rec as any)?.brandProfileId ?? null;
+          const { shortUrl } = await createOrUpdateShortLink({
+            type: "receipt",
+            entityId: numericId,
+            brandProfileId,
+            targetUrl: blob.url,
+            hint: (rec as any)?.receiptNumber || safeName,
+            origin,
           });
+          await prisma.receipt.update({ where: { id: numericId }, data: { shareUrl: shortUrl } });
+          responsePayload.shortUrl = shortUrl;
         }
       } catch (err) {
         console.error("[share/drive-upload] failed to persist shareUrl", err);

@@ -1,17 +1,7 @@
 "use client";
 
-import React, { createContext, useContext, useEffect, useMemo, useState, useCallback } from "react";
-import { api } from "@/utils/api";
-
-type UserInfo = {
-  id: number;
-  email: string;
-  name: string | null;
-  firstName?: string | null;
-  lastName?: string | null;
-  avatar?: string | null;
-  roles: string[];
-};
+import React, { createContext, useContext, useEffect, useMemo, useCallback, useRef } from "react";
+import { useSessionStore, type UserInfo } from "@/store/useSessionStore";
 
 type GlobalState = {
   activeBrandId: number | null;
@@ -25,48 +15,19 @@ type GlobalState = {
 const GlobalContext = createContext<GlobalState | undefined>(undefined);
 
 export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const [activeBrandId, setActiveBrandId] = useState<number | null>(null);
-  const [user, setUser] = useState<UserInfo | null>(null);
-  const [loading, setLoading] = useState(true);
+  const activeBrandId = useSessionStore((s) => s.activeBrandId);
+  const user = useSessionStore((s) => s.user);
+  const loading = useSessionStore((s) => s.loading);
+  const setActiveBrandId = useSessionStore((s) => s.setActiveBrandId);
+  const hydrate = useSessionStore((s) => s.hydrate);
 
-  const fetchInitial = useCallback(async () => {
-    setLoading(true);
-    try {
-      // Load user profile
-      const profileRes = await api.get<{ success: boolean; data?: any }>("/api/profile");
-      if (profileRes?.success && profileRes.data) {
-        const d = profileRes.data;
-        setUser({
-          id: d.id,
-          email: d.email,
-          name: d.name ?? null,
-          firstName: d.firstName ?? null,
-          lastName: d.lastName ?? null,
-          avatar: d.avatar ?? null,
-          roles: Array.isArray(d.roles) ? d.roles : [],
-        });
-      } else {
-        setUser(null);
-      }
-
-      // Resolve active brand id via brand access check
-      const brandRes = await api.get<{ success: boolean; allowed?: boolean; brandProfileId?: number }>(
-        "/api/auth/brand-access-check"
-      );
-      if (brandRes?.success && brandRes.allowed && typeof brandRes.brandProfileId === "number") {
-        setActiveBrandId(brandRes.brandProfileId);
-      }
-    } catch (e) {
-      // silence; unauthenticated or error
-      setUser(null);
-    } finally {
-      setLoading(false);
-    }
-  }, []);
-
+  const didHydrate = useRef(false);
   useEffect(() => {
-    fetchInitial();
-  }, [fetchInitial]);
+    if (didHydrate.current) return;
+    didHydrate.current = true;
+    // Initial hydration from API
+    hydrate();
+  }, [hydrate]);
 
   const hasRole = useCallback(
     (role: string) => {
@@ -77,12 +38,12 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   );
 
   const refresh = useCallback(async () => {
-    await fetchInitial();
-  }, [fetchInitial]);
+    await hydrate();
+  }, [hydrate]);
 
   const value = useMemo<GlobalState>(
     () => ({ activeBrandId, user, loading, setActiveBrandId, hasRole, refresh }),
-    [activeBrandId, user, loading, hasRole, refresh]
+    [activeBrandId, user, loading, setActiveBrandId, hasRole, refresh]
   );
 
   return <GlobalContext.Provider value={value}>{children}</GlobalContext.Provider>;

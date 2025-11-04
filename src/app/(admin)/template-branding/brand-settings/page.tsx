@@ -1832,6 +1832,7 @@ function BrandSettingsPage() {
                         <div className="text-sm text-blue-800 space-y-1">
                           <p><strong>Current:</strong> {formData.numberFormats?.invoice?.replace('{YYYY}', '2025').replace('{0000}', '0001') || 'INV-2025-0001'}</p>
                           <p><strong>Variables:</strong> {`{BRAND}`} = 3-letter code, {`{YYYY}`} = Year, {`{MM}`} = Month (01-12), {`{ROMAN}`} = Month in Roman, {`{SEQ4}`} = 4-digit sequence</p>
+                          <p className="italic">Note: Jika {`{BRAND}`} tidak dicantumkan, sistem otomatis menambahkan prefix kode brand di depan nomor.</p>
                         </div>
                       </div>
                     </div>

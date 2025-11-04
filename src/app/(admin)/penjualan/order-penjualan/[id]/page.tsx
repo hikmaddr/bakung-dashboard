@@ -23,6 +23,7 @@ import {
   DEFAULT_TERMS,
 } from "@/lib/quotationTheme";
 import { formatDownloadFileName } from "@/utils/downloadFilename";
+import { ModalConfirmation } from "@/components/ui/ModalConfirmation";
 
 const normalizeNumber = (value: unknown): number => {
   const parsed = Number(value);
@@ -273,16 +274,10 @@ export default function SalesOrderDetailPage() {
   const taxAmount = normalizeNumber(order?.taxAmount);
   const totalAmount = normalizeNumber(order?.totalAmount);
 
-  const handleDelete = async () => {
-    if (!confirm("Yakin ingin menghapus Sales Order ini?")) return;
-    try {
-      const res = await fetch(`/api/sales-orders/${id}`, { method: "DELETE" });
-      if (!res.ok) throw new Error();
-      toast.success("Sales Order berhasil dihapus");
-      router.push("/penjualan/order-penjualan");
-    } catch (error) {
-      toast.error("Gagal menghapus Sales Order");
-    }
+  const [deleteModalOpen, setDeleteModalOpen] = useState(false);
+  const [deleteLoading, setDeleteLoading] = useState(false);
+  const handleDelete = () => {
+    setDeleteModalOpen(true);
   };
 
   const handleCreateInvoice = async () => {
@@ -427,7 +422,7 @@ export default function SalesOrderDetailPage() {
         />
 
         <div
-          className="mt-6 rounded-2xl border bg-gradient-to-br from-white via-white to-slate-50 px-6 py-5 shadow-sm"
+          className="mt-6 rounded-2xl border bg-linear-to-br from-white via-white to-slate-50 px-6 py-5 shadow-sm"
           style={{ borderColor: `${currentTheme.tableBorderColor}33` }}
         >
           <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
@@ -647,7 +642,23 @@ export default function SalesOrderDetailPage() {
                     </div>
                     <div>
                       {p.receipt ? (
-                        <a className="text-blue-600 underline" href={`/api/receipts/${p.receipt.id}/pdf`} target="_blank" rel="noreferrer">{p.receipt.receiptNumber}</a>
+                        <button
+                          type="button"
+                          className="text-blue-600 underline"
+                          onClick={async () => {
+                            const { formatDownloadFileName } = await import("@/utils/downloadFilename");
+                            const { downloadUrlAsFile } = await import("@/utils/downloadFile");
+                            const fileName = formatDownloadFileName(
+                              p.receipt?.receiptNumber,
+                              undefined,
+                              p.receipt?.receiptNumber || "Receipt",
+                              "Receipt"
+                            );
+                            await downloadUrlAsFile(`/api/receipts/${p.receipt.id}/pdf`, fileName);
+                          }}
+                        >
+                          {p.receipt.receiptNumber}
+                        </button>
                       ) : (
                         <span className="text-gray-500">Tanpa kwitansi</span>
                       )}
@@ -1256,8 +1267,31 @@ export default function SalesOrderDetailPage() {
           </div>
         )}
       </div>
+      {/* Modal Konfirmasi Hapus */}
+      <ModalConfirmation
+        isOpen={deleteModalOpen}
+        onClose={() => setDeleteModalOpen(false)}
+        title="Hapus Sales Order ini?"
+        description="Tindakan ini akan menghapus Sales Order secara permanen."
+        confirmLabel="Hapus"
+        destructive
+        loading={deleteLoading}
+        onConfirm={async () => {
+          try {
+            setDeleteLoading(true);
+            const res = await fetch(`/api/sales-orders/${id}`, { method: "DELETE" });
+            if (!res.ok) throw new Error();
+            toast.success("Sales Order berhasil dihapus");
+            router.push("/penjualan/order-penjualan");
+          } catch (error) {
+            toast.error("Gagal menghapus Sales Order");
+          } finally {
+            setDeleteLoading(false);
+            setDeleteModalOpen(false);
+          }
+        }}
+      />
     </FeatureGuard>
   );
 }
-
 

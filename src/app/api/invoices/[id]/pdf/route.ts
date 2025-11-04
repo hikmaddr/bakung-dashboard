@@ -1,4 +1,5 @@
 "use server";
+export const runtime = "nodejs";
 
 import { NextResponse, type NextRequest } from "next/server";
 import { put } from "@vercel/blob";
@@ -17,6 +18,7 @@ import {
   type InvoiceTemplateTheme,
 } from "@/lib/quotationTheme";
 import { toRgb, splitTextToSize, formatPdfFileName } from "@/lib/pdfCommon";
+import { createOrUpdateShortLink } from "@/lib/shortlink";
 import { getAuth } from "@/lib/auth";
 
 const toRGB = ({ r, g, b }: { r: number; g: number; b: number }) => rgb(r / 255, g / 255, b / 255);
@@ -914,14 +916,22 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
           token: process.env.BLOB_READ_WRITE_TOKEN,
           contentType: "application/pdf",
         });
-        shareUrl = blob.url;
-        if (!invoice.shareUrl || invoice.shareUrl !== blob.url) {
-          await prisma.invoice.update({
-            where: { id: invoice.id },
-            data: { shareUrl: blob.url },
-          }).catch((err) => {
-            console.error("[invoices/pdf] failed to persist shareUrl", err);
-          });
+        // Create shortlink pointing to blob URL
+        const { shortUrl } = await createOrUpdateShortLink({
+          type: "invoice",
+          entityId: invoice.id,
+          brandProfileId: invoice.brandProfileId ?? null,
+          targetUrl: blob.url,
+          hint: invoiceNumber,
+          origin: req.nextUrl.origin,
+        });
+        shareUrl = shortUrl;
+        if (!invoice.shareUrl || invoice.shareUrl !== shortUrl) {
+          await prisma.invoice
+            .update({ where: { id: invoice.id }, data: { shareUrl: shortUrl } })
+            .catch((err) => {
+              console.error("[invoices/pdf] failed to persist shareUrl", err);
+            });
         }
       } catch (uploadErr) {
         console.error("[invoices/pdf] failed to upload PDF to Blob", uploadErr);

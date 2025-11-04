@@ -27,6 +27,10 @@ function getFormatForType(brand: BrandProfile | null, type: DocumentType): strin
   return fmt && fmt.trim().length ? fmt : DEFAULT_FORMAT[type];
 }
 
+function hasBrandPlaceholder(fmt: string): boolean {
+  return /\{BRAND\}/.test(fmt) || /\(BRAND\)/i.test(fmt);
+}
+
 function seqLengthFromFormat(fmt: string): number {
   // Support both curly and parenthesis styles: {SEQ3} or (SEQ3)
   const m = fmt.match(/\{SEQ(\d+)\}/) || fmt.match(/\(SEQ(\d+)\)/);
@@ -47,7 +51,7 @@ function buildPrefix(fmt: string, brand: BrandProfile | null, date: Date): strin
   const code = brandCodeFromProfile({ name: brand?.name, slug: (brand as any)?.slug });
 
   // Replace variables except sequence, keep separators as-is
-  return fmt
+  let prefix = fmt
     .replace(/\{BRAND\}/g, code)
     .replace(/\{YYYY\}/g, yyyy)
     .replace(/\{MM\}/g, mm)
@@ -57,6 +61,12 @@ function buildPrefix(fmt: string, brand: BrandProfile | null, date: Date): strin
     // Also strip parenthesis-style placeholders from prefix
     .replace(/\(SEQ\d+\)/g, "")
     .replace(/\(0{2,}\)/g, "");
+
+  // Enforce brand code prefix if brand exists and format doesn't include it
+  if (brand && !hasBrandPlaceholder(fmt)) {
+    prefix = `${code}-${prefix}`;
+  }
+  return prefix;
 }
 
 export async function generateNextNumber(
@@ -109,7 +119,7 @@ export async function generateNextNumber(
 
   const seq = String(count + 1).padStart(seqLen, "0");
   // Compose final replacing sequence placeholder
-  return fmt
+  const base = fmt
     .replace(/\{BRAND\}/g, brandCodeFromProfile({ name: brand?.name, slug: (brand as any)?.slug }))
     .replace(/\{YYYY\}/g, String(date.getFullYear()))
     .replace(/\{MM\}/g, String(date.getMonth() + 1).padStart(2, "0"))
@@ -119,4 +129,9 @@ export async function generateNextNumber(
     // Support parenthesis-style placeholders as well
     .replace(/\(SEQ\d+\)/g, seq)
     .replace(/\(0{2,}\)/g, seq);
+  if (brand && !hasBrandPlaceholder(fmt)) {
+    const code = brandCodeFromProfile({ name: brand?.name, slug: (brand as any)?.slug });
+    return `${code}-${base}`;
+  }
+  return base;
 }

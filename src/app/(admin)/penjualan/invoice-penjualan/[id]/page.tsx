@@ -171,13 +171,13 @@ export default function InvoiceDetailPage() {
       body: JSON.stringify({ type: "invoice", id: invoice.id }),
     });
     const data = await res.json().catch(() => null);
-    if (!res.ok || data?.success !== true || !data?.url) {
+    if (!res.ok || data?.success !== true || (!data?.url && !data?.shortUrl)) {
       throw new Error(data?.message || "Gagal membuat link dokumen");
     }
 
-    const url: string = data.url;
-    setInvoice((prev) => (prev ? { ...prev, shareUrl: url } : prev));
-    return url;
+    const link: string = data.shortUrl || data.url;
+    setInvoice((prev) => (prev ? { ...prev, shareUrl: link } : prev));
+    return link;
   }, [invoice]);
 
   const createWhatsappLink = useCallback(async (): Promise<string> => {

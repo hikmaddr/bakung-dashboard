@@ -1,4 +1,5 @@
 import { NextResponse, type NextRequest } from "next/server";
+export const revalidate = 60;
 import { prisma } from "@/lib/prisma";
 import { getActiveBrandProfile, resolveAllowedBrandIds } from "@/lib/brand";
 import { getAuth } from "@/lib/auth";
@@ -13,7 +14,6 @@ function genInvoiceNumberBase() {
 
 export async function GET(req: NextRequest) {
   try {
-    const auth = await getAuth();
     const active = await getActiveBrandProfile();
     const sp = req.nextUrl.searchParams;
     const includeDeleted = sp.get("includeDeleted") === "1";
@@ -167,6 +167,17 @@ export async function POST(req: NextRequest) {
           downPayment: Number(downPayment) || 0,
         },
       });
+    } catch {}
+
+    try {
+      await sendNotificationToRole(
+        "Owner",
+        "Invoice baru dibuat",
+        `Invoice ${inv.invoiceNumber} berhasil dibuat dengan total ${inv.total.toLocaleString()}.`,
+        "info",
+        brand.id,
+        `/penjualan/invoice-penjualan/${inv.id}`,
+      );
     } catch {}
 
     return NextResponse.json({ success: true, data: inv });

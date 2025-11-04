@@ -89,7 +89,7 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ i
     });
     if (!existing) return NextResponse.json({ success: false, message: "Invoice tidak ditemukan" }, { status: 404 });
 
-    await prisma.invoice.update({ where: { id: existing.id }, data: { deletedAt: new Date() } });
+    await prisma.invoice.update({ where: { id: existing.id }, data: { deletedAt: new Date(), isDeleted: true } });
 
     try {
       await logActivity(req, {

@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { getAuth } from "@/lib/auth";
 import { getActiveBrandProfile, resolveAllowedBrandIds } from "@/lib/brand";
 import { logActivity } from "@/lib/activity";
+import { sendNotificationToRole } from "@/lib/notification";
 import { saveFile } from "@/lib/storage";
 
 async function saveAttachments(formData: FormData) {
@@ -177,6 +178,16 @@ export async function POST(req: NextRequest) {
           date: created.date,
         },
       });
+    } catch {}
+    try {
+      await sendNotificationToRole(
+        "Owner",
+        "Pembelian baru dibuat",
+        `Pembelian ${created.purchaseNumber} berhasil dicatat dengan total ${created.total.toLocaleString()}.`,
+        "info",
+        brand.id,
+        `/pembelian/pembelian-langsung/${created.id}`,
+      );
     } catch {}
     return NextResponse.json({ success: true, data: created });
   } catch (e: any) {

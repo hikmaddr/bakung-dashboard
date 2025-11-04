@@ -21,6 +21,7 @@ import { Button } from "@/components/ui/button";
 import Pagination from "@/components/tables/Pagination";
 import FeatureGuard from "@/components/FeatureGuard";
 import { formatDownloadFileName } from "@/utils/downloadFilename";
+import { StatusBadge, getQuotationStatusLabel } from "@/components/ui/StatusBadge";
 
 // ================== TYPES ==================
 type Quotation = {
@@ -28,6 +29,7 @@ type Quotation = {
   quotationNumber: string;
   status: string;
   date: string;
+  validUntil?: string;
   total: number;
   customer: string;
   attachmentUrl?: string | null;
@@ -69,6 +71,12 @@ function RowItem({
   setPreviewUrl: (url: string) => void;
   setPreviewType: (type: "image" | "pdf") => void;
 }) {
+  const quoStatusLabel = getQuotationStatusLabel({
+    status: quotation.status,
+    validUntil: quotation.validUntil || null,
+    hasInvoice: quotation.hasInvoice,
+    hasSalesOrder: quotation.hasSalesOrder,
+  });
   return (
     <tr className="border-t border-gray-200 hover:bg-gray-50 dark:border-gray-800 dark:hover:bg-white/5">
       <td className="p-3 dark:text-gray-200">{quotation.customer}</td>
@@ -76,9 +84,7 @@ function RowItem({
       <td className="p-3 dark:text-gray-200">
         <span className="mr-2">{quotation.quotationNumber}</span>
         {(quotation.hasInvoice || quotation.hasSalesOrder) ? (
-          <span className="inline-flex items-center rounded-full bg-blue-100 px-2 py-0.5 text-[10px] font-semibold text-blue-700 dark:bg-blue-900/25 dark:text-blue-300">
-            Converted
-          </span>
+          <StatusBadge status="Converted" className="inline-flex !px-2 !py-0.5 !text-[10px] align-middle" />
         ) : null}
       </td>
 
@@ -94,17 +100,7 @@ function RowItem({
       <td className="p-3 dark:text-gray-200">{quotation.date}</td>
 
       <td className="p-3">
-        <span
-          className={`rounded-full px-2 py-1 text-xs ${
-            quotation.status === "Confirmed"
-              ? "bg-green-100 text-green-700 dark:bg-green-900/25 dark:text-green-300"
-              : quotation.status === "Draft"
-              ? "bg-gray-100 text-gray-700 dark:bg-white/10 dark:text-gray-300"
-              : "bg-yellow-100 text-yellow-700 dark:bg-yellow-900/20 dark:text-yellow-300"
-          }`}
-        >
-          {quotation.status}
-        </span>
+        <StatusBadge status={quoStatusLabel as any} />
       </td>
 
       <td className="p-3 text-center dark:text-gray-300">
@@ -356,6 +352,11 @@ export default function QuotationPageWithTemplate() {
             typeof dateValue === "string" && dateValue
               ? new Date(dateValue).toLocaleDateString("id-ID")
               : "-";
+          const validUntilValue = item["validUntil"];
+          const validUntil =
+            typeof validUntilValue === "string" && validUntilValue
+              ? new Date(validUntilValue).toISOString()
+              : undefined;
           const totalValue =
             typeof item["total"] === "number"
               ? item["total"]
@@ -371,6 +372,7 @@ export default function QuotationPageWithTemplate() {
             quotationNumber: String(item["quotationNumber"] ?? ""),
             status,
             date: formattedDate,
+            validUntil,
             total: Number(totalValue || 0),
             customer: customerText,
             attachmentUrl:

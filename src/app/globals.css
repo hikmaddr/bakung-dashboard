@@ -301,6 +301,18 @@
 
 
 
+@utility container-responsive {
+  @apply mx-auto w-full px-3 2xsm:px-4 xsm:px-5 sm:px-6 md:px-8 lg:px-10 xl:px-12 2xl:px-16 max-w-screen-2xl 3xl:max-w-[1600px];
+}
+
+@utility section-spacing {
+  @apply py-4 sm:py-5 md:py-6 lg:py-8;
+}
+
+@utility grid-responsive {
+  @apply grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4;
+}
+
 @layer utilities {
   /* For Remove Date Icon */
   input[type="date"]::-webkit-inner-spin-button,

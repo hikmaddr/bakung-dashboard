@@ -1,6 +1,6 @@
 "use client";
 import Link from "next/link";
-import { Suspense, useEffect, useMemo, useState, useRef } from "react";
+import { Suspense, useEffect, useMemo, useState, useRef, useCallback } from "react";
 import { useSearchParams } from "next/navigation";
 import { PlusCircle, Download, ChevronDown, Eye, Edit, Send, Trash2, Receipt, RotateCcw } from "lucide-react";
 import toast from "react-hot-toast";
@@ -11,6 +11,9 @@ import Pagination from "@/components/tables/Pagination";
 import { downloadCSV, downloadXLSX } from "@/lib/exporters";
 import FeatureGuard from "@/components/FeatureGuard";
 import { formatDownloadFileName } from "@/utils/downloadFilename";
+import { StatusBadge, getInvoiceStatusLabel } from "@/components/ui/StatusBadge";
+import { DocumentStatusBadge, type DocStatus } from "@/components/ui/DocumentStatusBadge";
+import { ModalConfirmation } from "@/components/ui/ModalConfirmation";
 
 type InvoiceRow = {
   id: number;
@@ -44,17 +47,17 @@ const getStatusColor = (status: string) => {
   }
 };
 
-const getDocumentStatusColor = (status: string) => {
-  switch (status) {
-    case "Draft":
-      return "bg-gray-100 text-gray-700 dark:bg-white/10 dark:text-gray-300";
-    case "Sent":
-      return "bg-blue-100 text-blue-700 dark:bg-blue-900/25 dark:text-blue-300";
-    case "Cancelled":
-      return "bg-gray-200 text-gray-700 dark:bg-white/10 dark:text-gray-300";
-    default:
-      return "bg-gray-100 text-gray-700 dark:bg-white/10 dark:text-gray-300";
-  }
+// Normalisasi status dokumen ke salah satu nilai DocStatus
+const normalizeDocStatus = (raw: string): DocStatus => {
+  const v = String(raw || "").trim().toLowerCase();
+  if (!v) return "Draft";
+  if (v.startsWith("sent")) return "Sent";
+  if (v === "final") return "Final";
+  if (v === "approved") return "Approved";
+  if (v === "declined") return "Declined";
+  if (v === "cancelled" || v === "canceled") return "Canceled";
+  if (v === "draft") return "Draft";
+  return "Draft";
 };
 
 function InvoicePageInner() {
@@ -67,6 +70,9 @@ function InvoicePageInner() {
   const [limit, setLimit] = useState(10);
   const [searchTerm, setSearchTerm] = useState("");
   const [tab, setTab] = useState<"list" | "payment" | "deleted">((searchParams?.get('tab') as any) === 'payment' ? 'payment' : ((searchParams?.get('tab') as any) === 'deleted' ? 'deleted' : 'list'));
+  const [deleteModalOpen, setDeleteModalOpen] = useState(false);
+  const [confirmDeleteId, setConfirmDeleteId] = useState<number | null>(null);
+  const [deleteLoading, setDeleteLoading] = useState(false);
   const rangeParam = (searchParams?.get("range") || "").trim();
   const statusParam = (searchParams?.get("status") || "").trim();
   const activeFiltersLabel = useMemo(() => {
@@ -132,8 +138,8 @@ function InvoicePageInner() {
     return () => window.removeEventListener("brand-modules:updated", handler);
   }, []);
 
-  const fmt = (n: number) => (Number(n) || 0).toLocaleString("id-ID", { style: "currency", currency: "IDR" });
-  const fmtDate = (s: string) => (s ? new Date(s).toLocaleDateString("id-ID") : "-");
+  const fmt = useCallback((n: number) => (Number(n) || 0).toLocaleString("id-ID", { style: "currency", currency: "IDR" }), []);
+  const fmtDate = useCallback((s: string) => (s ? new Date(s).toLocaleDateString("id-ID") : "-"), []);
   const filteredAll = useMemo(() => {
     const q = searchTerm.trim().toLowerCase();
     if (!q) return rows;
@@ -142,12 +148,15 @@ function InvoicePageInner() {
   const filteredList = useMemo(() => filteredAll.filter(r => !r.deletedAt && Number(r.downPayment || 0) <= 0 && r.status !== 'DP'), [filteredAll]);
   const filteredDP = useMemo(() => filteredAll.filter(r => !r.deletedAt && (Number(r.downPayment || 0) > 0 || r.status === 'DP')), [filteredAll]);
   const filteredDeleted = useMemo(() => filteredAll.filter(r => !!r.deletedAt), [filteredAll]);
-  const activeData = tab === "list" ? filteredList : (tab === 'payment' ? filteredDP : filteredDeleted);
-  const totalPages = Math.max(1, Math.ceil(activeData.length / limit));
-  const start = (page - 1) * limit;
-  const paged = activeData.slice(start, start + limit);
+  const activeData = useMemo(() => (tab === "list" ? filteredList : (tab === 'payment' ? filteredDP : filteredDeleted)), [tab, filteredList, filteredDP, filteredDeleted]);
+  const { totalPages, paged } = useMemo(() => {
+    const total = Math.max(1, Math.ceil(activeData.length / limit));
+    const start = (page - 1) * limit;
+    const slice = activeData.slice(start, start + limit);
+    return { totalPages: total, paged: slice } as const;
+  }, [activeData, limit, page]);
 
-  const markAsSent = async (id: number, via?: 'wa' | 'email' | 'pdf') => {
+  const markAsSent = useCallback(async (id: number, via?: 'wa' | 'email' | 'pdf') => {
     try {
       const statusValue = via === 'wa' ? 'Sent via WhatsApp' : via === 'email' ? 'Sent via Email' : via === 'pdf' ? 'Sent via PDF' : 'Sent';
       const res = await fetch(`/api/invoices/${id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ status: statusValue }) });
@@ -155,9 +164,9 @@ function InvoicePageInner() {
       setRows((prev) => prev.map((r) => (r.id === id ? { ...r, status: statusValue } : r)));
       toast.success(`Invoice ditandai sebagai ${statusValue}`);
     } catch { toast.error('Gagal mengubah status'); }
-  };
+  }, []);
 
-  const deleteInvoice = async (id: number) => {
+  const deleteInvoice = useCallback(async (id: number) => {
     const toastId = toast.loading('Menghapus invoice...');
     try {
       const res = await fetch(`/api/invoices/${id}`, { method: 'DELETE' });
@@ -167,50 +176,20 @@ function InvoicePageInner() {
     } catch {
       toast.error('Gagal menghapus invoice', { id: toastId });
     }
-  };
+  }, []);
 
-  const confirmDelete = (id: number) => {
-    toast.custom(
-      (t) => (
-        <div className="w-[320px] rounded-xl border border-slate-200 bg-white p-4 shadow-lg">
-          <p className="text-sm font-semibold text-slate-800">Hapus invoice ini?</p>
-          <p className="mt-1 text-xs text-slate-500">
-            Invoice akan dipindahkan ke tab Terhapus dan disimpan selama 30 hari.
-          </p>
-          <div className="mt-3 flex justify-end gap-2">
-            <button
-              onClick={() => toast.dismiss(t.id)}
-              className="rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-medium text-slate-600 hover:bg-slate-100"
-            >
-              Batal
-            </button>
-            <button
-              onClick={() => {
-                toast.dismiss(t.id);
-                deleteInvoice(id);
-              }}
-              className="rounded-lg bg-red-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-red-700"
-            >
-              Hapus
-            </button>
-          </div>
-        </div>
-      ),
-      { duration: 6000 }
-    );
-  };
+  const confirmDelete = useCallback((id: number) => {
+    setConfirmDeleteId(id);
+    setDeleteModalOpen(true);
+  }, []);
 
-  const restoreRow = async (id: number) => {
-    if (!confirm('Pulihkan invoice ini?')) return;
-    try {
-      const res = await fetch(`/api/invoices/${id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ deletedAt: null }) });
-      if (!res.ok) throw new Error();
-      setRows((prev) => prev.map((r) => (r.id === id ? { ...r, deletedAt: null } : r)));
-      toast.success('Invoice dipulihkan');
-    } catch { toast.error('Gagal memulihkan invoice'); }
-  };
+  const restoreRow = useCallback(async (id: number) => {
+    // Buka modal konfirmasi Pulihkan
+    setConfirmRestoreId(id);
+    setRestoreModalOpen(true);
+  }, []);
 
-  const downloadInvoice = async (row: InvoiceRow) => {
+  const downloadInvoice = useCallback(async (row: InvoiceRow) => {
     try {
       const res = await fetch(`/api/invoices/${row.id}/pdf`, { method: 'GET' });
       if (!res.ok) throw new Error('Gagal mengunduh PDF');
@@ -232,31 +211,36 @@ function InvoicePageInner() {
     } catch (e: any) {
       toast.error(e?.message || 'Gagal mengunduh PDF');
     }
-  };
+  }, []);
+
+  // Modal Pulihkan
+  const [restoreModalOpen, setRestoreModalOpen] = useState(false);
+  const [confirmRestoreId, setConfirmRestoreId] = useState<number | null>(null);
+  const [restoreLoading, setRestoreLoading] = useState(false);
 
   // Modal kirim (WA/Email/PDF)
   const [sendModalOpen, setSendModalOpen] = useState(false);
   const [sendMethod, setSendMethod] = useState<"wa" | "email" | "pdf">("email");
   const [selectedRow, setSelectedRow] = useState<InvoiceRow | null>(null);
-  const openSend = (row: InvoiceRow) => { setSelectedRow(row); setSendMethod("email"); setSendModalOpen(true); };
+  const openSend = useCallback((row: InvoiceRow) => { setSelectedRow(row); setSendMethod("email"); setSendModalOpen(true); }, []);
 
   // Modal pembayaran (Lunas / Tambah Pembayaran)
   const [payModalOpen, setPayModalOpen] = useState(false);
   const [payMode, setPayMode] = useState<"paid" | "add">("add");
   const [payAmount, setPayAmount] = useState<string>("");
   const [selectedPayRow, setSelectedPayRow] = useState<InvoiceRow | null>(null);
-  const openPay = (row: InvoiceRow) => { setSelectedPayRow(row); setPayMode("add"); setPayAmount(""); setPayModalOpen(true); };
+  const openPay = useCallback((row: InvoiceRow) => { setSelectedPayRow(row); setPayMode("add"); setPayAmount(""); setPayModalOpen(true); }, []);
 
   // Modal posting ke Kwitansi (untuk Paid)
   const [kwModalOpen, setKwModalOpen] = useState(false);
   const [kwMakeDelivery, setKwMakeDelivery] = useState(false);
   const [selectedKwRow, setSelectedKwRow] = useState<InvoiceRow | null>(null);
-  const openKw = (row: InvoiceRow) => { setSelectedKwRow(row); setKwMakeDelivery(false); setKwModalOpen(true); };
+  const openKw = useCallback((row: InvoiceRow) => { setSelectedKwRow(row); setKwMakeDelivery(false); setKwModalOpen(true); }, []);
 
   // Modal View PDF (view-only)
   const [pdfModalOpen, setPdfModalOpen] = useState(false);
   const [selectedPdfRow, setSelectedPdfRow] = useState<InvoiceRow | null>(null);
-  const openPdf = (row: InvoiceRow) => { setSelectedPdfRow(row); setPdfModalOpen(true); };
+  const openPdf = useCallback((row: InvoiceRow) => { setSelectedPdfRow(row); setPdfModalOpen(true); }, []);
 
   return (
     <div className="sales-scope p-6 min-h-screen">
@@ -466,10 +450,8 @@ function InvoicePageInner() {
                   const paid = Number(r.downPayment || 0);
                   const due = Math.max(0, Number(r.total || 0) - paid);
                   const rawStatus = String(r.status || '').trim();
-                  const isSentLike = rawStatus.toLowerCase().startsWith('sent');
-                  const docStatusText = isSentLike ? rawStatus : (rawStatus || 'Draft');
-                  const docStatusColor = getDocumentStatusColor(isSentLike ? 'Sent' : docStatusText);
-                  const invStatus = r.status === 'Paid' ? 'Paid' : (paid > 0 ? 'DP' : 'Unpaid');
+                  const docStatus: DocStatus = normalizeDocStatus(rawStatus || 'Draft');
+                  const invStatusLabel = getInvoiceStatusLabel(r);
                   return (
                     <tr key={r.id} className="border-t hover:bg-gray-50 transition dark:border-gray-800 dark:hover:bg-white/5">
                       {tab === 'list' && (
@@ -478,8 +460,8 @@ function InvoicePageInner() {
                           <td className="px-4 py-3 text-gray-800 dark:text-gray-200">{r.invoiceNumber}</td>
                           <td className="px-4 py-3">{r.quotation?.id ? (<Link href={`/penjualan/quotation/${r.quotation.id}`} className="text-blue-600 hover:underline dark:text-blue-400">{r.quotation.quotationNumber || `Q-${r.quotation.id}`}</Link>) : ('-')}</td>
                           <td className="px-4 py-3 text-gray-700 dark:text-gray-300">{fmtDate(r.issueDate)}</td>
-                          <td className="px-4 py-3"><span className={`px-3 py-1 rounded-full text-xs font-medium ${docStatusColor}`}>{docStatusText}</span></td>
-                          <td className="px-4 py-3"><span className={`px-3 py-1 rounded-full text-xs font-medium ${getStatusColor(invStatus)}`}>{invStatus}</span></td>
+                          <td className="px-4 py-3"><DocumentStatusBadge status={docStatus} /></td>
+                          <td className="px-4 py-3"><StatusBadge status={invStatusLabel} /></td>
                           <td className="px-4 py-3 text-right text-gray-800 dark:text-gray-200">{fmt(r.total)}</td>
                         </>
                       )}
@@ -487,7 +469,7 @@ function InvoicePageInner() {
                         <>
                           <td className="px-4 py-3 text-gray-800 dark:text-gray-200">{r.customer?.pic ? `${r.customer.pic} - ` : ''}{r.customer?.company || '-'}</td>
                           <td className="px-4 py-3 text-gray-800 dark:text-gray-200">{r.invoiceNumber}</td>
-                          <td className="px-4 py-3"><span className={`px-3 py-1 rounded-full text-xs font-medium ${getStatusColor(invStatus)}`}>{invStatus}</span></td>
+                          <td className="px-4 py-3"><StatusBadge status={invStatusLabel} /></td>
                           <td className="px-4 py-3 text-right text-gray-800 dark:text-gray-200">{fmt(paid)}</td>
                           <td className="px-4 py-3 text-right text-gray-800 dark:text-gray-200">{fmt(due)}</td>
                           <td className="px-4 py-3 text-gray-700 dark:text-gray-300">{fmtDate(r.issueDate)}</td>
@@ -500,15 +482,15 @@ function InvoicePageInner() {
                           <td className="px-4 py-3 text-gray-800 dark:text-gray-200">{r.invoiceNumber}</td>
                           <td className="px-4 py-3 text-gray-700 dark:text-gray-300">{fmtDate(r.deletedAt || '')}</td>
                           <td className="px-4 py-3 text-gray-700 dark:text-gray-300">{fmtDate(r.issueDate)}</td>
-                          <td className="px-4 py-3"><span className={`px-3 py-1 rounded-full text-xs font-medium ${docStatusColor}`}>{docStatusText}</span></td>
-                          <td className="px-4 py-3"><span className={`px-3 py-1 rounded-full text-xs font-medium ${getStatusColor(invStatus)}`}>{invStatus}</span></td>
+                          <td className="px-4 py-3"><DocumentStatusBadge status={docStatus} /></td>
+                          <td className="px-4 py-3"><StatusBadge status={invStatusLabel} /></td>
                           <td className="px-4 py-3 text-right text-gray-800 dark:text-gray-200">{fmt(r.total)}</td>
                         </>
                       )}
                       <td className="px-4 py-3 text-right">
                         <div className="inline-flex items-center justify-end gap-2">
                           {tab === 'payment' && (
-                            invStatus === 'Paid' ? (
+                            invStatusLabel === 'Paid' ? (
                               <>
                                 <button onClick={() => openPdf(r)} title="Lihat PDF" className="p-2 rounded-full hover:bg-gray-100 dark:hover:bg-white/5">
                                   <Eye className="h-4 w-4 text-gray-600 dark:text-gray-300" />
@@ -746,6 +728,53 @@ function InvoicePageInner() {
           </div>
         </div>
       )}
+
+      {/* Modal Konfirmasi Hapus */}
+      <ModalConfirmation
+        isOpen={deleteModalOpen}
+        onClose={() => { setDeleteModalOpen(false); setConfirmDeleteId(null); }}
+        title="Hapus invoice ini?"
+        description="Invoice akan dipindahkan ke tab Terhapus dan disimpan selama 30 hari."
+        confirmLabel="Hapus"
+        destructive
+        loading={deleteLoading}
+        onConfirm={async () => {
+          if (confirmDeleteId == null) return;
+          setDeleteLoading(true);
+          try {
+            await deleteInvoice(confirmDeleteId);
+          } finally {
+            setDeleteLoading(false);
+            setDeleteModalOpen(false);
+            setConfirmDeleteId(null);
+          }
+        }}
+      />
+
+      {/* Modal Konfirmasi Pulihkan */}
+      <ModalConfirmation
+        isOpen={restoreModalOpen}
+        onClose={() => { setRestoreModalOpen(false); setConfirmRestoreId(null); }}
+        title="Pulihkan invoice ini?"
+        description="Invoice akan dipindahkan kembali ke daftar utama."
+        confirmLabel="Pulihkan"
+        loading={restoreLoading}
+        onConfirm={async () => {
+          if (confirmRestoreId == null) return;
+          setRestoreLoading(true);
+          try {
+            const res = await fetch(`/api/invoices/${confirmRestoreId}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ deletedAt: null }) });
+            if (!res.ok) throw new Error();
+            setRows((prev) => prev.map((r) => (r.id === confirmRestoreId ? { ...r, deletedAt: null } : r)));
+            toast.success('Invoice dipulihkan');
+          } catch { toast.error('Gagal memulihkan invoice'); }
+          finally {
+            setRestoreLoading(false);
+            setRestoreModalOpen(false);
+            setConfirmRestoreId(null);
+          }
+        }}
+      />
     </div>
   );
 }

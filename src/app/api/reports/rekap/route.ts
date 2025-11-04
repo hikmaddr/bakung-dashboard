@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getAuth } from "@/lib/auth";
 
-export const dynamic = "force-dynamic";
+export const revalidate = 60;
 
 function parseCsvNumbers(val?: string | null): number[] {
   if (!val) return [];

@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getAuth } from "@/lib/auth";
-import { ACTIVE_BRAND_COOKIE, userCanAccessBrand, getActiveBrandProfile } from "@/lib/brand";
+import { resolveAllowedBrandIds, ACTIVE_BRAND_COOKIE, getActiveBrandProfile } from "@/lib/brand";
 
 function parseIntMaybe(v: string | null): number | null {
   if (!v) return null;
@@ -14,6 +14,14 @@ export async function GET(req: NextRequest) {
     const auth = await getAuth();
     if (!auth?.userId) {
       return NextResponse.json({ success: false, allowed: false, message: "Unauthorized" }, { status: 401 });
+    }
+
+    const allowedBrandIds = await resolveAllowedBrandIds(auth.userId, auth.roles, []);
+    if (allowedBrandIds.length === 0) {
+      return NextResponse.json(
+        { success: false, allowed: false, message: "Forbidden: no brand scope assigned" },
+        { status: 403 }
+      );
     }
 
     const url = new URL(req.url);
@@ -33,17 +41,8 @@ export async function GET(req: NextRequest) {
       if (brand) brandId = brand.id;
     }
 
-    // 3) Fallback to active brand cookie or default resolution
     if (!brandId) {
-      // Prefer cookie when available
-      const cookieSlug = req.cookies.get(ACTIVE_BRAND_COOKIE)?.value;
-      if (cookieSlug && cookieSlug.trim()) {
-        const brand = await prisma.brandProfile.findUnique({ where: { slug: cookieSlug } });
-        if (brand) brandId = brand.id;
-      }
-    }
-
-    if (!brandId) {
+      // 3) Fallback to active brand cookie or default resolution
       const brand = await getActiveBrandProfile();
       if (brand?.id) brandId = brand.id;
     }
@@ -52,15 +51,13 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ success: false, allowed: false, message: "Brand tidak ditemukan" }, { status: 404 });
     }
 
-    const allowed = await userCanAccessBrand(auth.userId, brandId);
-    if (!allowed) {
+    if (!allowedBrandIds.includes(brandId)) {
       return NextResponse.json({ success: false, allowed: false, message: "Forbidden: brand scope" }, { status: 403 });
     }
 
-    return NextResponse.json({ success: true, allowed: true, brandProfileId: brandId });
+    return NextResponse.json({ success: true, allowed: true, activeBrandId: brandId, allowedBrandIds });
   } catch (err: any) {
     console.error("[auth/brand-access-check]", err);
     return NextResponse.json({ success: false, allowed: false, message: err?.message || "Error" }, { status: 500 });
   }
 }
-

@@ -2,6 +2,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getAuth } from "@/lib/auth";
 import { resolveAllowedBrandIds } from "@/lib/brand";
+import { sendNotificationToRole } from "@/lib/notification";
 
 function parseCsvNumbers(v: string | null): number[] {
   if (!v) return [];
@@ -28,6 +29,8 @@ export async function GET(req: NextRequest) {
     if (allowedBrandIds.length === 0) {
       return NextResponse.json({ success: true, data: [], message: "Tidak ada brand yang diizinkan" });
     }
+
+    await ensureLowStockNotifications(allowedBrandIds);
 
     const where: any = { brandProfileId: { in: allowedBrandIds } };
     const productId = productIdStr ? Number(productIdStr) : undefined;
@@ -64,3 +67,35 @@ export async function GET(req: NextRequest) {
   }
 }
 
+async function ensureLowStockNotifications(brandIds: number[]) {
+  const lowStockProducts = await prisma.product.findMany({
+    where: {
+      trackStock: true,
+      deletedAt: null,
+      qty: { lte: 0 },
+      ...(brandIds.length ? { brandProfileId: { in: brandIds } } : {}),
+    },
+    select: { id: true, sku: true, name: true, brandProfileId: true },
+  });
+
+  for (const product of lowStockProducts) {
+    const targetUrl = `/produk-stok/produk?highlight=${product.id}`;
+    const existing = await prisma.notification.findFirst({
+      where: {
+        targetUrl,
+        title: "Stok menipis",
+      },
+    });
+    if (existing) continue;
+
+    const message = `Stok produk ${product.name} (${product.sku}) telah habis atau menipis. Segera lakukan restock.`;
+    await sendNotificationToRole(
+      "Owner",
+      "Stok menipis",
+      message,
+      "warning",
+      product.brandProfileId ?? undefined,
+      targetUrl,
+    );
+  }
+}

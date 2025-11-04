@@ -1,4 +1,5 @@
 "use server";
+export const runtime = "nodejs";
 
 import { NextResponse, type NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";

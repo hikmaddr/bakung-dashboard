@@ -47,7 +47,7 @@ export async function DELETE(_req: NextRequest, { params }: RouteParams) {
   try {
     await prisma.customer.update({
       where: { id: idNum },
-      data: { deletedAt: new Date() },
+      data: { deletedAt: new Date(), isDeleted: true },
     });
     return NextResponse.json({ success: true });
   } catch (e) {
@@ -55,4 +55,3 @@ export async function DELETE(_req: NextRequest, { params }: RouteParams) {
     return NextResponse.json({ error: "Gagal menghapus data" }, { status: 500 });
   }
 }
-

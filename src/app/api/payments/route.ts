@@ -157,6 +157,53 @@ export async function POST(req: NextRequest) {
       if (!ex) return NextResponse.json({ success: false, message: "Referensi Expense tidak ditemukan atau beda brand" }, { status: 400 });
     }
 
+    // Validasi overpayment (hindari pembayaran melebihi sisa tagihan)
+    const EPS = 0.0001;
+    if (body.type === "IN" && body.refType === "INVOICE") {
+      // Gunakan snapshot invoice sebelum transaksi (di bawah) untuk konsistensi
+      const inv = await prisma.invoice.findFirst({ where: { id: body.refId, brandProfileId: brandId }, select: { paidAmount: true, total: true, invoiceNumber: true } });
+      if (!inv) return NextResponse.json({ success: false, message: "Invoice tidak ditemukan" }, { status: 400 });
+      const paid = Number(inv.paidAmount || 0);
+      const total = Number(inv.total || 0);
+      const remaining = total - paid;
+      if (amount > remaining + EPS) {
+        return NextResponse.json({ success: false, message: `Pembayaran melebihi sisa tagihan invoice ${inv.invoiceNumber || ""}. Sisa: ${Math.max(0, remaining).toFixed(2)}` }, { status: 400 });
+      }
+    }
+    if (body.type === "IN" && body.refType === "SALES_ORDER") {
+      const so = await prisma.salesOrder.findFirst({ where: { id: body.refId, brandProfileId: brandId }, select: { paidAmount: true, totalAmount: true, soNumber: true } });
+      if (!so) return NextResponse.json({ success: false, message: "Sales Order tidak ditemukan" }, { status: 400 });
+      const paid = Number(so.paidAmount || 0);
+      const total = Number(so.totalAmount || 0);
+      const remaining = total - paid;
+      if (amount > remaining + EPS) {
+        return NextResponse.json({ success: false, message: `Pembayaran melebihi sisa tagihan SO ${so.soNumber || ""}. Sisa: ${Math.max(0, remaining).toFixed(2)}` }, { status: 400 });
+      }
+    }
+    if (body.type === "OUT" && body.refType === "PURCHASE") {
+      const pd = await prisma.purchaseDirect.findFirst({ where: { id: body.refId, brandProfileId: brandId }, select: { paidAmount: true, total: true, invoiceNumber: true } });
+      if (!pd) return NextResponse.json({ success: false, message: "Purchase tidak ditemukan" }, { status: 400 });
+      const paid = Number(pd.paidAmount || 0);
+      const total = Number(pd.total || 0);
+      const remaining = total - paid;
+      if (amount > remaining + EPS) {
+        return NextResponse.json({ success: false, message: `Pembayaran melebihi sisa tagihan pembelian ${pd.invoiceNumber || ""}. Sisa: ${Math.max(0, remaining).toFixed(2)}` }, { status: 400 });
+      }
+    }
+
+    // Snapshot sebelum perubahan untuk mendeteksi transisi status (khusus INVOICE)
+    let prevInvoiceStatus: string | null = null;
+    let prevInvoicePaidAmount: number | null = null;
+    let prevInvoiceTotal: number | null = null;
+    if (body.refType === "INVOICE") {
+      try {
+        const prev = await prisma.invoice.findUnique({ where: { id: body.refId }, select: { paymentStatus: true, paidAmount: true, total: true } });
+        prevInvoiceStatus = (prev?.paymentStatus as any) ?? null;
+        prevInvoicePaidAmount = Number(prev?.paidAmount ?? 0);
+        prevInvoiceTotal = Number(prev?.total ?? 0);
+      } catch {}
+    }
+
     const created = await prisma.$transaction(async (db) => {
       const payment = await db.payment.create({
         data: {
@@ -206,6 +253,58 @@ export async function POST(req: NextRequest) {
         },
       });
     } catch {}
+
+    // Jika pembayaran terkait INVOICE, catat event saat transisi ke PAID/PARTIAL
+    if (body.refType === "INVOICE") {
+      try {
+        const nowInv = await prisma.invoice.findUnique({ where: { id: body.refId }, select: { paymentStatus: true, paidAmount: true, total: true, invoiceNumber: true } });
+        const nowStatus = String(nowInv?.paymentStatus || "").toUpperCase();
+        const wasPaid = String(prevInvoiceStatus || "").toUpperCase() === "PAID";
+        const becamePaid = nowStatus === "PAID" && !wasPaid;
+        if (becamePaid) {
+          await logActivity(req, {
+            userId: auth?.userId || null,
+            action: "INVOICE_PAID",
+            entity: "invoice",
+            entityId: body.refId,
+            metadata: {
+              brandProfileId: brandId,
+              invoiceNumber: nowInv?.invoiceNumber || null,
+              previousStatus: prevInvoiceStatus || null,
+              previousPaidAmount: prevInvoicePaidAmount ?? null,
+              amountAdded: amount,
+              paidAmount: Number(nowInv?.paidAmount || 0),
+              total: Number(nowInv?.total || 0),
+              method: body.method,
+              receiptNumber: created.receipt.receiptNumber,
+              paidAt,
+            },
+          });
+        }
+        const wasPartial = String(prevInvoiceStatus || "").toUpperCase() === "PARTIAL";
+        const becamePartial = nowStatus === "PARTIAL" && !wasPartial;
+        if (becamePartial) {
+          await logActivity(req, {
+            userId: auth?.userId || null,
+            action: "INVOICE_PARTIAL",
+            entity: "invoice",
+            entityId: body.refId,
+            metadata: {
+              brandProfileId: brandId,
+              invoiceNumber: nowInv?.invoiceNumber || null,
+              previousStatus: prevInvoiceStatus || null,
+              previousPaidAmount: prevInvoicePaidAmount ?? null,
+              amountAdded: amount,
+              paidAmount: Number(nowInv?.paidAmount || 0),
+              total: Number(nowInv?.total || 0),
+              method: body.method,
+              receiptNumber: created.receipt.receiptNumber,
+              paidAt,
+            },
+          });
+        }
+      } catch {}
+    }
 
     return NextResponse.json({ success: true, data: created });
   } catch (e: any) {

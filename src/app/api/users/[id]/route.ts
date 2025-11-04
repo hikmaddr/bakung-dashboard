@@ -185,7 +185,25 @@ export async function DELETE(_req: NextRequest, { params }: { params: Promise<{ 
     }
 
     const before = await prisma.user.findUnique({ where: { id: userId } });
-    await prisma.userRole.deleteMany({ where: { userId } });
+
+    // Hard delete with safe set-null on dependencies to avoid FK constraint errors
+    await prisma.$transaction([
+      // Remove many-to-many and scope relations first
+      prisma.userRole.deleteMany({ where: { userId } }),
+      prisma.userBrandScope.deleteMany({ where: { userId } }),
+      // Clear default brand relation if any
+      prisma.user.updateMany({ where: { id: userId }, data: { defaultBrandProfileId: null } }),
+      // Set nullable FKs to null on related tables
+      prisma.activityLog.updateMany({ where: { userId }, data: { userId: null } }),
+      prisma.loginLog.updateMany({ where: { userId }, data: { userId: null } }),
+      prisma.notification.updateMany({ where: { userId }, data: { userId: null } }),
+      prisma.payment.updateMany({ where: { createdById: userId }, data: { createdById: null } }),
+      prisma.paymentIn.updateMany({ where: { createdById: userId }, data: { createdById: null } }),
+      prisma.paymentOut.updateMany({ where: { createdById: userId }, data: { createdById: null } }),
+      prisma.purchaseDirect.updateMany({ where: { createdByUserId: userId }, data: { createdByUserId: null } }),
+      prisma.stockMutation.updateMany({ where: { createdByUserId: userId }, data: { createdByUserId: null } }),
+    ]);
+
     await prisma.user.delete({ where: { id: userId } });
 
     await prisma.activityLog.create({

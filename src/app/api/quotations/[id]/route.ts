@@ -351,36 +351,14 @@ export async function DELETE(
       );
     }
 
-    // Kumpulkan URL lampiran yang perlu dihapus (projectFile + item image)
-    const attachments = await prisma.quotation.findUnique({
-      where: { id },
-      select: {
-        projectFileUrl: true,
-        items: { select: { imageUrl: true } },
-      },
-    });
-
-    const urlsToDelete = [
-      attachments?.projectFileUrl || null,
-      ...((attachments?.items || []).map((i) => i.imageUrl || null)),
-    ].filter((u): u is string => typeof u === "string" && !!u);
-
-    // Hapus semua item terkait quotation lalu quotation utama
-    await prisma.$transaction([
-      prisma.quotationItem.deleteMany({ where: { quotationId: id } }),
-      prisma.quotation.delete({ where: { id } }),
-    ]);
-
-    // Upayakan hapus file fisik (Blob atau lokal) — tidak memblokir operasi
-    try {
-      await Promise.allSettled(urlsToDelete.map((u) => deleteFile(u)));
-    } catch {}
+    // Soft delete quotation (tandai isDeleted dan deletedAt)
+    await prisma.quotation.update({ where: { id }, data: { isDeleted: true, deletedAt: new Date() } });
 
     // Activity log untuk delete quotation
     try {
       await logActivity(_req, {
         userId: auth?.userId || null,
-        action: "QUOTATION_DELETE",
+        action: "QUOTATION_DELETE_SOFT",
         entity: "quotation",
         entityId: id,
         metadata: { quotationNumber: inScope.quotationNumber },

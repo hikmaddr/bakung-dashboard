@@ -25,12 +25,46 @@ const SignInForm: React.FC = () => {
       });
       const json = await res.json();
       if (!res.ok || !json.success) throw new Error(json.message || "Login gagal");
-      const roles: string[] = Array.isArray(json?.data?.roles) ? json.data.roles : [];
-      const lower = roles.map((r) => String(r).toLowerCase());
-      const defaultRedirect = lower.includes("owner") ? "/" : "/system-user/user-management";
+      const userId: number | undefined = json?.data?.id;
+
+      // Setelah login, cek kelengkapan profil
+      let incomplete = false;
+      try {
+        const profileRes = await fetch("/api/profile", { cache: "no-store" });
+        const profileJson = await profileRes.json();
+        if (profileJson?.success && profileJson?.data) {
+          const d = profileJson.data as {
+            firstName?: string | null;
+            lastName?: string | null;
+            phone?: string | null;
+          };
+          incomplete = !d?.firstName || !d?.lastName || !d?.phone;
+        }
+      } catch {}
+
       const qsRedirect = new URLSearchParams(window.location.search).get("redirect");
-      const target = qsRedirect || defaultRedirect;
-      router.push(target);
+
+      if (qsRedirect) {
+        router.push(qsRedirect);
+        return;
+      }
+
+      // Jika profil belum lengkap → arahkan ke halaman profil.
+      // Tampilkan welcome hanya sekali per user (localStorage per userId)
+      if (incomplete) {
+        const key = userId ? `welcome_shown:${userId}` : undefined;
+        const hasShown = key ? typeof window !== "undefined" && localStorage.getItem(key) === "1" : false;
+        if (!hasShown) {
+          // First login (belum pernah tampil welcome di browser ini)
+          router.push("/profile?welcome=1");
+        } else {
+          router.push("/profile");
+        }
+        return;
+      }
+
+      // Jika profil lengkap → ke dashboard tanpa welcome
+      router.push("/");
     } catch (err) {
       setError("Invalid credentials");
     } finally {

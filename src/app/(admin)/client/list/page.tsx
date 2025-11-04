@@ -2,6 +2,7 @@
 
 import PageBreadcrumb from "@/components/common/PageBreadCrumb";
 import { Modal } from "@/components/ui/modal";
+import { ModalConfirmation } from "@/components/ui/ModalConfirmation";
 import toast from "react-hot-toast";
 import { useEffect, useMemo, useState } from "react";
 import { Pencil, Trash2 } from "lucide-react";
@@ -37,6 +38,7 @@ export default function ClientListPageWithTemplate() {
   const [form, setForm] = useState(createEmptyClientForm);
   const [errors, setErrors] = useState<string[]>([]);
   const [confirmDeleteId, setConfirmDeleteId] = useState<number | null>(null);
+  const [deleteLoading, setDeleteLoading] = useState(false);
 
   useEffect(() => {
     fetchClients();
@@ -76,6 +78,7 @@ export default function ClientListPageWithTemplate() {
 
   const confirmDelete = async () => {
     if (confirmDeleteId == null) return;
+    setDeleteLoading(true);
     try {
       const res = await fetch(`/api/customers/${confirmDeleteId}`, { method: "DELETE" });
       if (!res.ok) throw new Error();
@@ -84,6 +87,7 @@ export default function ClientListPageWithTemplate() {
     } catch (e) {
       toast.error("Gagal menghapus client");
     } finally {
+      setDeleteLoading(false);
       setConfirmDeleteId(null);
     }
   };
@@ -338,16 +342,16 @@ export default function ClientListPageWithTemplate() {
       </Modal>
 
       {/* Modal Konfirmasi Hapus */}
-      <Modal isOpen={confirmDeleteId !== null} onClose={() => setConfirmDeleteId(null)} className="w-[92vw] max-w-md overflow-hidden rounded-3xl shadow-xl">
-        <div className="px-6 pt-6 pb-2">
-          <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Hapus Client</h3>
-          <p className="mt-2 text-sm text-gray-600 dark:text-gray-300">Anda yakin ingin menghapus client ini? Tindakan ini tidak dapat dibatalkan.</p>
-        </div>
-        <div className="flex items-center justify-end gap-3 border-t border-gray-200 px-6 py-4 dark:border-gray-800">
-          <button onClick={() => setConfirmDeleteId(null)} className="rounded-lg border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800">Batal</button>
-          <button onClick={confirmDelete} className="rounded-lg bg-red-600 px-4 py-2 text-sm font-semibold text-white hover:bg-red-700">Hapus</button>
-        </div>
-      </Modal>
+      <ModalConfirmation
+        isOpen={confirmDeleteId !== null}
+        onClose={() => setConfirmDeleteId(null)}
+        title="Hapus Client ini?"
+        description="Anda yakin ingin menghapus client ini? Tindakan ini tidak dapat dibatalkan."
+        confirmLabel="Hapus"
+        destructive
+        loading={deleteLoading}
+        onConfirm={confirmDelete}
+      />
     </div>
   );
 }

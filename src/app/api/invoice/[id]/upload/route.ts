@@ -3,6 +3,7 @@ import { put } from "@vercel/blob";
 import { prisma } from "@/lib/prisma";
 import { getAuth } from "@/lib/auth";
 import { resolveAllowedBrandIds } from "@/lib/brand";
+import { createOrUpdateShortLink } from "@/lib/shortlink";
 
 export const runtime = "nodejs";
 
@@ -42,7 +43,7 @@ export async function POST(req: Request, { params }: { params: { id: string } })
         id: numericId,
         brandProfileId: allowedBrandIds.length ? { in: allowedBrandIds } : undefined,
       },
-      select: { id: true, invoiceNumber: true },
+      select: { id: true, invoiceNumber: true, brandProfileId: true },
     });
 
     if (!invoice) {
@@ -77,9 +78,17 @@ export async function POST(req: Request, { params }: { params: { id: string } })
     });
 
     try {
+      const { shortUrl } = await createOrUpdateShortLink({
+        type: "invoice",
+        entityId: invoice.id,
+        brandProfileId: invoice.brandProfileId ?? null,
+        targetUrl: blob.url,
+        hint: invoice.invoiceNumber || `INV-${invoice.id}`,
+        origin: req.headers.get("origin") || undefined,
+      });
       await prisma.invoice.update({
         where: { id: invoice.id },
-        data: { shareUrl: blob.url },
+        data: { shareUrl: shortUrl },
       });
     } catch (updateErr) {
       console.error("[invoice/upload] failed to persist shareUrl", updateErr);
@@ -101,4 +110,3 @@ export async function POST(req: Request, { params }: { params: { id: string } })
     );
   }
 }
-

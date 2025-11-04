@@ -389,7 +389,8 @@ export default function TemplateManagerPage() {
         throw new Error(saveJson?.error || "Gagal menyimpan signature profile.");
       }
 
-      setSignatureProfiles((prev) => [...prev, saveJson.data as SignatureProfile]);
+      // Refresh dari server untuk memastikan state sinkron dan urutan konsisten
+      await fetchSignatureProfiles();
       toast.success("Signature profile berhasil dibuat.");
       setSignatureDialogOpen(false);
       resetSignatureForm();
@@ -474,8 +475,8 @@ export default function TemplateManagerPage() {
         throw new Error(saveJson?.error || "Gagal menyimpan signature profile.");
       }
 
-      const updated = saveJson.data as SignatureProfile;
-      setSignatureProfiles((prev) => prev.map((p) => (p.id === updated.id ? updated : p)));
+      // Refresh dari server untuk memastikan state sinkron
+      await fetchSignatureProfiles();
       toast.success("Signature profile berhasil diperbarui.");
       setSignatureEditDialogOpen(false);
       resetSignatureEditForm();

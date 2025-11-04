@@ -1,4 +1,5 @@
 import { NextResponse, type NextRequest } from "next/server";
+export const revalidate = 60;
 import { prisma } from "@/lib/prisma";
 import { getActiveBrandProfile } from "@/lib/brand";
 import { sendNotificationToRole } from "@/lib/notification";

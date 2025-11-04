@@ -389,12 +389,12 @@ Terima kasih.`;
       body: JSON.stringify({ type: "quotation", id: quotation.id }),
     });
     const json = await response.json().catch(() => null);
-    if (!response.ok || json?.success !== true || !json?.url) {
+    if (!response.ok || json?.success !== true || (!json?.url && !json?.shortUrl)) {
       throw new Error(json?.message || "Gagal membuat link dokumen");
     }
-    const url: string = json.url;
-    setQuotation((prev: any) => (prev ? { ...prev, shareUrl: url } : prev));
-    return url;
+    const link: string = json.shortUrl || json.url;
+    setQuotation((prev: any) => (prev ? { ...prev, shareUrl: link } : prev));
+    return link;
   }, [quotation]);
 
   const createWhatsappLink = useCallback(async (): Promise<string> => {

@@ -64,7 +64,7 @@ export async function DELETE(_req: NextRequest, { params }: { params: Promise<{ 
   const idNum = Number(id);
   if (Number.isNaN(idNum)) return NextResponse.json({ error: 'Invalid id' }, { status: 400 });
   try {
-    await prisma.product.delete({ where: { id: idNum } });
+    await prisma.product.update({ where: { id: idNum }, data: { isDeleted: true, deletedAt: new Date() } });
     return NextResponse.json({ success: true });
   } catch (e:any) { return NextResponse.json({ error: e?.message || 'Gagal' }, { status: 500 }); }
 }

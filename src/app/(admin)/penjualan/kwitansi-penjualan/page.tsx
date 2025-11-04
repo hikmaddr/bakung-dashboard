@@ -1,7 +1,8 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, useCallback } from "react";
 import { Download, ChevronDown, Eye, Trash2, Truck } from "lucide-react";
+import { StatusBadge, getInvoiceStatusLabel } from "@/components/ui/StatusBadge";
 import EmptyState from "@/components/EmptyState";
 import PageBreadcrumb from "@/components/common/PageBreadCrumb";
 import Pagination from "@/components/tables/Pagination";
@@ -235,6 +236,7 @@ type ReceiptRow = {
   const [searchTerm, setSearchTerm] = useState("");
   const [page, setPage] = useState(1);
   const [limit, setLimit] = useState(10);
+  const [statusMap, setStatusMap] = useState<Record<number, any>>({});
 
   // Load draft dari localStorage saat mount dan saat kembali fokus
   useEffect(() => {
@@ -265,42 +267,111 @@ type ReceiptRow = {
     return () => { window.removeEventListener('focus', onFocus); window.removeEventListener('storage', onStorage); };
   }, []);
 
+  // Ambil daftar kwitansi dari server dan gabungkan dengan draft lokal
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch('/api/receipts', { cache: 'no-store' });
+        const json = await res.json();
+        if (!res.ok || json?.success === false) throw new Error(json?.message || 'Gagal memuat kwitansi');
+        const serverRows: ReceiptRow[] = Array.isArray(json?.data)
+          ? json.data.map((r: any) => ({
+              id: Number(r.id), // invoiceId agar preview/unduh mengikuti alur saat ini
+              receiptNumber: r.receiptNumber || `RCPT-${r.receiptId || r.id}`,
+              date: r.date ? new Date(r.date).toLocaleDateString('id-ID') : '-',
+              total: Number(r.total || 0),
+              customer: r.customer || undefined,
+            }))
+          : [];
+        if (cancelled) return;
+        setRows((prev) => {
+          const byId = new Map<number, ReceiptRow>();
+          // Prioritaskan data server (lebih otoritatif)
+          for (const s of serverRows) byId.set(s.id, s);
+          // Tambahkan draft dan entry lama yang belum tergantikan
+          for (const p of prev) {
+            const isDraft = p._ts && p.id === p._ts;
+            if (!isDraft && byId.has(p.id)) continue; // jika sudah ada dari server, skip
+            byId.set(p.id, p);
+          }
+          return Array.from(byId.values()).sort((a, b) => (b._ts || 0) - (a._ts || 0));
+        });
+      } catch (e) {
+        // Abaikan error; tetap tampilkan draft jika API gagal
+        console.error('Failed to fetch receipts list', e);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, []);
+
+  // Enrich status untuk kwitansi non-draft berdasarkan status invoice terkait
+  useEffect(() => {
+    const nonDraft = rows.filter(r => !(r._ts && r.id === r._ts));
+    if (nonDraft.length === 0) { setStatusMap({}); return; }
+    let cancelled = false;
+    (async () => {
+      try {
+        const entries = await Promise.all(
+          nonDraft.map(async (r) => {
+            try {
+              const res = await fetch(`/api/invoices/${r.id}`, { cache: 'no-store' });
+              const json = await res.json();
+              if (!res.ok || json?.success === false) throw new Error(json?.message || 'Gagal memuat invoice');
+              const inv = json.data || {};
+              const label = getInvoiceStatusLabel(inv);
+              return [r.id, label] as const;
+            } catch {
+              return [r.id, 'Pending'] as const;
+            }
+          })
+        );
+        if (cancelled) return;
+        const map: Record<number, any> = {};
+        for (const [id, label] of entries) map[id] = label;
+        setStatusMap(map);
+      } catch {
+        if (!cancelled) setStatusMap({});
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [rows]);
+
   const filtered = useMemo(() => {
     const q = searchTerm.toLowerCase().trim();
     if (!q) return rows;
     return rows.filter(r => r.receiptNumber.toLowerCase().includes(q) || (r.customer?.pic||'').toLowerCase().includes(q) || (r.customer?.company||'').toLowerCase().includes(q));
   }, [rows, searchTerm]);
-  const totalPages = Math.max(1, Math.ceil(filtered.length / limit));
-  const start = (page - 1) * limit;
-  const paged = filtered.slice(start, start + limit);
-
-  const fmt = (n: number) => (Number(n) || 0).toLocaleString('id-ID', { style: 'currency', currency: 'IDR' });
-  const customerText = (r: ReceiptRow) => {
+  const { totalPages, paged } = useMemo(() => {
+    const total = Math.max(1, Math.ceil(filtered.length / limit));
+    const start = (page - 1) * limit;
+    const slice = filtered.slice(start, start + limit);
+    return { totalPages: total, paged: slice } as const;
+  }, [filtered, limit, page]);
+  const fmt = useCallback((n: number) => (Number(n) || 0).toLocaleString('id-ID', { style: 'currency', currency: 'IDR' }), []);
+  const customerText = useCallback((r: ReceiptRow) => {
     const name = r.customer?.pic?.trim() || '';
     const company = r.customer?.company?.trim() || '';
     if (name && company) return `${name} - ${company}`;
     if (name) return name;
     if (company) return company;
     return '-';
-  };
-
-  const openPreview = (r: ReceiptRow) => {
+  }, []);
+  const openPreview = useCallback((r: ReceiptRow) => {
     try {
       const payload = { from: 'receipt-list', invoiceId: r.id, invoiceNumber: r.receiptNumber, ts: Date.now() };
       localStorage.setItem('newReceiptFromInvoice', JSON.stringify(payload));
     } catch {}
     window.open(`/penjualan/kwitansi-penjualan/${r.id}`, '_blank');
-  };
-
-  const sendToSJ = (r: ReceiptRow) => {
+  }, []);
+  const sendToSJ = useCallback((r: ReceiptRow) => {
     try {
       const payload = { from: 'receipt-list', invoiceId: r.id, invoiceNumber: r.receiptNumber, ts: Date.now() };
       localStorage.setItem('newReceiptFromInvoice', JSON.stringify(payload));
     } catch {}
     window.location.href = `/penjualan/surat-jalan/add?from=receipt-list&invoiceId=${r.id}`;
-  };
-
-  const downloadKw = async (r: ReceiptRow) => {
+  }, []);
+  const downloadKw = useCallback(async (r: ReceiptRow) => {
     try {
       const payload = { from: 'receipt-list', invoiceId: r.id, invoiceNumber: r.receiptNumber, ts: Date.now() };
       localStorage.setItem('newReceiptFromInvoice', JSON.stringify(payload));
@@ -341,9 +412,8 @@ type ReceiptRow = {
       const message = err instanceof Error ? err.message : "Gagal mengunduh kwitansi";
       toast.error(message);
     }
-  };
-
-  const deleteDraft = (r: ReceiptRow) => {
+  }, []);
+  const deleteDraft = useCallback((r: ReceiptRow) => {
     if (!confirm('Hapus kwitansi ini?')) return;
     try {
       const raw = localStorage.getItem('kwitansiDrafts') || '[]';
@@ -360,7 +430,7 @@ type ReceiptRow = {
       // fallback update state only
       setRows(prev => prev.filter(x => x !== r));
     }
-  };
+  }, []);
 
   return (
     <>
@@ -418,6 +488,7 @@ type ReceiptRow = {
                   <th className="px-4 py-3 text-left">Customer</th>
                   <th className="px-4 py-3 text-left">No. Kwitansi</th>
                   <th className="px-4 py-3 text-left">Tanggal</th>
+                  <th className="px-4 py-3 text-left">Status</th>
                   <th className="px-4 py-3 text-right">Nilai Invoice</th>
                   <th className="px-4 py-3 text-right">Tindakan</th>
                 </tr>
@@ -428,6 +499,9 @@ type ReceiptRow = {
                     <td className="px-4 py-3">{customerText(r)}</td>
                     <td className="px-4 py-3">{r.receiptNumber}</td>
                     <td className="px-4 py-3">{r.date}</td>
+                    <td className="px-4 py-3">
+                      <StatusBadge status={(r._ts && r.id === r._ts) ? "Draft" : (statusMap[r.id] || "Pending")} />
+                    </td>
                     <td className="px-4 py-3 text-right">{fmt(r.total)}</td>
                     <td className="px-4 py-3 text-right">
                       <div className="inline-flex items-center justify-end gap-2">

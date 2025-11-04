@@ -500,7 +500,7 @@ export async function PUT(
 }
 
 /* =========================
- * DELETE — hapus sales order
+ * DELETE — arsipkan (soft delete) sales order
  * ========================= */
 export async function DELETE(
   _req: NextRequest,
@@ -535,13 +535,12 @@ export async function DELETE(
     }
 
     const deletedOrder = await prisma.salesOrder.findUnique({ where: { id }, select: { orderNumber: true } });
-    await prisma.salesOrderItem.deleteMany({ where: { salesOrderId: id } });
-    await prisma.salesOrder.delete({ where: { id } });
+    await prisma.salesOrder.update({ where: { id }, data: { isDeleted: true, deletedAt: new Date() } });
 
     try {
       await logActivity(_req, {
         userId: auth?.userId || null,
-        action: "SALES_ORDER_DELETE",
+        action: "SALES_ORDER_DELETE_SOFT",
         entity: "sales_order",
         entityId: id,
         metadata: { orderNumber: deletedOrder?.orderNumber }

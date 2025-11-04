@@ -1,4 +1,4 @@
-import { cookies } from "next/headers";
+import { cookies, headers as nextHeaders } from "next/headers";
 import { prisma } from "@/lib/prisma";
 import { getAuth } from "@/lib/auth";
 
@@ -77,6 +77,23 @@ export function isOwnerOnly(roles?: string[] | null): boolean {
 }
 
 export async function resolveAllowedBrandIds(userId: number | null, roles?: string[] | null, requestedBrandIds?: number[]) {
+  // Fast path: honor middleware-injected headers when available
+  try {
+    const h = await nextHeaders();
+    const csv = h.get("x-allowed-brand-ids");
+    if (csv && csv.trim().length > 0) {
+      const allowed = csv
+        .split(",")
+        .map((s) => Number(s.trim()))
+        .filter((n) => Number.isFinite(n) && n > 0);
+      if (requestedBrandIds && requestedBrandIds.length > 0) {
+        const set = new Set(allowed);
+        return requestedBrandIds.filter((id) => set.has(id));
+      }
+      return allowed;
+    }
+  } catch {}
+
   // OWNER: akses semua brand; selain itu hanya brand yang diassign.
   if (isOwnerOrAdmin(roles)) {
     if (requestedBrandIds && requestedBrandIds.length > 0) return requestedBrandIds;

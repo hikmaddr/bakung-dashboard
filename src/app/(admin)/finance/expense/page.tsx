@@ -2,6 +2,8 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import PageBreadcrumb from "@/components/common/PageBreadCrumb";
 import Pagination from "@/components/tables/Pagination";
+import { downloadUrlAsFile } from "@/utils/downloadFile";
+import { formatDownloadFileName } from "@/utils/downloadFilename";
 
 type ExpenseRow = {
   id: number;
@@ -112,14 +114,21 @@ export default function FinanceExpensePage() {
                   <td className="p-2">{r.payee || '-'}</td>
                   <td className="p-2">
                     {r.payment?.receipt ? (
-                      <a
+                      <button
+                        type="button"
                         className="text-blue-600 underline"
-                        href={`/api/receipts/${r.payment.receipt.id}/pdf`}
-                        target="_blank"
-                        rel="noreferrer"
+                        onClick={async () => {
+                          const fileName = formatDownloadFileName(
+                            r.payment!.receipt!.receiptNumber,
+                            undefined,
+                            r.payment!.receipt!.receiptNumber || "Receipt",
+                            "Receipt"
+                          );
+                          await downloadUrlAsFile(`/api/receipts/${r.payment!.receipt!.id}/pdf`, fileName);
+                        }}
                       >
                         {r.payment.receipt.receiptNumber || "Receipt"}
-                      </a>
+                      </button>
                     ) : (
                       "-"
                     )}

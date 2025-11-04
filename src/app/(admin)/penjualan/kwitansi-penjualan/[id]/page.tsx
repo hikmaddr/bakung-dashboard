@@ -15,6 +15,8 @@ import {
   DEFAULT_TERMS,
 } from "@/lib/quotationTheme";
 import { terbilangRupiah } from "@/lib/terbilang";
+import { downloadUrlAsFile } from "@/utils/downloadFile";
+import { formatDownloadFileName } from "@/utils/downloadFilename";
 
 interface ReceiptItem {
   id?: number;
@@ -99,10 +101,16 @@ export default function ReceiptDetailPage() {
 
   const [spell, setSpell] = useState("-");
 
-  const savePdf = useCallback(() => {
+  const savePdf = useCallback(async () => {
     if (!receiptId) return;
-    window.open(`/api/receipts/${receiptId}/pdf`, "_blank");
-  }, [receiptId]);
+    const fileName = formatDownloadFileName(
+      receipt?.invoiceNumber,
+      receipt?.customer?.pic || receipt?.customer?.company,
+      receipt?.invoiceNumber || "INV",
+      receipt?.customer?.pic || receipt?.customer?.company || "Customer"
+    );
+    await downloadUrlAsFile(`/api/receipts/${receiptId}/pdf`, fileName);
+  }, [receiptId, receipt]);
 
   // Deteksi konteks pembuatan dari Invoice menggunakan localStorage
   useEffect(() => {

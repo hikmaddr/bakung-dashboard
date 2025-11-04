@@ -26,6 +26,7 @@ export default function SystemNotificationsPage() {
             type: String(n.type ?? "info"),
             read: Boolean(n.read ?? n.isRead ?? false),
             createdAt: n.createdAt,
+            targetUrl: n.targetUrl ?? null,
           }))
         : [];
       setItems(mapped);
@@ -81,4 +82,3 @@ export default function SystemNotificationsPage() {
     </FeatureGuard>
   );
 }
-

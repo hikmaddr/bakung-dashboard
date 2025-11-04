@@ -110,6 +110,8 @@ const AppHeader: React.FC = () => {
                 height={32}
                 src={activeBrand.logo}
                 alt={activeBrand.name}
+                priority
+                sizes="(max-width: 1024px) 120px"
                 className="h-8 w-auto object-contain"
               />
             ) : (
@@ -127,6 +129,8 @@ const AppHeader: React.FC = () => {
                 height={36}
                 src={activeBrand.logo}
                 alt={activeBrand.name}
+                priority
+                sizes="(min-width: 1024px) 140px"
                 className="h-9 w-auto object-contain"
               />
             ) : (

@@ -13,6 +13,7 @@ import NextTopLoader from "nextjs-toploader";
 import { ToastProvider } from "@/context/ToastContext"; 
 import { GlobalProvider } from "@/context/AppContext";
 import { Analytics } from "@vercel/analytics/react";
+import RouteTransition from "@/layout/RouteTransition";
 
 
 const outfit = Outfit({
@@ -50,7 +51,9 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             {/* 🌟 WRAP SEMUA CHILDREN DENGAN ToastProvider 🌟 */}
             <ToastProvider>
               <GlobalProvider>
-                {children}
+                <div className="container-responsive section-spacing">
+                  {children}
+                </div>
                 {/* Vercel Analytics */}
                 <Analytics />
               </GlobalProvider>

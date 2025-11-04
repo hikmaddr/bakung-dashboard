@@ -3,6 +3,8 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import PageBreadcrumb from "@/components/common/PageBreadCrumb";
 import Pagination from "@/components/tables/Pagination";
+import { downloadUrlAsFile } from "@/utils/downloadFile";
+import { formatDownloadFileName } from "@/utils/downloadFilename";
 
 type PaymentRow = {
   id: number;
@@ -176,7 +178,27 @@ export default function FinancePaymentPage() {
                   <td className="p-2">{r.method}</td>
                   <td className="p-2 text-right">{currency(r.amount)}</td>
                   <td className="p-2">{r.refType} #{r.refId}</td>
-                  <td className="p-2">{r.receipt ? <a className="text-blue-600 underline" href={`/api/receipts/${r.receipt.id}/pdf`} target="_blank" rel="noreferrer">{r.receipt.receiptNumber}</a> : '-'}</td>
+                  <td className="p-2">
+                    {r.receipt ? (
+                      <button
+                        type="button"
+                        className="text-blue-600 underline"
+                        onClick={async () => {
+                          const fileName = formatDownloadFileName(
+                            r.receipt?.receiptNumber,
+                            undefined,
+                            r.receipt?.receiptNumber || "Receipt",
+                            "Receipt"
+                          );
+                          await downloadUrlAsFile(`/api/receipts/${r.receipt.id}/pdf`, fileName);
+                        }}
+                      >
+                        {r.receipt.receiptNumber}
+                      </button>
+                    ) : (
+                      '-'
+                    )}
+                  </td>
                 </tr>
               ))
             )}

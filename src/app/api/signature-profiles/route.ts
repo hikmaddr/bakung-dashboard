@@ -92,7 +92,7 @@ export async function DELETE(request: NextRequest) {
 
     await prisma.signatureProfile.update({
       where: { id },
-      data: { deletedAt: new Date() }
+      data: { deletedAt: new Date(), isDeleted: true }
     });
 
     return NextResponse.json({ success: true });

@@ -15,7 +15,8 @@
         "pm2:save": "pm2 save",
         "deploy:win": "powershell -ExecutionPolicy Bypass -File ./scripts/deploy-windows.ps1",
         "deploy:ubuntu": "bash ./scripts/deploy-ubuntu.sh",
-        "seed:dummy-notifications": "node scripts/seedDummyNotifications.js"
+        "seed:dummy-notifications": "node scripts/seedDummyNotifications.js",
+        "fix:share-urls": "node scripts/normalize-share-urls.js"
     },
     "dependencies": {
         "@fullcalendar/core": "^6.1.15",
@@ -45,6 +46,7 @@
         "dayjs": "^1.11.18",
         "exceljs": "^4.4.0",
         "flatpickr": "^4.6.13",
+        "framer-motion": "^11.18.2",
         "googleapis": "^161.0.0",
         "html2canvas": "^1.4.1",
         "jsonwebtoken": "^9.0.2",
@@ -65,7 +67,8 @@
         "react-hot-toast": "^2.6.0",
         "swiper": "^11.2.0",
         "tailwind-merge": "^2.6.0",
-        "xlsx": "^0.18.5"
+        "xlsx": "^0.18.5",
+        "zustand": "^5.0.8"
     },
     "devDependencies": {
         "@eslint/eslintrc": "^3",

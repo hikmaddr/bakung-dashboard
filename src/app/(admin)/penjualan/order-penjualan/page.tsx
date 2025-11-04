@@ -22,6 +22,7 @@ import { PDFDocument, rgb } from "pdf-lib";
 import { downloadCSV, downloadXLSX } from "@/lib/exporters";
 import FeatureGuard from "@/components/FeatureGuard";
 import { formatDownloadFileName } from "@/utils/downloadFilename";
+import { ModalConfirmation } from "@/components/ui/ModalConfirmation";
 
 // ================== TYPES ==================
 interface SalesOrder {
@@ -217,17 +218,12 @@ export default function SalesOrderListPage() {
 
 
   // 🟥 Delete
-  const handleDelete = async (id: number) => {
-    if (!confirm("Yakin ingin menghapus Sales Order ini?")) return;
-    try {
-      const res = await fetch(`/api/sales-orders/${id}`, { method: "DELETE" });
-      if (!res.ok) throw new Error();
-      
-      setOrders(orders.filter((o) => o.id !== id));
-      toast.success("Sales Order berhasil dihapus");
-    } catch (e) {
-      toast.error("Gagal menghapus Sales Order");
-    }
+  const [confirmDeleteId, setConfirmDeleteId] = useState<number | null>(null);
+  const [deleteModalOpen, setDeleteModalOpen] = useState(false);
+  const [deleteLoading, setDeleteLoading] = useState(false);
+  const handleDelete = (id: number) => {
+    setConfirmDeleteId(id);
+    setDeleteModalOpen(true);
   };
 
 
@@ -297,7 +293,7 @@ export default function SalesOrderListPage() {
           });
           const data = await resUpload.json();
           if (!data?.success) throw new Error();
-          const link = data.webViewLink || data.webContentLink || `https://drive.google.com/file/d/${data.fileId}/view`;
+          const link = data.shortUrl || data.url || data.webViewLink || data.webContentLink || (data.fileId ? `https://drive.google.com/file/d/${data.fileId}/view` : "");
           const phone = (orderToSend.customer?.phone || "").replace(/^0/, "62");
           const msg = encodeURIComponent(
             `Hi ${orderToSend.customer?.pic || "Customer"},\nAnda telah menerima Sales Order ${orderToSend.orderNumber}.\nTotal: ${formatCurrency(orderToSend.totalAmount)}\n\nLink dokumen: ${link}`
@@ -326,6 +322,35 @@ export default function SalesOrderListPage() {
       setSendMethod("email");
     }
   };
+
+  // Modal Konfirmasi Hapus
+  const DeleteConfirmationModal = (
+    <ModalConfirmation
+      isOpen={deleteModalOpen}
+      onClose={() => { setDeleteModalOpen(false); setConfirmDeleteId(null); }}
+      title="Hapus Sales Order ini?"
+      description="Tindakan ini akan menghapus Sales Order dari daftar."
+      confirmLabel="Hapus"
+      destructive
+      loading={deleteLoading}
+      onConfirm={async () => {
+        if (confirmDeleteId == null) return;
+        setDeleteLoading(true);
+        try {
+          const res = await fetch(`/api/sales-orders/${confirmDeleteId}`, { method: "DELETE" });
+          if (!res.ok) throw new Error();
+          setOrders((prev) => prev.filter((o) => o.id !== confirmDeleteId));
+          toast.success("Sales Order berhasil dihapus");
+        } catch (e) {
+          toast.error("Gagal menghapus Sales Order");
+        } finally {
+          setDeleteLoading(false);
+          setDeleteModalOpen(false);
+          setConfirmDeleteId(null);
+        }
+      }}
+    />
+  );
 
   // 🟢 Status Dropdown
   const handleStatusChange = async (id: number, nextStatus: string) => {
@@ -727,6 +752,7 @@ export default function SalesOrderListPage() {
           </div>
         </div>
       )}
+      {DeleteConfirmationModal}
     </div>
     </FeatureGuard>
   );

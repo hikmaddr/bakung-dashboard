@@ -52,42 +52,12 @@ export async function DELETE(req: NextRequest, { params }: { params: { id: strin
     if (!inScope) {
       return NextResponse.json({ success: false, message: "Forbidden: brand scope" }, { status: 403 });
     }
-    await prisma.$transaction(async (tx) => {
-      const purchase = await tx.purchaseDirect.findUnique({ where: { id }, include: { items: true } });
-      if (!purchase) return;
-      // If previously received, rollback stock by creating OUT reversal and decrementing product.qty
-      if (purchase.status === "Received") {
-        const hadIn = await tx.stockMutation.count({ where: { refTable: "purchasedirect", refId: id, type: "IN" } });
-        const hadOutReversal = await tx.stockMutation.count({ where: { refTable: "purchasedirect", refId: id, type: "OUT" } });
-        if (hadIn > 0 && hadOutReversal === 0) {
-          for (const it of purchase.items) {
-            if (!it.productId || it.qty === 0) continue;
-            const product = await tx.product.findFirst({ where: { id: it.productId } });
-            if (!product || !product.trackStock) continue;
-            await tx.product.update({ where: { id: product.id }, data: { qty: { decrement: it.qty } } });
-            await tx.stockMutation.create({
-              data: {
-                productId: product.id,
-                qty: it.qty,
-                type: "OUT",
-                refTable: "purchasedirect",
-                refId: id,
-                note: `Reversal pembelian ${purchase.purchaseNumber || id} dibatalkan`,
-                brandProfileId: brand?.id || null,
-                createdByUserId: auth?.userId || null,
-              },
-            });
-          }
-        }
-      }
-
-      await tx.purchaseDirectItem.deleteMany({ where: { purchaseDirectId: id } });
-      await tx.purchaseDirect.delete({ where: { id } });
-    });
+    // Soft delete: tandai record tanpa mengubah stok atau item
+    await prisma.purchaseDirect.update({ where: { id }, data: { isDeleted: true, deletedAt: new Date() } });
     try {
       await logActivity(req, {
         userId: auth?.userId || null,
-        action: "PURCHASE_DELETE",
+        action: "PURCHASE_DELETE_SOFT",
         entity: "purchase_direct",
         entityId: id,
         metadata: { brandProfileId: brand?.id || null }

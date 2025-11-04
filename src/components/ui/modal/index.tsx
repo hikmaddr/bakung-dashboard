@@ -1,5 +1,6 @@
 "use client";
 import React, { useRef, useEffect } from "react";
+import { motion } from "framer-motion";
 
 interface ModalProps {
   isOpen: boolean;
@@ -57,15 +58,23 @@ export const Modal: React.FC<ModalProps> = ({
   return (
     <div className="fixed inset-0 flex items-center justify-center overflow-y-auto modal z-99999">
       {!isFullscreen && (
-        <div
+        <motion.div
           className="fixed inset-0 h-full w-full bg-gray-400/50 backdrop-blur-[32px]"
           onClick={onClose}
-        ></div>
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+          transition={{ duration: 0.15 }}
+        />
       )}
-      <div
+      <motion.div
         ref={modalRef}
         className={`${contentClasses}  ${className}`}
         onClick={(e) => e.stopPropagation()}
+        initial={{ opacity: 0, y: 14, scale: isFullscreen ? 1 : 0.98 }}
+        animate={{ opacity: 1, y: 0, scale: 1 }}
+        exit={{ opacity: 0, y: 10, scale: isFullscreen ? 1 : 0.98 }}
+        transition={{ duration: 0.18, ease: "easeOut" }}
       >
         {showCloseButton && (
           <button
@@ -89,7 +98,7 @@ export const Modal: React.FC<ModalProps> = ({
           </button>
         )}
         <div>{children}</div>
-      </div>
+      </motion.div>
     </div>
   );
 };
