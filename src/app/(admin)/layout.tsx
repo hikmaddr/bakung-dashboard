@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useMemo, useState } from "react";
+import React, { Suspense, useEffect, useMemo, useState } from "react";
 import { useSidebar } from "@/context/SidebarContext";
 import AppHeader from "@/components/layout/AppHeader";
 import AppSidebar from "@/components/layout/AppSidebar";
@@ -93,13 +93,16 @@ export default function AdminLayout({
             <AppHeader />
 
             {/* Page Content */}
-            <main className="p-4 md:p-6 max-w-[--breakpoint-2xl] mx-auto w-full">
-              <RouteTransition>
-                {children}
-              </RouteTransition>
-            </main>
+            <Suspense fallback={null}>
+              <main className="p-4 md:p-6 max-w-[--breakpoint-2xl] mx-auto w-full">
+                <RouteTransition>
+                  {children}
+                </RouteTransition>
+              </main>
+            </Suspense>
 
             {/* Welcome Modal setelah login */}
+            <Suspense fallback={null}>
             <Modal isOpen={welcomeOpen} onClose={() => setWelcomeOpen(false)}>
               <div className="p-6">
                 <h3 className="text-xl font-semibold text-gray-900 dark:text-white mb-2">Selamat Datang 👋</h3>
@@ -125,6 +128,7 @@ export default function AdminLayout({
                 </div>
               </div>
             </Modal>
+            </Suspense>
           </div>
         </div>
         </FeedbackProvider>

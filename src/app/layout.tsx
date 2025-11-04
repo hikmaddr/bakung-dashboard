@@ -14,6 +14,7 @@ import { ToastProvider } from "@/context/ToastContext";
 import { GlobalProvider } from "@/context/AppContext";
 import { Analytics } from "@vercel/analytics/react";
 import RouteTransition from "@/layout/RouteTransition";
+import { Suspense } from "react";
 
 
 const outfit = Outfit({
@@ -52,7 +53,9 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             <ToastProvider>
               <GlobalProvider>
                 <div className="container-responsive section-spacing">
-                  {children}
+                  <Suspense fallback={null}>
+                    {children}
+                  </Suspense>
                 </div>
                 {/* Vercel Analytics */}
                 <Analytics />
