@@ -30,11 +30,6 @@ const nextConfig = {
         hostname: 'public.blob.vercel-storage.com',
       },
     ],
-    domains: [
-      'blob.vercel-storage.com',
-      'pzvwweq0cd5gjc1s.public.blob.vercel-storage.com',
-      'public.blob.vercel-storage.com',
-    ],
   },
   experimental: {
     optimizePackageImports: [
