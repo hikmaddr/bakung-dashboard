@@ -50,6 +50,9 @@ export function middleware(req: NextRequest) {
   try {
     const secret = process.env.JWT_SECRET || "dev_secret_change_me";
     jwt.verify(token, secret);
+    const decoded: any = jwt.decode(token) || {};
+    const roleNames: string[] = Array.isArray(decoded?.roles) ? decoded.roles : [];
+    const rolesUpper = roleNames.map((r) => String(r).toUpperCase());
 
     // Idle timeout check
     const now = Date.now();
@@ -103,6 +106,13 @@ export function middleware(req: NextRequest) {
             url.pathname = "/403";
             url.searchParams.set("reason", "scope_creative_blocked");
             url.searchParams.set("redirect", pathname);
+            try {
+              await fetch(`${origin}/api/activity/access-denied`, {
+                method: "POST",
+                headers: { "content-type": "application/json", cookie: cookieHeader },
+                body: JSON.stringify({ path: pathname, reason: "scope_creative_blocked" }),
+              });
+            } catch {}
             return NextResponse.redirect(url);
           }
           const nextRes = setActivity(NextResponse.next());
@@ -111,6 +121,38 @@ export function middleware(req: NextRequest) {
           return nextRes;
         })
         .catch(() => NextResponse.next());
+    }
+
+    // Role-based page guards (system & reporting)
+    const origin = req.nextUrl.origin;
+    const cookieHeader = req.headers.get("cookie") || "";
+    const denyWithLog = async (reason: string) => {
+      const url = req.nextUrl.clone();
+      url.pathname = "/403";
+      url.searchParams.set("reason", reason);
+      url.searchParams.set("redirect", pathname);
+      try {
+        await fetch(`${origin}/api/activity/access-denied`, {
+          method: "POST",
+          headers: { "content-type": "application/json", cookie: cookieHeader },
+          body: JSON.stringify({ path: pathname, reason }),
+        });
+      } catch {}
+      return NextResponse.redirect(url);
+    };
+
+    if (!isApiRoute && pathname.startsWith("/system")) {
+      const isOwner = rolesUpper.includes("OWNER");
+      if (!isOwner) {
+        return denyWithLog("role_guard_system");
+      }
+    }
+
+    if (!isApiRoute && pathname.startsWith("/reporting")) {
+      const allowed = rolesUpper.includes("OWNER") || rolesUpper.includes("ADMIN");
+      if (!allowed) {
+        return denyWithLog("role_guard_reporting");
+      }
     }
     
     // Multi-tenant guard: terapkan untuk semua API kecuali /api/auth
@@ -122,7 +164,6 @@ export function middleware(req: NextRequest) {
     }
 
     // Forward cookies to brand-access-check endpoint
-    const origin = req.nextUrl.origin;
     const checkUrl = new URL(`${origin}/api/auth/brand-access-check`);
 
     // Propagate explicit brand query if present
@@ -167,6 +208,13 @@ export function middleware(req: NextRequest) {
           url.pathname = "/403";
           url.searchParams.set("reason", "brand_scope");
           url.searchParams.set("redirect", pathname);
+          try {
+            await fetch(`${origin}/api/activity/access-denied`, {
+              method: "POST",
+              headers: { "content-type": "application/json", cookie: cookieHeader },
+              body: JSON.stringify({ path: pathname, reason: "brand_scope" }),
+            });
+          } catch {}
           return NextResponse.redirect(url);
         }
 
@@ -182,6 +230,13 @@ export function middleware(req: NextRequest) {
           url.pathname = "/403";
           url.searchParams.set("reason", "brand_scope_error");
           url.searchParams.set("redirect", pathname);
+          try {
+            await fetch(`${origin}/api/activity/access-denied`, {
+              method: "POST",
+              headers: { "content-type": "application/json", cookie: cookieHeader },
+              body: JSON.stringify({ path: pathname, reason: "brand_scope_error" }),
+            });
+          } catch {}
           return NextResponse.redirect(url);
         }
         const jsonRes = NextResponse.json({ success: false, message: "Brand scope check error" }, { status: 403 });

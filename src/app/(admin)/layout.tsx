@@ -10,6 +10,7 @@ import { FeedbackProvider } from "@/context/FeedbackContext";
 import IdleWatcher from "@/components/IdleWatcher";
 import BrandSelectOnLogin from "@/components/header/BrandSelectOnLogin";
 import RouteTransition from "@/layout/RouteTransition";
+import RoleGuard from "@/components/auth/RoleGuard";
 import { Modal } from "@/components/ui/modal";
 import { useRouter, useSearchParams } from "next/navigation";
 
@@ -95,9 +96,11 @@ export default function AdminLayout({
             {/* Page Content */}
             <Suspense fallback={null}>
               <main className="p-4 md:p-6 max-w-[--breakpoint-2xl] mx-auto w-full">
-                <RouteTransition>
-                  {children}
-                </RouteTransition>
+                <RoleGuard roles={["Owner", "Admin"]}>
+                  <RouteTransition>
+                    {children}
+                  </RouteTransition>
+                </RoleGuard>
               </main>
             </Suspense>
 

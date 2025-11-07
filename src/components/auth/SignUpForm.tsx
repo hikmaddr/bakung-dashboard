@@ -50,7 +50,7 @@ const SignUpForm: React.FC = () => {
         return;
       }
 
-      router.push("/pending-approval");
+      router.push("/waiting-approval");
     } catch (err) {
       setError("Registration failed");
     } finally {
