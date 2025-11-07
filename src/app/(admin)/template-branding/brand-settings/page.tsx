@@ -548,6 +548,28 @@ function BrandSettingsPage() {
     fetchSignatureProfiles();
   }, [fetchSignatureProfiles]);
 
+  // Refresh ketika brand diaktifkan dari top bar atau daftar brand berubah
+  useEffect(() => {
+    const onBrandModulesUpdated = () => {
+      fetchProfiles({ silent: true });
+    };
+    const onBrandListUpdated = () => {
+      fetchProfiles({ silent: true });
+    };
+
+    if (typeof window !== "undefined") {
+      window.addEventListener("brand-modules:updated", onBrandModulesUpdated);
+      window.addEventListener("brand-list:updated", onBrandListUpdated);
+    }
+
+    return () => {
+      if (typeof window !== "undefined") {
+        window.removeEventListener("brand-modules:updated", onBrandModulesUpdated);
+        window.removeEventListener("brand-list:updated", onBrandListUpdated);
+      }
+    };
+  }, [fetchProfiles]);
+
   useEffect(() => {
     if (!formData.signatureProfileId) return;
     const profile = signatureProfiles.find(
