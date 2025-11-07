@@ -80,76 +80,90 @@ const SignInForm: React.FC = () => {
 
   return (
     <div className="min-h-[60vh] w-full px-4 py-8 flex items-center justify-center">
-      <div className="w-full max-w-md rounded-xl border border-stroke bg-white shadow-default dark:border-strokedark dark:bg-boxdark">
-        <div className="p-6 sm:p-8">
-          <div className="mb-6 text-center">
-            <Link className="mb-4 inline-block" href="/">
-              <Image
-                className="hidden dark:block"
-                src={"/branding/logo-bakung-white.png"}
-                alt="Logo"
-                width={160}
-                height={30}
-                priority
-              />
-              <Image
-                className="dark:hidden"
-                src={"/branding/logo-bakung-color.png"}
-                alt="Logo"
-                width={160}
-                height={30}
-                priority
-              />
-            </Link>
-            <h2 className="text-xl font-semibold text-black dark:text-white">Masuk ke Dashboard</h2>
-            <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">Kelola penjualan, faktur, dan brand dalam satu tempat.</p>
-          </div>
-
-          <form onSubmit={handleSubmit} className="space-y-5">
-            <div>
-              <label className="mb-2.5 block font-medium text-black dark:text-white">Email</label>
-              <input
-                type="email"
-                placeholder="you@example.com"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                className="w-full rounded-lg border-[1.5px] border-stroke bg-transparent py-3 px-4 text-black outline-none transition focus:border-primary active:border-primary disabled:cursor-default disabled:bg-whiter dark:border-form-strokedark dark:bg-form-input dark:text-white dark:focus:border-primary"
-                required
-              />
+      <div className="w-full max-w-5xl grid grid-cols-1 xl:grid-cols-2 gap-6">
+        {/* Kartu form login */}
+        <div className="rounded-xl border border-stroke bg-white shadow-default dark:border-strokedark dark:bg-boxdark">
+          <div className="p-6 sm:p-8">
+            <div className="mb-6 text-center">
+              <Link className="mb-4 inline-block" href="/">
+                <Image
+                  className="hidden dark:block"
+                  src={"/branding/logo-bakung-white.png"}
+                  alt="Logo"
+                  width={160}
+                  height={30}
+                  priority
+                />
+                <Image
+                  className="dark:hidden"
+                  src={"/branding/logo-bakung-color.png"}
+                  alt="Logo"
+                  width={160}
+                  height={30}
+                  priority
+                />
+              </Link>
+              <h2 className="text-xl font-semibold text-black dark:text-white">Masuk ke Dashboard</h2>
+              <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">Kelola penjualan, faktur, dan brand dalam satu tempat.</p>
             </div>
 
-            <div>
-              <label className="mb-2.5 block font-medium text-black dark:text-white">Password</label>
-              <input
-                type="password"
-                placeholder="••••••••"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                className="w-full rounded-lg border-[1.5px] border-stroke bg-transparent py-3 px-4 text-black outline-none transition focus:border-primary active:border-primary disabled:cursor-default disabled:bg-whiter dark:border-form-strokedark dark:bg-form-input dark:text-white dark:focus:border-primary"
-                required
-              />
-            </div>
+            <form onSubmit={handleSubmit} className="space-y-5">
+              <div>
+                <label className="mb-2.5 block font-medium text-black dark:text-white">Email</label>
+                <input
+                  type="email"
+                  placeholder="you@example.com"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  className="w-full rounded-lg border-[1.5px] border-stroke bg-transparent py-3 px-4 text-black outline-none transition focus:border-primary active:border-primary disabled:cursor-default disabled:bg-whiter dark:border-form-strokedark dark:bg-form-input dark:text-white dark:focus:border-primary"
+                  required
+                />
+              </div>
 
-            {error && (
-              <div className="rounded-lg bg-red-50 p-3 text-red-600">{error}</div>
-            )}
+              <div>
+                <label className="mb-2.5 block font-medium text-black dark:text-white">Password</label>
+                <input
+                  type="password"
+                  placeholder="••••••••"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  className="w-full rounded-lg border-[1.5px] border-stroke bg-transparent py-3 px-4 text-black outline-none transition focus:border-primary active:border-primary disabled:cursor-default disabled:bg-whiter dark:border-form-strokedark dark:bg-form-input dark:text-white dark:focus:border-primary"
+                  required
+                />
+              </div>
 
-            <Button variant="primary" size="md" type="submit" disabled={loading} className="w-full">
-              {loading ? (
-                <div className="flex items-center justify-center gap-2">
-                  <div className="h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent" />
-                  Masuk...
-                </div>
-              ) : (
-                "Masuk"
+              {error && (
+                <div className="rounded-lg bg-red-50 p-3 text-red-600">{error}</div>
               )}
-            </Button>
 
-            <p className="text-center text-sm text-gray-600 dark:text-gray-400">
-              Belum punya akun?{" "}
-              <Link href="/signup" className="text-primary">Daftar</Link>
-            </p>
-          </form>
+              <Button variant="primary" size="md" type="submit" disabled={loading} className="w-full">
+                {loading ? (
+                  <div className="flex items-center justify-center gap-2">
+                    <div className="h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent" />
+                    Masuk...
+                  </div>
+                ) : (
+                  "Masuk"
+                )}
+              </Button>
+
+              <p className="text-center text-sm text-gray-600 dark:text-gray-400">
+                Belum punya akun?{" "}
+                <Link href="/signup" className="text-primary">Daftar</Link>
+              </p>
+            </form>
+          </div>
+        </div>
+
+        {/* Panel kanan dengan logo putih */}
+        <div className="hidden xl:flex items-center justify-center rounded-xl border border-stroke dark:border-strokedark bg-gray-900 p-8">
+          <Image
+            src={"/branding/logo-bakung-white.png"}
+            alt="Bakung Dashboard"
+            width={176}
+            height={32}
+            priority
+          />
         </div>
       </div>
     </div>
