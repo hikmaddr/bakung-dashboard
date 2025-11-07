@@ -6,9 +6,11 @@ export const ACTIVE_BRAND_COOKIE = "active_brand_slug";
 
 export async function getActiveBrandProfile() {
   try {
+    // Wajib ada sesi sebelum akses Prisma
+    const auth = await getAuth();
+    if (!auth?.userId) return null;
     const store = await cookies();
     const cookieSlug = store.get(ACTIVE_BRAND_COOKIE)?.value;
-    const auth = await getAuth();
 
     // 1) Cookie override (jika ada), dan user berhak akses brand tsb
     if (cookieSlug && cookieSlug.trim()) {
@@ -32,11 +34,11 @@ export async function getActiveBrandProfile() {
       }
     }
 
-    // 3) Fallback: brand yang isActive
+    // 3) Fallback: brand yang isActive (hanya setelah login)
     const active = await prisma.brandProfile.findFirst({ where: { isActive: true }, orderBy: { updatedAt: "desc" } });
     if (active) return active;
 
-    // 4) Jika tidak ada yang aktif, ambil brand pertama sebagai fallback
+    // 4) Jika tidak ada yang aktif, ambil brand pertama sebagai fallback (hanya setelah login)
     const first = await prisma.brandProfile.findFirst({ orderBy: { createdAt: "asc" } });
     return first ?? null;
   } catch (err) {

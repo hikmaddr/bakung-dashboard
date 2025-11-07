@@ -1,259 +1,107 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
-import jwt from "jsonwebtoken";
 
-const COOKIE = "auth_token";
-const LAST_ACTIVITY_COOKIE = "last_activity";
-const MAX_IDLE_MS = 24 * 60 * 60 * 1000; // 24 hours
+// Helper: verifikasi JWT HS256 menggunakan Web Crypto (Edge runtime)
+async function verifyJwtHS256(token: string, secret: string): Promise<{ valid: boolean; payload?: any }> {
+  try {
+    const parts = token.split(".");
+    if (parts.length !== 3) return { valid: false };
+    const [headerB64, payloadB64, signatureB64] = parts;
+    const enc = new TextEncoder();
+    const key = await crypto.subtle.importKey(
+      "raw",
+      enc.encode(secret),
+      { name: "HMAC", hash: "SHA-256" },
+      false,
+      ["sign"]
+    );
+    const data = `${headerB64}.${payloadB64}`;
+    const signature = await crypto.subtle.sign("HMAC", key, enc.encode(data));
+    const signatureUrl = toBase64Url(new Uint8Array(signature));
+    if (signatureUrl !== signatureB64) return { valid: false };
+    const payloadJson = JSON.parse(base64UrlDecode(payloadB64));
+    const nowSec = Math.floor(Date.now() / 1000);
+    if (typeof payloadJson?.exp === "number" && payloadJson.exp < nowSec) return { valid: false };
+    return { valid: true, payload: payloadJson };
+  } catch {
+    return { valid: false };
+  }
+}
 
+function toBase64Url(bytes: Uint8Array): string {
+  // Convert bytes to standard base64
+  let binary = "";
+  for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]);
+  const base64 = btoa(binary);
+  // To base64url
+  return base64.replace(/=+/g, "").replace(/\+/g, "-").replace(/\//g, "_");
+}
+
+function base64UrlDecode(b64url: string): string {
+  // To standard base64
+  let b64 = b64url.replace(/-/g, "+").replace(/_/g, "/");
+  const pad = b64.length % 4;
+  if (pad) b64 += "=".repeat(4 - pad);
+  const decoded = atob(b64);
+  return decoded;
+}
+
+// Minimal guard: hanya buka /signin dan /api/auth (plus aset Next)
 export function middleware(req: NextRequest) {
   const { pathname } = req.nextUrl;
+  const isApi = pathname.startsWith("/api");
 
   const isPublic =
     pathname.startsWith("/signin") ||
-    pathname.startsWith("/signup") ||
-    pathname.startsWith("/s/") ||
     pathname.startsWith("/api/auth") ||
     pathname.startsWith("/_next") ||
+    pathname === "/favicon.ico" ||
+    pathname.startsWith("/branding") ||
     pathname.startsWith("/images") ||
-    pathname.startsWith("/assets") ||
-    pathname === "/logo.png" ||
-    pathname.endsWith(".svg") ||
-    pathname === "/favicon.ico";
+    pathname.startsWith("/fonts") ||
+    pathname.startsWith("/uploads") ||
+    pathname === "/manifest.json";
 
-  // Allow public routes (signin, signup, auth APIs, static assets)
   if (isPublic) {
-    const res = NextResponse.next();
-    // Cache static assets aggressively; HTML pages will be covered below
-    if (
-      pathname.startsWith("/_next/static") ||
-      pathname.startsWith("/images") ||
-      pathname.startsWith("/assets") ||
-      pathname.startsWith("/uploads") ||
-      pathname.endsWith(".svg") ||
-      pathname === "/favicon.ico" ||
-      pathname === "/logo.png"
-    ) {
-      res.headers.set("Cache-Control", "public, max-age=31536000, immutable");
-    }
-    return res;
+    return NextResponse.next();
   }
 
-  const token = req.cookies.get(COOKIE)?.value;
-  if (!token) {
-    const url = req.nextUrl.clone();
-    url.pathname = "/signin";
-    url.searchParams.set("redirect", pathname);
-    return NextResponse.redirect(url);
-  }
-
-  try {
+  // Dukung transisi dari cookie lama ke baru: "token" atau "auth_token"
+  const cookieLegacy = req.cookies.get("token")?.value || null;
+  const cookieJwt = req.cookies.get("auth_token")?.value || null;
+  let token: string | null = null;
+  let isTokenValid = false;
+  if (cookieJwt) {
     const secret = process.env.JWT_SECRET || "dev_secret_change_me";
-    jwt.verify(token, secret);
-    const decoded: any = jwt.decode(token) || {};
-    const roleNames: string[] = Array.isArray(decoded?.roles) ? decoded.roles : [];
-    const rolesUpper = roleNames.map((r) => String(r).toUpperCase());
-
-    // Idle timeout check
-    const now = Date.now();
-    const lastStr = req.cookies.get(LAST_ACTIVITY_COOKIE)?.value;
-    const last = lastStr ? Number(lastStr) : 0;
-    if (last && now - last > MAX_IDLE_MS) {
-      const url = req.nextUrl.clone();
-      url.pathname = "/signin";
-      url.searchParams.set("reason", "idle_timeout");
-      url.searchParams.set("redirect", pathname);
-      const res = NextResponse.redirect(url);
-      // Clear cookies
-      res.cookies.set({ name: COOKIE, value: "", maxAge: 0, path: "/" });
-      res.cookies.set({ name: LAST_ACTIVITY_COOKIE, value: "", maxAge: 0, path: "/" });
+    const v = await verifyJwtHS256(cookieJwt, secret);
+    isTokenValid = !!v.valid;
+    token = isTokenValid ? cookieJwt : null;
+  } else if (cookieLegacy) {
+    // Biarkan legacy token lewat tanpa verifikasi untuk kompatibilitas lama
+    token = cookieLegacy;
+    isTokenValid = !!token;
+  }
+  if (isApi) {
+    // Untuk request API (selain /api/auth), balas 401 JSON bila tidak ada token
+    const isAuthApi = pathname.startsWith("/api/auth");
+    if (!isAuthApi && !token) {
+      const res = NextResponse.json({ success: false, message: "Unauthorized" }, { status: 401 });
       res.headers.set("Cache-Control", "no-store");
       return res;
     }
-
-    const setActivity = (res: NextResponse) => {
-      res.cookies.set({
-        name: LAST_ACTIVITY_COOKIE,
-        value: String(now),
-        httpOnly: true,
-        sameSite: "lax",
-        path: "/",
-        secure: process.env.NODE_ENV === "production",
-      });
-      return res;
-    };
-
-    // Scope-based page guard: block certain modules when brand scope is CREATIVE
-    const isApiRoute = pathname.startsWith("/api");
-    const creativeBlockedPrefixes = [
-      "/penjualan/order-penjualan",
-      "/penjualan/kwitansi-penjualan",
-      "/penjualan/surat-jalan",
-      "/produk-stok",
-      "/pembelian",
-    ];
-    const isCreativeBlockedPage = !isApiRoute && creativeBlockedPrefixes.some((p) => pathname.startsWith(p));
-    if (isCreativeBlockedPage) {
-      const origin = req.nextUrl.origin;
-      const cookieHeader = req.headers.get("cookie") || "";
-      // Fetch active brand to read businessScope (API uses Node runtime for Prisma)
-      return fetch(`${origin}/api/brand-profiles/active`, { headers: { cookie: cookieHeader } })
-        .then(async (res) => {
-          if (!res.ok) return NextResponse.next();
-          const brand = await res.json().catch(() => null);
-          if (brand?.businessScope === "CREATIVE") {
-            const url = req.nextUrl.clone();
-            url.pathname = "/403";
-            url.searchParams.set("reason", "scope_creative_blocked");
-            url.searchParams.set("redirect", pathname);
-            try {
-              await fetch(`${origin}/api/activity/access-denied`, {
-                method: "POST",
-                headers: { "content-type": "application/json", cookie: cookieHeader },
-                body: JSON.stringify({ path: pathname, reason: "scope_creative_blocked" }),
-              });
-            } catch {}
-            return NextResponse.redirect(url);
-          }
-          const nextRes = setActivity(NextResponse.next());
-          // Default page caching for SSR/SSG responses
-          nextRes.headers.set("Cache-Control", "public, s-maxage=60, stale-while-revalidate=300");
-          return nextRes;
-        })
-        .catch(() => NextResponse.next());
-    }
-
-    // Role-based page guards (system & reporting)
-    const origin = req.nextUrl.origin;
-    const cookieHeader = req.headers.get("cookie") || "";
-    const denyWithLog = async (reason: string) => {
+    return NextResponse.next();
+  } else {
+    // Untuk halaman biasa, redirect ke /signin bila tidak ada token
+    if (!token) {
       const url = req.nextUrl.clone();
-      url.pathname = "/403";
-      url.searchParams.set("reason", reason);
+      url.pathname = "/signin";
       url.searchParams.set("redirect", pathname);
-      try {
-        await fetch(`${origin}/api/activity/access-denied`, {
-          method: "POST",
-          headers: { "content-type": "application/json", cookie: cookieHeader },
-          body: JSON.stringify({ path: pathname, reason }),
-        });
-      } catch {}
       return NextResponse.redirect(url);
-    };
-
-    if (!isApiRoute && pathname.startsWith("/system")) {
-      const isOwner = rolesUpper.includes("OWNER");
-      if (!isOwner) {
-        return denyWithLog("role_guard_system");
-      }
     }
-
-    if (!isApiRoute && pathname.startsWith("/reporting")) {
-      const allowed = rolesUpper.includes("OWNER") || rolesUpper.includes("ADMIN");
-      if (!allowed) {
-        return denyWithLog("role_guard_reporting");
-      }
-    }
-    
-    // Multi-tenant guard: terapkan untuk semua API kecuali /api/auth
-    const shouldCheckBrandScopeForApi = isApiRoute && !pathname.startsWith("/api/auth");
-    if (!shouldCheckBrandScopeForApi) {
-      const nextRes = setActivity(NextResponse.next());
-      nextRes.headers.set("Cache-Control", "public, s-maxage=60, stale-while-revalidate=300");
-      return nextRes;
-    }
-
-    // Forward cookies to brand-access-check endpoint
-    const checkUrl = new URL(`${origin}/api/auth/brand-access-check`);
-
-    // Propagate explicit brand query if present
-    const brandIdParam = req.nextUrl.searchParams.get("brandId") || req.nextUrl.searchParams.get("brandProfileId");
-    if (brandIdParam) checkUrl.searchParams.set("brandId", brandIdParam);
-
-    const cookieHeader = req.headers.get("cookie") || "";
-    
-    return fetch(checkUrl.toString(), {
-      method: "GET",
-      headers: { cookie: cookieHeader },
-    })
-      .then(async (res) => {
-        if (res.ok) {
-          const data = await res.json().catch(() => ({}));
-          if (data?.allowed) {
-            // Inject allowed brand scope into request headers for API handlers to consume
-            const requestHeaders = new Headers(req.headers);
-            if (Array.isArray(data.allowedBrandIds)) {
-              requestHeaders.set(
-                "x-allowed-brand-ids",
-                data.allowedBrandIds.join(",")
-              );
-            }
-            if (data.activeBrandId) {
-              requestHeaders.set("x-active-brand-id", String(data.activeBrandId));
-            }
-            const nextRes = setActivity(
-              NextResponse.next({ request: { headers: requestHeaders } })
-            );
-            nextRes.headers.set(
-              "Cache-Control",
-              "public, s-maxage=60, stale-while-revalidate=300"
-            );
-            return nextRes;
-          }
-        }
-
-        // Jika bukan API route (page navigation), redirect ke forbidden
-        if (!pathname.startsWith("/api")) {
-          const url = req.nextUrl.clone();
-          url.pathname = "/403";
-          url.searchParams.set("reason", "brand_scope");
-          url.searchParams.set("redirect", pathname);
-          try {
-            await fetch(`${origin}/api/activity/access-denied`, {
-              method: "POST",
-              headers: { "content-type": "application/json", cookie: cookieHeader },
-              body: JSON.stringify({ path: pathname, reason: "brand_scope" }),
-            });
-          } catch {}
-          return NextResponse.redirect(url);
-        }
-
-        // Untuk API route, kembalikan 403 JSON
-        const jsonRes = NextResponse.json({ success: false, message: "Forbidden: brand scope" }, { status: 403 });
-        jsonRes.headers.set("Cache-Control", "no-store");
-        return jsonRes;
-      })
-      .catch(() => {
-        // Jika terjadi error pada checker, fail-safe: block API, redirect page
-        if (!pathname.startsWith("/api")) {
-          const url = req.nextUrl.clone();
-          url.pathname = "/403";
-          url.searchParams.set("reason", "brand_scope_error");
-          url.searchParams.set("redirect", pathname);
-          try {
-            await fetch(`${origin}/api/activity/access-denied`, {
-              method: "POST",
-              headers: { "content-type": "application/json", cookie: cookieHeader },
-              body: JSON.stringify({ path: pathname, reason: "brand_scope_error" }),
-            });
-          } catch {}
-          return NextResponse.redirect(url);
-        }
-        const jsonRes = NextResponse.json({ success: false, message: "Brand scope check error" }, { status: 403 });
-        jsonRes.headers.set("Cache-Control", "no-store");
-        return jsonRes;
-      });
-  } catch {
-    const url = req.nextUrl.clone();
-    url.pathname = "/signin";
-    url.searchParams.set("redirect", pathname);
-    const res = NextResponse.redirect(url);
-    res.headers.set("Cache-Control", "no-store");
-    return res;
+    return NextResponse.next();
   }
 }
 
 export const config = {
-  // Apply middleware to all paths; public paths are allowed via isPublic check above
-  matcher: ["/(.*)"],
+  matcher: ["/:path*"],
 };

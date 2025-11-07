@@ -44,6 +44,12 @@ async function resolveAllowedBrandIds(userId: number | null, roles?: string[] | 
 export async function GET(req: NextRequest) {
   try {
     const auth = await getAuth();
+    // Guard: jangan panggil Prisma bila belum login
+    if (!auth?.userId) {
+      const res = NextResponse.json({ success: false, message: "Unauthorized" }, { status: 401 });
+      res.headers.set("Cache-Control", "no-store");
+      return res;
+    }
     const url = req.nextUrl;
     const dateFromStr = url.searchParams.get("dateFrom");
     const dateToStr = url.searchParams.get("dateTo");
