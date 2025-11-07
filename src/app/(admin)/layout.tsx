@@ -13,6 +13,7 @@ import RouteTransition from "@/layout/RouteTransition";
 import RoleGuard from "@/components/auth/RoleGuard";
 import { Modal } from "@/components/ui/modal";
 import { useRouter, useSearchParams } from "next/navigation";
+import AutoRefresh from "@/components/dashboard/AutoRefresh";
 
 export default function AdminLayout({
   children,
@@ -88,6 +89,8 @@ export default function AdminLayout({
           >
             {/* Idle auto-logout watcher */}
             <IdleWatcher />
+            {/* Global page refresh on visibility change and brand events */}
+            <AutoRefresh intervalMs={60_000} />
             {/* Brand selection modal on login if multiple brands */}
             <BrandSelectOnLogin />
             {/* Header */}
