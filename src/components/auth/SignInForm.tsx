@@ -4,6 +4,7 @@ import Link from "next/link";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
+import { useGlobal } from "@/context/AppContext";
 
 const SignInForm: React.FC = () => {
   const [email, setEmail] = useState("");
@@ -11,6 +12,7 @@ const SignInForm: React.FC = () => {
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const router = useRouter();
+  const { refresh } = useGlobal();
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -26,6 +28,10 @@ const SignInForm: React.FC = () => {
       const json = await res.json();
       if (!res.ok || !json.success) throw new Error(json.message || "Login gagal");
       const userId: number | undefined = json?.data?.id;
+
+      // Beri sedikit jeda agar cookie benar-benar terset lalu sinkronkan store
+      await new Promise((r) => setTimeout(r, 250));
+      await refresh();
 
       // Setelah login, cek kelengkapan profil
       let incomplete = false;
@@ -73,110 +79,77 @@ const SignInForm: React.FC = () => {
   };
 
   return (
-    <div className="rounded-sm border border-stroke bg-white shadow-default dark:border-strokedark dark:bg-boxdark">
-      <div className="flex flex-wrap items-center">
-        <div className="hidden w-full xl:block xl:w-1/2">
-          <div className="py-17.5 px-26 text-center">
-            <Link className="mb-5.5 inline-block" href="/">
+    <div className="min-h-[60vh] w-full px-4 py-8 flex items-center justify-center">
+      <div className="w-full max-w-md rounded-xl border border-stroke bg-white shadow-default dark:border-strokedark dark:bg-boxdark">
+        <div className="p-6 sm:p-8">
+          <div className="mb-6 text-center">
+            <Link className="mb-4 inline-block" href="/">
               <Image
                 className="hidden dark:block"
                 src={"/branding/logo-bakung-white.png"}
                 alt="Logo"
-                width={176}
-                height={32}
+                width={160}
+                height={30}
+                priority
               />
               <Image
                 className="dark:hidden"
                 src={"/branding/logo-bakung-color.png"}
                 alt="Logo"
-                width={176}
-                height={32}
+                width={160}
+                height={30}
+                priority
               />
             </Link>
-            <p className="2xl:px-20">
-              Kelola penjualan, faktur, dan brand dalam satu tempat.
-            </p>
-            <span className="mt-15 inline-block">
-              <Image
-                src={"/images/empty-state.svg"}
-                alt="Login Illustration"
-                width={350}
-                height={350}
-                className="w-full"
+            <h2 className="text-xl font-semibold text-black dark:text-white">Masuk ke Dashboard</h2>
+            <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">Kelola penjualan, faktur, dan brand dalam satu tempat.</p>
+          </div>
+
+          <form onSubmit={handleSubmit} className="space-y-5">
+            <div>
+              <label className="mb-2.5 block font-medium text-black dark:text-white">Email</label>
+              <input
+                type="email"
+                placeholder="you@example.com"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                className="w-full rounded-lg border-[1.5px] border-stroke bg-transparent py-3 px-4 text-black outline-none transition focus:border-primary active:border-primary disabled:cursor-default disabled:bg-whiter dark:border-form-strokedark dark:bg-form-input dark:text-white dark:focus:border-primary"
+                required
               />
-            </span>
-          </div>
-        </div>
+            </div>
 
-        <div className="w-full border-stroke dark:border-strokedark xl:w-1/2 xl:border-l-2">
-          <div className="w-full p-4 sm:p-12.5 xl:p-17.5">
-            <span className="mb-1.5 block font-medium">Selamat datang</span>
-            <h2 className="mb-9 text-2xl font-bold text-black dark:text-white sm:text-title-xl">
-              Masuk ke Dashboard
-            </h2>
+            <div>
+              <label className="mb-2.5 block font-medium text-black dark:text-white">Password</label>
+              <input
+                type="password"
+                placeholder="••••••••"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                className="w-full rounded-lg border-[1.5px] border-stroke bg-transparent py-3 px-4 text-black outline-none transition focus:border-primary active:border-primary disabled:cursor-default disabled:bg-whiter dark:border-form-strokedark dark:bg-form-input dark:text-white dark:focus:border-primary"
+                required
+              />
+            </div>
 
-            <form onSubmit={handleSubmit}>
-              <div className="mb-4">
-                <label className="mb-2.5 block font-medium text-black dark:text-white">
-                  Email
-                </label>
-                <div className="relative">
-                  <input
-                    type="email"
-                    placeholder="Enter your email"
-                    value={email}
-                    onChange={(e) => setEmail(e.target.value)}
-                    className="w-full rounded-lg border-[1.5px] border-stroke bg-transparent py-3 px-5 text-black outline-none transition focus:border-primary active:border-primary disabled:cursor-default disabled:bg-whiter dark:border-form-strokedark dark:bg-form-input dark:text-white dark:focus:border-primary"
-                    required
-                  />
+            {error && (
+              <div className="rounded-lg bg-red-50 p-3 text-red-600">{error}</div>
+            )}
+
+            <Button variant="primary" size="md" type="submit" disabled={loading} className="w-full">
+              {loading ? (
+                <div className="flex items-center justify-center gap-2">
+                  <div className="h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent" />
+                  Masuk...
                 </div>
-              </div>
-
-              <div className="mb-6">
-                <label className="mb-2.5 block font-medium text-black dark:text-white">
-                  Password
-                </label>
-                <div className="relative">
-                  <input
-                    type="password"
-                    placeholder="Enter your password"
-                    value={password}
-                    onChange={(e) => setPassword(e.target.value)}
-                    className="w-full rounded-lg border-[1.5px] border-stroke bg-transparent py-3 px-5 text-black outline-none transition focus:border-primary active:border-primary disabled:cursor-default disabled:bg-whiter dark:border-form-strokedark dark:bg-form-input dark:text-white dark:focus:border-primary"
-                    required
-                  />
-                </div>
-              </div>
-
-              {error && (
-                <div className="mb-4 rounded-lg bg-red-50 p-3 text-red-600">
-                  {error}
-                </div>
+              ) : (
+                "Masuk"
               )}
+            </Button>
 
-              <div className="mb-5">
-                <Button variant="primary" size="md" type="submit" disabled={loading} className="w-full">
-                  {loading ? (
-                    <div className="flex items-center gap-2">
-                      <div className="h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent" />
-                      Masuk...
-                    </div>
-                  ) : (
-                    "Masuk"
-                  )}
-                </Button>
-              </div>
-
-              <div className="mt-6 text-center">
-                <p>
-                  Don&apos;t have an account?{" "}
-                  <Link href="/signup" className="text-primary">
-                    Sign Up
-                  </Link>
-                </p>
-              </div>
-            </form>
-          </div>
+            <p className="text-center text-sm text-gray-600 dark:text-gray-400">
+              Belum punya akun?{" "}
+              <Link href="/signup" className="text-primary">Daftar</Link>
+            </p>
+          </form>
         </div>
       </div>
     </div>

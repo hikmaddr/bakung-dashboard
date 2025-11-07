@@ -1,6 +1,9 @@
 import SignInForm from "@/components/auth/SignInForm";
 import { Metadata } from "next";
 
+// Hindari pre-render statis agar HTML server dan client selalu selaras
+export const dynamic = "force-dynamic";
+
 export const metadata: Metadata = {
   title: "Sign In | Bakung Dashboard",
   description:
