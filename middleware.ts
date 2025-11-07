@@ -66,8 +66,7 @@ export function middleware(req: NextRequest) {
     return NextResponse.next();
   }
 
-  // Dukung transisi dari cookie lama ke baru: "token" atau "auth_token"
-  const cookieLegacy = req.cookies.get("token")?.value || null;
+  // Hanya terima cookie JWT baru: "auth_token" dan pastikan valid
   const cookieJwt = req.cookies.get("auth_token")?.value || null;
   let token: string | null = null;
   let isTokenValid = false;
@@ -76,10 +75,6 @@ export function middleware(req: NextRequest) {
     const v = await verifyJwtHS256(cookieJwt, secret);
     isTokenValid = !!v.valid;
     token = isTokenValid ? cookieJwt : null;
-  } else if (cookieLegacy) {
-    // Biarkan legacy token lewat tanpa verifikasi untuk kompatibilitas lama
-    token = cookieLegacy;
-    isTokenValid = !!token;
   }
   if (isApi) {
     // Untuk request API (selain /api/auth), balas 401 JSON bila tidak ada token

@@ -53,6 +53,16 @@ export async function clearAuthCookie() {
     secure: process.env.NODE_ENV === "production",
     maxAge: 0,
   });
+  // Hapus cookie legacy yang mungkin masih tersisa dari versi lama
+  store.set({
+    name: "token",
+    value: "",
+    httpOnly: true,
+    sameSite: "lax",
+    path: "/",
+    secure: process.env.NODE_ENV === "production",
+    maxAge: 0,
+  });
 }
 
 export async function getAuthToken(): Promise<string | null> {
