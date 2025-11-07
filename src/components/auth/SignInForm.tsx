@@ -80,23 +80,13 @@ const SignInForm: React.FC = () => {
 
   return (
     <div className="min-h-[60vh] w-full px-4 py-8 flex items-center justify-center">
-      <div className="w-full max-w-5xl grid grid-cols-1 xl:grid-cols-2 gap-6">
-        {/* Kartu form login */}
+      <div className="w-full max-w-md">
         <div className="rounded-xl border border-stroke bg-white shadow-default dark:border-strokedark dark:bg-boxdark">
           <div className="p-6 sm:p-8">
             <div className="mb-6 text-center">
               <Link className="mb-4 inline-block" href="/">
                 <Image
-                  className="hidden dark:block"
-                  src={"/branding/logo-bakung-white.png"}
-                  alt="Logo"
-                  width={160}
-                  height={30}
-                  priority
-                />
-                <Image
-                  className="dark:hidden"
-                  src={"/branding/logo-bakung-color.png"}
+                  src={"/branding/logo-bakung-color-white.png"}
                   alt="Logo"
                   width={160}
                   height={30}
@@ -153,17 +143,6 @@ const SignInForm: React.FC = () => {
               </p>
             </form>
           </div>
-        </div>
-
-        {/* Panel kanan dengan logo putih */}
-        <div className="hidden xl:flex items-center justify-center rounded-xl border border-stroke dark:border-strokedark bg-gray-900 p-8">
-          <Image
-            src={"/branding/logo-bakung-white.png"}
-            alt="Bakung Dashboard"
-            width={176}
-            height={32}
-            priority
-          />
         </div>
       </div>
     </div>
