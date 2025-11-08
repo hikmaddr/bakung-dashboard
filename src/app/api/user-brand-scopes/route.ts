@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getAuth } from "@/lib/auth";
+import { resolveAllowedBrandIds } from "@/lib/brand";
 
 function isOwner(roles?: string[]) {
   return Array.isArray(roles) && roles.some((r) => r.toLowerCase() === "owner");
@@ -36,7 +37,12 @@ async function POST_SINGLE(req: NextRequest) {
   try {
     const auth = await getAuth();
     if (!auth?.userId) return NextResponse.json({ success: false, message: "Unauthorized" }, { status: 401 });
-    if (!isOwner(auth.roles)) return NextResponse.json({ success: false, message: "Forbidden" }, { status: 403 });
+    // OWNER bebas; ADMIN dibatasi pada brand scope miliknya
+    const isActorOwner = isOwner(auth.roles);
+    const allowedForActor = await resolveAllowedBrandIds(auth.userId, auth.roles ?? [], []);
+    if (!isActorOwner && (!allowedForActor || allowedForActor.length === 0)) {
+      return NextResponse.json({ success: false, message: "Forbidden: brand scope" }, { status: 403 });
+    }
 
     const body = await req.json();
     const userId = Number(body?.userId);
@@ -47,6 +53,9 @@ async function POST_SINGLE(req: NextRequest) {
     }
     const brand = await prisma.brandProfile.findUnique({ where: { slug: brandSlug } });
     if (!brand) return NextResponse.json({ success: false, message: "Brand tidak ditemukan" }, { status: 404 });
+    if (!isActorOwner && !allowedForActor.includes(brand.id)) {
+      return NextResponse.json({ success: false, message: "Forbidden: brand di luar scope admin" }, { status: 403 });
+    }
 
     const created = await prisma.userBrandScope.upsert({
       where: { userId_brandProfileId: { userId, brandProfileId: brand.id } },
@@ -74,7 +83,12 @@ export async function POST(req: NextRequest) {
   try {
     const auth = await getAuth();
     if (!auth?.userId) return NextResponse.json({ success: false, message: "Unauthorized" }, { status: 401 });
-    if (!isOwner(auth.roles)) return NextResponse.json({ success: false, message: "Forbidden" }, { status: 403 });
+    // OWNER bebas; ADMIN dibatasi oleh brand scope miliknya
+    const isActorOwner = isOwner(auth.roles);
+    const allowedForActor = await resolveAllowedBrandIds(auth.userId, auth.roles ?? [], []);
+    if (!isActorOwner && (!allowedForActor || allowedForActor.length === 0)) {
+      return NextResponse.json({ success: false, message: "Forbidden: brand scope" }, { status: 403 });
+    }
 
     const body = await req.json();
     const { userId, brands, isBrandAdmin = false, replaceAll = true } = body ?? {};
@@ -92,7 +106,12 @@ export async function POST(req: NextRequest) {
     const brandIds = brandRows.map((b) => b.id);
 
     if (replaceAll) {
-      await prisma.userBrandScope.deleteMany({ where: { userId: uid } });
+      // OWNER: bersihkan semua; ADMIN: hanya yang berada dalam scope admin
+      const where: any = { userId: uid };
+      if (!isActorOwner) {
+        where.brandProfileId = { in: allowedForActor };
+      }
+      await prisma.userBrandScope.deleteMany({ where });
       await prisma.activityLog.create({
         data: {
           userId: auth.userId,
@@ -107,6 +126,8 @@ export async function POST(req: NextRequest) {
     if (brandIds.length > 0) {
       // Create missing scopes; ignore duplicates via unique constraint
       for (const b of brandRows) {
+        // ADMIN: hanya boleh meng-assign brand dalam scope-nya
+        if (!isActorOwner && !allowedForActor.includes(b.id)) continue;
         const scope = await prisma.userBrandScope.upsert({
           where: { userId_brandProfileId: { userId: uid, brandProfileId: b.id } },
           update: { isBrandAdmin: Boolean(isBrandAdmin) },
@@ -138,7 +159,11 @@ export async function DELETE(req: NextRequest) {
   try {
     const auth = await getAuth();
     if (!auth?.userId) return NextResponse.json({ success: false, message: "Unauthorized" }, { status: 401 });
-    if (!isOwner(auth.roles)) return NextResponse.json({ success: false, message: "Forbidden" }, { status: 403 });
+    const isActorOwner = isOwner(auth.roles);
+    const allowedForActor = await resolveAllowedBrandIds(auth.userId, auth.roles ?? [], []);
+    if (!isActorOwner && (!allowedForActor || allowedForActor.length === 0)) {
+      return NextResponse.json({ success: false, message: "Forbidden: brand scope" }, { status: 403 });
+    }
 
     const url = new URL(req.url);
     const userIdParam = url.searchParams.get("userId");
@@ -149,6 +174,9 @@ export async function DELETE(req: NextRequest) {
     }
     const brand = await prisma.brandProfile.findUnique({ where: { slug: brandSlug } });
     if (!brand) return NextResponse.json({ success: false, message: "Brand tidak ditemukan" }, { status: 404 });
+    if (!isActorOwner && !allowedForActor.includes(brand.id)) {
+      return NextResponse.json({ success: false, message: "Forbidden: brand di luar scope admin" }, { status: 403 });
+    }
 
     await prisma.userBrandScope.delete({
       where: { userId_brandProfileId: { userId, brandProfileId: brand.id } },

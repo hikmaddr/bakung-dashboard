@@ -5,6 +5,7 @@ import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { useGlobal } from "@/context/AppContext";
+import { useSessionStore, type UserInfo } from "@/store/useSessionStore";
 
 const SignInForm: React.FC = () => {
   const [email, setEmail] = useState("");
@@ -33,20 +34,30 @@ const SignInForm: React.FC = () => {
       await new Promise((r) => setTimeout(r, 250));
       await refresh();
 
-      // Setelah login, cek kelengkapan profil
-      let incomplete = false;
-      try {
-        const profileRes = await fetch("/api/profile", { cache: "no-store" });
-        const profileJson = await profileRes.json();
-        if (profileJson?.success && profileJson?.data) {
-          const d = profileJson.data as {
-            firstName?: string | null;
-            lastName?: string | null;
-            phone?: string | null;
-          };
-          incomplete = !d?.firstName || !d?.lastName || !d?.phone;
+      // Setelah login, cek kelengkapan profil menggunakan state terbaru dari store.
+      type ProfileShape = Pick<UserInfo, "id" | "firstName" | "lastName" | "phone">;
+      let profile: ProfileShape | null = useSessionStore.getState().user;
+      if (!profile) {
+        try {
+          const profileRes = await fetch("/api/profile", { cache: "no-store" });
+          const profileJson = await profileRes.json();
+          if (profileRes.ok && profileJson?.success && profileJson?.data) {
+            const d = profileJson.data as ProfileShape;
+            profile = {
+              id: d.id,
+              firstName: d.firstName ?? null,
+              lastName: d.lastName ?? null,
+              phone: d.phone ?? null,
+            };
+          }
+        } catch {
+          profile = null;
         }
-      } catch {}
+      }
+      const resolvedUserId = profile?.id ?? userId;
+      const incomplete = Boolean(
+        profile && (!profile.firstName || !profile.lastName || !profile.phone)
+      );
 
       const qsRedirect = new URLSearchParams(window.location.search).get("redirect");
 
@@ -58,7 +69,7 @@ const SignInForm: React.FC = () => {
       // Jika profil belum lengkap → arahkan ke halaman profil.
       // Tampilkan welcome hanya sekali per user (localStorage per userId)
       if (incomplete) {
-        const key = userId ? `welcome_shown:${userId}` : undefined;
+        const key = resolvedUserId ? `welcome_shown:${resolvedUserId}` : undefined;
         const hasShown = key ? typeof window !== "undefined" && localStorage.getItem(key) === "1" : false;
         if (!hasShown) {
           // First login (belum pernah tampil welcome di browser ini)

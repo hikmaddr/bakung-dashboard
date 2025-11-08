@@ -21,15 +21,29 @@ export async function POST(req: NextRequest) {
       );
     }
 
+    // Bootstrap: jika belum ada user sama sekali, akun pertama dibuat aktif dan diberi role Owner
+    const totalUsers = await prisma.user.count();
+    const isFirstUser = totalUsers === 0;
+
     const passwordHash = await hashPassword(password);
     const created = await prisma.user.create({
       data: {
         email,
         name: name ?? null,
         passwordHash,
-        isActive: false, // signup -> PENDING (non-aktif)
+        isActive: isFirstUser ? true : false,
       },
     });
+
+    // Jika akun pertama, pastikan role Owner ada dan assign ke user
+    if (isFirstUser) {
+      const ownerRole = await prisma.role.upsert({
+        where: { name: "Owner" },
+        update: {},
+        create: { name: "Owner", description: "Superuser/Owner" },
+      });
+      await prisma.userRole.create({ data: { userId: created.id, roleId: ownerRole.id } });
+    }
 
     const ip =
       req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ||
@@ -52,26 +66,37 @@ export async function POST(req: NextRequest) {
       },
     });
 
-    // Notify Owners to approve, and notify user about status
-    try {
-      await sendNotificationToRole(
-        "Owner",
-        "User baru mendaftar",
-        `User ${email} mendaftar. Mohon dilakukan approval.`,
-        "info"
-      );
-    } catch {}
+    // Notifikasi sesuai status (bootstrap vs normal)
+    if (!isFirstUser) {
+      try {
+        await sendNotificationToRole(
+          "Owner",
+          "User baru mendaftar",
+          `User ${email} mendaftar. Mohon dilakukan approval.`,
+          "info"
+        );
+      } catch {}
 
-    try {
-      await sendNotificationToUser(
-        created.id,
-        "Pendaftaran berhasil",
-        "Akun Anda menunggu persetujuan admin.",
-        "info"
-      );
-    } catch {}
-
-    return NextResponse.json({ success: true, message: "Pendaftaran berhasil. Menunggu persetujuan admin." });
+      try {
+        await sendNotificationToUser(
+          created.id,
+          "Pendaftaran berhasil",
+          "Akun Anda menunggu persetujuan admin.",
+          "info"
+        );
+      } catch {}
+      return NextResponse.json({ success: true, message: "Pendaftaran berhasil. Menunggu persetujuan admin." });
+    } else {
+      try {
+        await sendNotificationToUser(
+          created.id,
+          "Akun pertama dibuat",
+          "Akun Anda aktif sebagai Owner. Silakan login.",
+          "success"
+        );
+      } catch {}
+      return NextResponse.json({ success: true, message: "Bootstrap berhasil: akun pertama aktif sebagai Owner." });
+    }
   } catch (err: any) {
     console.error("[auth/signup][POST]", err);
     return NextResponse.json(

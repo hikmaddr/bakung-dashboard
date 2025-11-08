@@ -45,7 +45,7 @@ It centralizes quotation, invoicing, purchasing, and reporting processes across 
 - **Hosting:** Vercel (Frontend), Railway / VPS (Backend)  
 - **PDF & File Services:** Puppeteer, PDFKit  
 - **Notifications:** Toast & in-app badge system  
-- **Authentication:** Role-based login with activation approval
+- **Authentication:** Role-based login dengan aktivasi (akun pertama auto-aktif)
 
 ---
 
@@ -60,10 +60,21 @@ It centralizes quotation, invoicing, purchasing, and reporting processes across 
    ```bash
    npm install
    ```
-3. Create .env file:
+3. Buat file .env:
    ```env
+   # MySQL lokal
    DATABASE_URL="mysql://username:password@localhost:3306/bakung_dashboard"
-   NEXTAUTH_SECRET="your_secret_key"
+
+   # JWT secret untuk token login (wajib diisi di production)
+   JWT_SECRET="ganti_dengan_kunci_rahasia_yang_kuat"
+   ```
+
+   Contoh koneksi TiDB Cloud (public endpoint memakai TLS):
+   ```env
+   # TiDB Cloud Serverless
+   DATABASE_URL="mysql://username:password@host:4000/database?sslaccept=strict"
+   # Jika diminta CA cert, simpan file CA di folder prisma dan tambahkan:
+   # DATABASE_URL="mysql://username:password@host:4000/database?sslaccept=strict&sslcert=./prisma/ca.pem"
    ```
 4. Run Prisma migrations:
    ```bash
@@ -73,6 +84,11 @@ It centralizes quotation, invoicing, purchasing, and reporting processes across 
    ```bash
    npm run dev
    ```
+
+6. Bootstrap akun pertama:
+   - Buka halaman `/signup` dan daftarkan akun Owner pertama.
+   - Jika database masih kosong, akun pertama otomatis aktif sebagai `Owner` sehingga bisa langsung login.
+   - Pendaftaran berikutnya berstatus menunggu persetujuan admin (non-aktif) dan perlu di-approve lewat panel System User.
 
 ---
 

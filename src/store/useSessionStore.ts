@@ -10,7 +10,9 @@ export type UserInfo = {
   name: string | null;
   firstName?: string | null;
   lastName?: string | null;
+  phone?: string | null;
   avatar?: string | null;
+  isActive?: boolean;
   roles: string[];
 };
 
@@ -50,7 +52,9 @@ export const useSessionStore = create<SessionState>()(
               name: d.name ?? null,
               firstName: d.firstName ?? null,
               lastName: d.lastName ?? null,
+              phone: d.phone ?? null,
               avatar: d.avatar ?? null,
+              isActive: typeof d.isActive === "boolean" ? d.isActive : undefined,
               roles: Array.isArray(d.roles) ? d.roles : [],
             };
             set({ user });

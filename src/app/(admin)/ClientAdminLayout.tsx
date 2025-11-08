@@ -14,32 +14,18 @@ import RoleGuard from "@/components/auth/RoleGuard";
 import { Modal } from "@/components/ui/modal";
 import { useRouter, useSearchParams } from "next/navigation";
 import AutoRefresh from "@/components/dashboard/AutoRefresh";
+import { useGlobal } from "@/context/AppContext";
 
 export default function ClientAdminLayout({ children }: { children: React.ReactNode }) {
   const { isExpanded, isHovered, isMobileOpen } = useSidebar();
   const searchParams = useSearchParams();
   const router = useRouter();
   const [welcomeOpen, setWelcomeOpen] = useState(false);
-  const [userId, setUserId] = useState<number | null>(null);
-  const [profileIncomplete, setProfileIncomplete] = useState<boolean>(false);
-
-  // Ambil profil untuk mengetahui kelengkapan dan id user
-  useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      try {
-        const res = await fetch("/api/profile", { cache: "no-store" });
-        const json = await res.json();
-        if (!cancelled && json?.success && json?.data) {
-          const d = json.data as { id: number; firstName?: string | null; lastName?: string | null; phone?: string | null };
-          setUserId(d.id);
-          const incomplete = !d?.firstName || !d?.lastName || !d?.phone;
-          setProfileIncomplete(incomplete);
-        }
-      } catch {}
-    })();
-    return () => { cancelled = true; };
-  }, []);
+  const { user } = useGlobal();
+  const userId = user?.id ?? null;
+  const profileIncomplete =
+    Boolean(user) &&
+    (!user?.firstName || !user?.lastName || !user?.phone);
 
   // Baca flag welcome dari query sekali saat mount, dan tampilkan hanya jika profil belum lengkap dan belum pernah ditampilkan di browser ini
   useEffect(() => {
@@ -120,4 +106,3 @@ export default function ClientAdminLayout({ children }: { children: React.ReactN
     </ThemeProvider>
   );
 }
-

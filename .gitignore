@@ -43,3 +43,14 @@ hdpworks-*.json
 next-env.d.ts
 
 /src/generated/prisma
+
+# user-generated uploads (do not commit)
+public/uploads/
+
+# additional logs and temp files
+*.log
+build-output.txt
+temp_seg.txt
+tmp*.pdf
+tmp_*.json
+*.backup
