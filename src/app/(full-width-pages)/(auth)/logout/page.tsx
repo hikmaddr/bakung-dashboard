@@ -2,6 +2,7 @@
 import { useEffect } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
+import Image from "next/image";
 import { useGlobal } from "@/context/AppContext";
 
 export default function LogoutPage() {
@@ -24,6 +25,17 @@ export default function LogoutPage() {
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-gray-900 flex items-center justify-center p-6">
       <div className="w-full max-w-sm rounded-2xl border border-gray-200 bg-white shadow-theme-lg p-6 text-center dark:border-gray-800 dark:bg-gray-800">
+        <div className="mb-4 flex justify-center">
+          <div className="rounded-lg bg-brand-950 px-3 py-2">
+            <Image
+              src="/branding/logo-bakung-white.png"
+              alt="Bakung Dashboard"
+              width={140}
+              height={36}
+              className="object-contain"
+            />
+          </div>
+        </div>
         <div className="mx-auto mb-4 h-12 w-12 rounded-full border-2 border-gray-300 border-t-transparent animate-spin dark:border-gray-600" />
         <h1 className="text-lg font-semibold text-gray-800 dark:text-gray-100">Sedang logout</h1>
         <p className="mt-1 text-theme-sm text-gray-600 dark:text-gray-300">
