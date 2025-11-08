@@ -7,7 +7,10 @@ export async function POST(request: NextRequest) {
     const file: File | null = data.get("avatar") as unknown as File;
 
     if (!file) {
-      return NextResponse.json({ success: false, error: "No file received." }, { status: 400 });
+      return NextResponse.json(
+        { success: false, error: "No file received." },
+        { status: 400 }
+      );
     }
 
     const allowedTypes = [
@@ -25,11 +28,16 @@ export async function POST(request: NextRequest) {
       maxSizeBytes: 5 * 1024 * 1024,
     });
 
-    return NextResponse.json({ success: true, url: result.url, message: "Avatar uploaded successfully" });
-  } catch (error: any) {
-    const msg = String(error?.message || error);
+    return NextResponse.json({
+      success: true,
+      url: result.url,
+      message: "Avatar uploaded successfully",
+    });
+  } catch (error: unknown) {
+    const msg = error instanceof Error ? error.message : String(error);
     console.error("Error uploading avatar:", msg);
-    const isValidation = /File type not allowed|File too large|No file received/i.test(msg);
+    const isValidation =
+      /File type not allowed|File too large|No file received/i.test(msg);
     const status = isValidation ? 400 : 500;
     return NextResponse.json({ success: false, error: msg }, { status });
   }

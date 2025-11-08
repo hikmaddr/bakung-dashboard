@@ -24,6 +24,19 @@ type SessionState = {
   hydrate: () => Promise<void>;
 };
 
+type ProfileApiResponse = {
+  success: boolean;
+  data?: {
+    id: number;
+    email: string;
+    name?: string | null;
+    firstName?: string | null;
+    lastName?: string | null;
+    avatar?: string | null;
+    roles?: unknown;
+  };
+};
+
 export const useSessionStore = create<SessionState>()(
   persist(
     (set, get) => ({
@@ -41,7 +54,7 @@ export const useSessionStore = create<SessionState>()(
         set({ loading: true });
         try {
           // Load user profile
-          const profileRes = await api.get<{ success: boolean; data?: any }>("/api/profile");
+          const profileRes = await api.get<ProfileApiResponse>("/api/profile");
           if (profileRes?.success && profileRes.data) {
             const d = profileRes.data;
             const user: UserInfo = {
@@ -51,7 +64,7 @@ export const useSessionStore = create<SessionState>()(
               firstName: d.firstName ?? null,
               lastName: d.lastName ?? null,
               avatar: d.avatar ?? null,
-              roles: Array.isArray(d.roles) ? d.roles : [],
+              roles: Array.isArray(d.roles) ? (d.roles as string[]) : [],
             };
             set({ user });
           } else {
@@ -69,10 +82,14 @@ export const useSessionStore = create<SessionState>()(
             typeof brandRes?.activeBrandId === "number"
               ? brandRes.activeBrandId
               : brandRes?.brandProfileId;
-          if (brandRes?.success && brandRes.allowed && typeof resolved === "number") {
+          if (
+            brandRes?.success &&
+            brandRes.allowed &&
+            typeof resolved === "number"
+          ) {
             set({ activeBrandId: resolved });
           }
-        } catch (e) {
+        } catch (_e) {
           set({ user: null });
         } finally {
           set({ loading: false });
@@ -82,14 +99,14 @@ export const useSessionStore = create<SessionState>()(
     {
       name: "app-session",
       storage: createJSONStorage(() => sessionStorage),
-      // Persist hanya field data; fungsi tidak ikut terserialisasi
+      // Persist only data fields; functions are not serialized
       partialize: (state) => ({
         activeBrandId: state.activeBrandId,
         user: state.user,
       }),
-      onRehydrateStorage: () => (state, error) => {
-        // Setelah rehydrate dari storage, jangan tampilkan loading spinner panjang
-        // AppContext tetap akan memanggil hydrate() untuk sinkronisasi server
+      onRehydrateStorage: () => (_state, error) => {
+        // After rehydrating from storage, don't show a long loading spinner.
+        // AppContext will still call hydrate() for server synchronization.
         if (!error) {
           set({ loading: false });
         }

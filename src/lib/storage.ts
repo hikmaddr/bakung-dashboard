@@ -35,7 +35,7 @@ export async function saveFile(
   }
 
   // Create a safe filename preserving extension
-  const originalName = (file as any).name || "upload";
+  const originalName = file.name || "upload";
   const ext = path.extname(originalName) || "";
   const base = path.basename(originalName, ext);
   const safeBase = base.replace(/[^a-zA-Z0-9_-]/g, "_");
@@ -56,9 +56,9 @@ export async function saveFile(
         token: process.env.BLOB_READ_WRITE_TOKEN,
       });
       return { url, filename, size, contentType };
-    } catch (err: any) {
+    } catch (err: unknown) {
       // Provide clearer feedback for common token / permission issues
-      const msg = String(err?.message || err);
+      const msg = err instanceof Error ? err.message : String(err);
       if (/unauthorized|forbidden|token/i.test(msg)) {
         throw new Error(
           `Blob upload failed: ${msg}. Verify BLOB_READ_WRITE_TOKEN in Vercel env and redeploy.`
@@ -93,7 +93,9 @@ export async function saveFile(
  * - If the URL is a local `/uploads/...` path, unlink from `public/uploads`.
  * Returns `true` if deletion appears successful, `false` if skipped or not found.
  */
-export async function deleteFile(urlOrPath: string | null | undefined): Promise<boolean> {
+export async function deleteFile(
+  urlOrPath: string | null | undefined
+): Promise<boolean> {
   try {
     const url = (urlOrPath || "").toString().trim();
     if (!url) return false;
@@ -101,9 +103,17 @@ export async function deleteFile(urlOrPath: string | null | undefined): Promise<
     // Handle blob public URLs
     if (/^https?:\/\//i.test(url)) {
       const host = (() => {
-        try { return new URL(url).host; } catch { return ""; }
+        try {
+          return new URL(url).host;
+        } catch {
+          return "";
+        }
       })();
-      if (/blob\.vercel-storage\.com|public\.blob\.vercel-storage\.com/i.test(host)) {
+      if (
+        /blob\.vercel-storage\.com|public\.blob\.vercel-storage\.com/i.test(
+          host
+        )
+      ) {
         if (!process.env.BLOB_READ_WRITE_TOKEN) {
           // Cannot delete without token; skip gracefully
           return false;
@@ -111,7 +121,7 @@ export async function deleteFile(urlOrPath: string | null | undefined): Promise<
         try {
           await blobDel(url, { token: process.env.BLOB_READ_WRITE_TOKEN });
           return true;
-        } catch (err) {
+        } catch (_err) {
           // Fall through; report false but do not throw
           return false;
         }

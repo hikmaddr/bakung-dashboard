@@ -1,6 +1,16 @@
-export type DocumentType = 'invoice' | 'quotation' | 'delivery-note' | 'universal' | 'sales-order';
+export type DocumentType =
+  | "invoice"
+  | "quotation"
+  | "delivery-note"
+  | "universal"
+  | "sales-order";
 
-export type TemplateCategory = 'classic' | 'minimalist' | 'corporate' | 'dark-mode' | 'dynamic';
+export type TemplateCategory =
+  | "classic"
+  | "minimalist"
+  | "corporate"
+  | "dark-mode"
+  | "dynamic";
 
 export interface Template {
   id: string;
@@ -20,19 +30,19 @@ export interface Template {
 }
 
 export const documentTypeLabels: Record<DocumentType, string> = {
-  invoice: 'Invoice',
-  quotation: 'Quotation',
-  'delivery-note': 'Surat Jalan',
-  universal: 'Universal',
-  'sales-order': 'Sales Order',
+  invoice: "Invoice",
+  quotation: "Quotation",
+  "delivery-note": "Surat Jalan",
+  universal: "Universal",
+  "sales-order": "Sales Order",
 };
 
 export const categoryLabels: Record<TemplateCategory, string> = {
-  classic: 'Classic',
-  minimalist: 'Minimalist',
-  corporate: 'Corporate',
-  'dark-mode': 'Dark Mode',
-  dynamic: 'Dynamic',
+  classic: "Classic",
+  minimalist: "Minimalist",
+  corporate: "Corporate",
+  "dark-mode": "Dark Mode",
+  dynamic: "Dynamic",
 };
 
 // Template data - in a real app, this would come from an API
@@ -101,7 +111,8 @@ export const templates: Template[] = [
   {
     id: "invoice-modern-indigo",
     name: "Invoice Modern Indigo",
-    description: "Template invoice dengan tone ungu profesional dan highlight total.",
+    description:
+      "Template invoice dengan tone ungu profesional dan highlight total.",
     type: "invoice",
     category: "corporate",
     thumbnail: "/images/templates/corporate-bold-thumb.png",
@@ -113,57 +124,75 @@ export const templates: Template[] = [
 ];
 
 export const getTemplatesByType = (type: DocumentType): Template[] => {
-  return templates.filter(template => template.type === type || template.type === 'universal');
+  return templates.filter(
+    (template) => template.type === type || template.type === "universal"
+  );
 };
 
-export const getTemplatesByCategory = (category: TemplateCategory): Template[] => {
-  return templates.filter(template => template.category === category);
+export const getTemplatesByCategory = (
+  category: TemplateCategory
+): Template[] => {
+  return templates.filter((template) => template.category === category);
 };
 
 export const getPopularTemplates = (): Template[] => {
-  return templates.filter(template => template.isPopular);
+  return templates.filter((template) => template.isPopular);
 };
 
 export const getNewTemplates = (): Template[] => {
-  return templates.filter(template => template.isNew);
+  return templates.filter((template) => template.isNew);
 };
 
 export const searchTemplates = (query: string): Template[] => {
   const lowercaseQuery = query.toLowerCase();
-  return templates.filter(template =>
-    template.name.toLowerCase().includes(lowercaseQuery) ||
-    template.description.toLowerCase().includes(lowercaseQuery) ||
-    template.category.toLowerCase().includes(lowercaseQuery) ||
-    template.type.toLowerCase().includes(lowercaseQuery)
+  return templates.filter(
+    (template) =>
+      template.name.toLowerCase().includes(lowercaseQuery) ||
+      template.description.toLowerCase().includes(lowercaseQuery) ||
+      template.category.toLowerCase().includes(lowercaseQuery) ||
+      template.type.toLowerCase().includes(lowercaseQuery)
   );
+};
+
+type ApiTemplate = {
+  id: number | string;
+  name: string;
+  description?: string | null;
+  type: DocumentType;
+  category: TemplateCategory;
+  thumbnailUrl?: string | null;
+  placeholders?: Record<string, string> | null;
+  fileUrl?: string | null;
 };
 
 // Function to fetch uploaded templates from API
 export const fetchUploadedTemplates = async (): Promise<Template[]> => {
   try {
-    const response = await fetch('/api/templates');
+    const response = await fetch("/api/templates");
     if (!response.ok) {
-      throw new Error('Failed to fetch uploaded templates');
+      throw new Error("Failed to fetch uploaded templates");
     }
-    const data = await response.json();
+    const data: ApiTemplate[] = await response.json();
 
     // Transform API response to match Template interface
-    return data.map((template: any) => ({
+    return data.map((template) => ({
       id: template.id.toString(),
       name: template.name,
-      description: template.description || '',
+      description: template.description || "",
       type: template.type as DocumentType,
       category: template.category as TemplateCategory,
-      thumbnail: template.thumbnailUrl || '/images/templates/default-thumb.png',
-      preview: template.thumbnailUrl || '/images/templates/default-preview.png',
-      primaryColor: '#1f2937', // Default colors for uploaded templates
-      secondaryColor: '#f9fafb',
+      thumbnail:
+        template.thumbnailUrl || "/images/templates/default-thumb.png",
+      preview:
+        template.thumbnailUrl || "/images/templates/default-preview.png",
+      primaryColor: "#1f2937", // Default colors for uploaded templates
+      secondaryColor: "#f9fafb",
       placeholders: template.placeholders || {},
       isUploaded: true,
-      fileUrl: template.fileUrl,
+      fileUrl: template.fileUrl ?? undefined,
     }));
   } catch (error) {
-    console.error('Error fetching uploaded templates:', error);
+    console.error("Error fetching uploaded templates:", error);
     return [];
   }
 };

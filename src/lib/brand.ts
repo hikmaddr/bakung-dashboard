@@ -14,7 +14,9 @@ export async function getActiveBrandProfile() {
 
     // 1) Cookie override (jika ada), dan user berhak akses brand tsb
     if (cookieSlug && cookieSlug.trim()) {
-      const brand = await prisma.brandProfile.findUnique({ where: { slug: cookieSlug } });
+      const brand = await prisma.brandProfile.findUnique({
+        where: { slug: cookieSlug },
+      });
       if (brand) {
         if (await userCanAccessBrand(auth?.userId ?? null, brand.id)) {
           return brand;
@@ -29,17 +31,24 @@ export async function getActiveBrandProfile() {
         select: { defaultBrandProfileId: true },
       });
       if (user?.defaultBrandProfileId) {
-        const brand = await prisma.brandProfile.findUnique({ where: { id: user.defaultBrandProfileId } });
+        const brand = await prisma.brandProfile.findUnique({
+          where: { id: user.defaultBrandProfileId },
+        });
         if (brand) return brand;
       }
     }
 
     // 3) Fallback: brand yang isActive (hanya setelah login)
-    const active = await prisma.brandProfile.findFirst({ where: { isActive: true }, orderBy: { updatedAt: "desc" } });
+    const active = await prisma.brandProfile.findFirst({
+      where: { isActive: true },
+      orderBy: { updatedAt: "desc" },
+    });
     if (active) return active;
 
     // 4) Jika tidak ada yang aktif, ambil brand pertama sebagai fallback (hanya setelah login)
-    const first = await prisma.brandProfile.findFirst({ orderBy: { createdAt: "asc" } });
+    const first = await prisma.brandProfile.findFirst({
+      orderBy: { createdAt: "asc" },
+    });
     return first ?? null;
   } catch (err) {
     console.error("getActiveBrandProfile fallback: DB error", err);
@@ -54,7 +63,9 @@ export async function userCanAccessBrand(userId: number | null, brandId: number)
     where: { id: userId },
     include: { roles: { include: { role: true } } },
   });
-  const roleNames = (user?.roles || []).map((ur) => ur.role.name.toLowerCase());
+  const roleNames = (user?.roles || []).map((ur) =>
+    ur.role.name.toLowerCase()
+  );
   const isOwner = roleNames.includes("owner");
   // Hanya OWNER yang bypass akses ke semua brand.
   if (isOwner) return true;
@@ -78,7 +89,11 @@ export function isOwnerOnly(roles?: string[] | null): boolean {
   return lower.includes("owner");
 }
 
-export async function resolveAllowedBrandIds(userId: number | null, roles?: string[] | null, requestedBrandIds?: number[]) {
+export async function resolveAllowedBrandIds(
+  userId: number | null,
+  roles?: string[] | null,
+  requestedBrandIds?: number[]
+) {
   // Fast path: honor middleware-injected headers when available
   try {
     const h = await nextHeaders();
@@ -98,12 +113,16 @@ export async function resolveAllowedBrandIds(userId: number | null, roles?: stri
 
   // OWNER: akses semua brand; selain itu hanya brand yang diassign.
   if (isOwnerOrAdmin(roles)) {
-    if (requestedBrandIds && requestedBrandIds.length > 0) return requestedBrandIds;
+    if (requestedBrandIds && requestedBrandIds.length > 0)
+      return requestedBrandIds;
     const all = await prisma.brandProfile.findMany({ select: { id: true } });
     return all.map((b) => b.id);
   }
   if (!userId) return [];
-  const scopes = await prisma.userBrandScope.findMany({ where: { userId }, select: { brandProfileId: true } });
+  const scopes = await prisma.userBrandScope.findMany({
+    where: { userId },
+    select: { brandProfileId: true },
+  });
   const scoped = scopes.map((s) => s.brandProfileId);
   if (requestedBrandIds && requestedBrandIds.length > 0) {
     const set = new Set(scoped);
@@ -112,10 +131,19 @@ export async function resolveAllowedBrandIds(userId: number | null, roles?: stri
   return scoped;
 }
 
-export async function brandScopeWhere(field: string = "brandProfileId", userId?: number | null, roles?: string[] | null, requestedBrandIds?: number[]) {
-  const allowed = await resolveAllowedBrandIds(userId ?? null, roles ?? [], requestedBrandIds);
+export async function brandScopeWhere(
+  field: string = "brandProfileId",
+  userId?: number | null,
+  roles?: string[] | null,
+  requestedBrandIds?: number[]
+): Promise<Record<string, unknown>> {
+  const allowed = await resolveAllowedBrandIds(
+    userId ?? null,
+    roles ?? [],
+    requestedBrandIds
+  );
   // OWNER bypass filter; selain OWNER harus memiliki brand yang diassign.
-  if (isOwnerOrAdmin(roles)) return {} as any;
-  if (!allowed || allowed.length === 0) return { [field]: -1 } as any; // no access
-  return { [field]: { in: allowed } } as any;
+  if (isOwnerOrAdmin(roles)) return {};
+  if (!allowed || allowed.length === 0) return { [field]: -1 }; // no access
+  return { [field]: { in: allowed } };
 }

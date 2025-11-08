@@ -1,7 +1,10 @@
 // Simple client-side export helpers for CSV and XLSX
 // These functions expect to be called from client components only.
 
-export type ColumnDef<T = any> = { key: keyof T | string; label: string };
+export type ColumnDef<T extends Record<string, unknown>> = {
+  key: keyof T | string;
+  label: string;
+};
 
 function toCSVRow(fields: string[]): string {
   return fields
@@ -15,7 +18,7 @@ function toCSVRow(fields: string[]): string {
     .join(",");
 }
 
-export function downloadCSV<T = any>(
+export function downloadCSV<T extends Record<string, unknown>>(
   rows: T[],
   filename = "export.csv",
   columns?: ColumnDef<T>[]
@@ -25,20 +28,25 @@ export function downloadCSV<T = any>(
     return;
   }
 
-  const cols: ColumnDef<T>[] = columns ||
-    Object.keys(rows[0] as any).map((k) => ({ key: k, label: String(k) }));
+  const cols: ColumnDef<T>[] =
+    columns ||
+    Object.keys(rows[0]).map((k) => ({ key: k, label: String(k) }));
 
   const header = toCSVRow(cols.map((c) => c.label));
   const body = rows
-    .map((r) => toCSVRow(cols.map((c) => {
-      const key = c.key as string;
-      const v = (r as any)?.[key];
-      if (v == null) return "";
-      if (typeof v === "number") return String(v);
-      if (v instanceof Date) return v.toISOString();
-      if (typeof v === "object") return JSON.stringify(v);
-      return String(v);
-    })))
+    .map((r) =>
+      toCSVRow(
+        cols.map((c) => {
+          const key = c.key as string;
+          const v = r[key];
+          if (v == null) return "";
+          if (typeof v === "number") return String(v);
+          if (v instanceof Date) return v.toISOString();
+          if (typeof v === "object") return JSON.stringify(v);
+          return String(v);
+        })
+      )
+    )
     .join("\n");
 
   const csv = `${header}\n${body}`;
@@ -53,7 +61,7 @@ export function downloadCSV<T = any>(
   URL.revokeObjectURL(url);
 }
 
-export async function downloadXLSX<T = any>(
+export async function downloadXLSX<T extends Record<string, unknown>>(
   rows: T[],
   filename = "export.xlsx",
   sheetName = "Data"
@@ -63,7 +71,7 @@ export async function downloadXLSX<T = any>(
   }
   const XLSXModule = await import("xlsx");
   const XLSX = XLSXModule.default ?? XLSXModule;
-  const ws = XLSX.utils.json_to_sheet(rows as any);
+  const ws = XLSX.utils.json_to_sheet(rows);
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, sheetName);
   const outName = filename.endsWith(".xlsx") ? filename : `${filename}.xlsx`;

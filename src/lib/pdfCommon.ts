@@ -1,4 +1,11 @@
-import { PDFDocument, rgb, StandardFonts, type PDFFont, type PDFPage, type PDFImage } from "pdf-lib";
+import {
+  PDFDocument,
+  rgb,
+  StandardFonts,
+  type PDFFont,
+  type PDFPage,
+  type PDFImage,
+} from "pdf-lib";
 import fontkit from "@pdf-lib/fontkit";
 import fs from "fs/promises";
 import path from "path";
@@ -29,6 +36,22 @@ export type BrandProfile = {
   signatureName?: string | null;
   signatureTitle?: string | null;
   signatureImageUrl?: string | null;
+};
+
+export type CustomerInfo = {
+  pic?: string | null;
+  company?: string | null;
+  address?: string | null;
+  email?: string | null;
+  phone?: string | null;
+};
+
+export type ActorInfo = {
+  name: string;
+  email?: string | null;
+  phone?: string | null;
+  title?: string | null;
+  position?: string | null;
 };
 
 export const toRgb = (hex?: string) => {
@@ -80,23 +103,53 @@ export const formatPdfFileName = (
 ) => {
   const numberPart = sanitizeFileSegment(numberValue);
   const customerPart = sanitizeFileSegment(customerValue);
-  const safeNumber = numberPart || sanitizeFileSegment(fallbackNumber) || "Dokumen";
-  const safeCustomer = customerPart || sanitizeFileSegment(fallbackCustomer) || "Customer";
-  const normalizedNumber = safeNumber.replace(/-+/g, "/").replace(/\s*\/\s*/g, "/");
+  const safeNumber =
+    numberPart || sanitizeFileSegment(fallbackNumber) || "Dokumen";
+  const safeCustomer =
+    customerPart || sanitizeFileSegment(fallbackCustomer) || "Customer";
+  const normalizedNumber = safeNumber
+    .replace(/-+/g, "/")
+    .replace(/\s*\/\s*/g, "/");
   return `${normalizedNumber} - ${safeCustomer}.pdf`;
 };
 
 // Fonts (fallback ke PlusJakartaSans dari public/fonts)
-const FONT_REGULAR_PATH = path.join(process.cwd(), "public", "fonts", "PlusJakartaSans-Medium.ttf");
-const FONT_SEMIBOLD_PATH = path.join(process.cwd(), "public", "fonts", "PlusJakartaSans-Bold.ttf");
-const FONT_EXTRABOLD_PATH = path.join(process.cwd(), "public", "fonts", "PlusJakartaSans-Bold.ttf");
+const FONT_REGULAR_PATH = path.join(
+  process.cwd(),
+  "public",
+  "fonts",
+  "PlusJakartaSans-Medium.ttf"
+);
+const FONT_SEMIBOLD_PATH = path.join(
+  process.cwd(),
+  "public",
+  "fonts",
+  "PlusJakartaSans-Bold.ttf"
+);
+const FONT_EXTRABOLD_PATH = path.join(
+  process.cwd(),
+  "public",
+  "fonts",
+  "PlusJakartaSans-Bold.ttf"
+);
 
-const fontCache: { regular?: Uint8Array; semibold?: Uint8Array; extrabold?: Uint8Array } = {};
+const fontCache: {
+  regular?: Uint8Array;
+  semibold?: Uint8Array;
+  extrabold?: Uint8Array;
+} = {};
 
-export const loadFontBytes = async (weight: "regular" | "semibold" | "extrabold") => {
+export const loadFontBytes = async (
+  weight: "regular" | "semibold" | "extrabold"
+) => {
   try {
     if (fontCache[weight]) return fontCache[weight]!;
-    const filePath = weight === "regular" ? FONT_REGULAR_PATH : weight === "semibold" ? FONT_SEMIBOLD_PATH : FONT_EXTRABOLD_PATH;
+    const filePath =
+      weight === "regular"
+        ? FONT_REGULAR_PATH
+        : weight === "semibold"
+        ? FONT_SEMIBOLD_PATH
+        : FONT_EXTRABOLD_PATH;
     const file = await fs.readFile(filePath);
     fontCache[weight] = file;
     return file;
@@ -106,14 +159,21 @@ export const loadFontBytes = async (weight: "regular" | "semibold" | "extrabold"
   }
 };
 
-export const safeEmbedFont = async (pdfDoc: PDFDocument, bytes: Uint8Array | null | undefined, fallback: StandardFonts): Promise<PDFFont> => {
+export const safeEmbedFont = async (
+  pdfDoc: PDFDocument,
+  bytes: Uint8Array | null | undefined,
+  fallback: StandardFonts
+): Promise<PDFFont> => {
   try {
     if (bytes && bytes.length) {
       return await pdfDoc.embedFont(bytes, { subset: true });
     }
     return await pdfDoc.embedStandardFont(fallback);
   } catch (err) {
-    console.error("[pdfCommon] embedFont failed, using standard font fallback", err);
+    console.error(
+      "[pdfCommon] embedFont failed, using standard font fallback",
+      err
+    );
     return await pdfDoc.embedStandardFont(fallback);
   }
 };
@@ -149,7 +209,9 @@ export const embedBrandLogo = async (
     // Gunakan loader serbaguna yang mendukung URL absolut (http/https)
     // dan path relatif ke folder `public/` (misal: "/uploads/brand/logo.png").
     const source = brand.logoUrl;
-    const bytes = await loadImageBytes(source.startsWith("http") ? source : source);
+    const bytes = await loadImageBytes(
+      source.startsWith("http") ? source : source
+    );
     if (!bytes) return null;
     let image: PDFImage;
     try {
@@ -169,11 +231,20 @@ export const embedBrandLogo = async (
 };
 
 // Signature helpers
-export const resolveSignatureMeta = (brand: BrandProfile): { imageUrl?: string; name?: string; title?: string } => {
+export const resolveSignatureMeta = (
+  brand: BrandProfile
+): { imageUrl?: string; name?: string; title?: string } => {
   const td = (brand.templateDefaults ?? {}) as Record<string, unknown>;
-  const imageUrl = (brand.signatureImageUrl as string | undefined) || (td["signatureImageUrl"] as string | undefined);
-  const name = (brand.signatureName as string | undefined) || (td["signatureName"] as string | undefined) || brand.name;
-  const title = (brand.signatureTitle as string | undefined) || (td["signatureTitle"] as string | undefined);
+  const imageUrl =
+    (brand.signatureImageUrl as string | undefined) ||
+    (td["signatureImageUrl"] as string | undefined);
+  const name =
+    (brand.signatureName as string | undefined) ||
+    (td["signatureName"] as string | undefined) ||
+    brand.name;
+  const title =
+    (brand.signatureTitle as string | undefined) ||
+    (td["signatureTitle"] as string | undefined);
   return { imageUrl, name, title };
 };
 
@@ -206,14 +277,30 @@ export const embedSignatureImage = async (
 // Init helper: register fontkit & embed brand fonts consistently
 export const initPdfWithBrandFonts = async () => {
   const pdf = await PDFDocument.create();
-  pdf.registerFontkit(fontkit as any);
+  pdf.registerFontkit(fontkit as unknown as { [key: string]: unknown });
   const regularBytes = await loadFontBytes("regular");
   const semiBoldBytes = await loadFontBytes("semibold");
   const extraBoldBytes = await loadFontBytes("extrabold");
-  const font = await safeEmbedFont(pdf, regularBytes, StandardFonts.Helvetica);
-  const bold = await safeEmbedFont(pdf, semiBoldBytes, StandardFonts.HelveticaBold);
-  const extraBold = await safeEmbedFont(pdf, extraBoldBytes, StandardFonts.HelveticaBold);
-  const italic = await safeEmbedFont(pdf, null, StandardFonts.HelveticaOblique);
+  const font = await safeEmbedFont(
+    pdf,
+    regularBytes,
+    StandardFonts.Helvetica
+  );
+  const bold = await safeEmbedFont(
+    pdf,
+    semiBoldBytes,
+    StandardFonts.HelveticaBold
+  );
+  const extraBold = await safeEmbedFont(
+    pdf,
+    extraBoldBytes,
+    StandardFonts.HelveticaBold
+  );
+  const italic = await safeEmbedFont(
+    pdf,
+    null,
+    StandardFonts.HelveticaOblique
+  );
   return { pdf, font, bold, extraBold, italic };
 };
 
@@ -233,13 +320,18 @@ export const drawHeaderCommon = async (
   const { width, height } = page.getSize();
   const topY = height - margin;
   const leftX = margin;
-  let currentY = topY - 12;
+  const currentY = topY - 12;
   let logoWidth = 0;
   let logoHeight = 0;
   const logo = await embedBrandLogo(pdf, brand);
 
   if (logo) {
-    page.drawImage(logo.image, { x: leftX, y: currentY - logo.height, width: logo.width, height: logo.height });
+    page.drawImage(logo.image, {
+      x: leftX,
+      y: currentY - logo.height,
+      width: logo.width,
+      height: logo.height,
+    });
     logoWidth = logo.width;
     logoHeight = logo.height;
   }
@@ -251,18 +343,35 @@ export const drawHeaderCommon = async (
   let nameY = currentY - brandAscent - brandOffsetDown;
 
   if ((brand.showBrandName ?? true) && brand.name) {
-    page.drawText(brand.name, { x: nameX, y: nameY, size: brandNameSize, font: bold, color: toRgb(theme.primaryColor) });
+    page.drawText(brand.name, {
+      x: nameX,
+      y: nameY,
+      size: brandNameSize,
+      font: bold,
+      color: toRgb(theme.primaryColor),
+    });
     nameY -= 16;
   }
 
   if ((brand.showBrandDescription ?? true) && brand.overview) {
-    page.drawText(brand.overview, { x: nameX, y: nameY, size: 11, font, color: toRgb(theme.mutedText), maxWidth: width * 0.45 });
+    page.drawText(brand.overview, {
+      x: nameX,
+      y: nameY,
+      size: 11,
+      font,
+      color: toRgb(theme.mutedText),
+      maxWidth: width * 0.45,
+    });
     nameY -= 14;
   }
 
   const brandContactLines: string[] = [];
   // Tampilkan website terlebih dahulu, lalu email
-  if ((brand.showBrandWebsite ?? true) && brand.website && brand.website.trim()) {
+  if (
+    (brand.showBrandWebsite ?? true) &&
+    brand.website &&
+    brand.website.trim()
+  ) {
     brandContactLines.push(brand.website.trim());
   }
   if ((brand.showBrandEmail ?? true) && brand.email && brand.email.trim()) {
@@ -271,35 +380,85 @@ export const drawHeaderCommon = async (
   const contactStartY = logoHeight ? currentY - logoHeight - 16 : nameY - 12;
   let contactY = contactStartY;
   brandContactLines.forEach((line) => {
-    page.drawText(line, { x: leftX, y: contactY, size: 9, font, color: toRgb(theme.mutedText), maxWidth: Math.max(logoWidth, width * 0.25) });
+    page.drawText(line, {
+      x: leftX,
+      y: contactY,
+      size: 9,
+      font,
+      color: toRgb(theme.mutedText),
+      maxWidth: Math.max(logoWidth, width * 0.25),
+    });
     contactY -= 12;
   });
   // Alamat perusahaan di bawah email (jika diizinkan)
-  if ((brand.showBrandAddress ?? true) && brand.address && String(brand.address).trim().length > 0) {
-    const addrLines = splitTextToSize(String(brand.address), Math.max(logoWidth, width * 0.25) - 2, font, 8);
+  if (
+    (brand.showBrandAddress ?? true) &&
+    brand.address &&
+    String(brand.address).trim().length > 0
+  ) {
+    const addrLines = splitTextToSize(
+      String(brand.address),
+      Math.max(logoWidth, width * 0.25) - 2,
+      font,
+      8
+    );
     addrLines.forEach((line) => {
-      page.drawText(line, { x: leftX, y: contactY, size: 8, font, color: toRgb(theme.mutedText) });
+      page.drawText(line, {
+        x: leftX,
+        y: contactY,
+        size: 8,
+        font,
+        color: toRgb(theme.mutedText),
+      });
       contactY -= 11;
     });
   }
-  const brandBottom = (brandContactLines.length || ((brand.showBrandAddress ?? true) && brand.address)) ? contactY : topY - logoHeight - 20;
+  const brandBottom =
+    brandContactLines.length ||
+    ((brand.showBrandAddress ?? true) && brand.address)
+      ? contactY
+      : topY - logoHeight - 20;
 
   const rightX = width - margin;
   const titleWidth = extraBold.widthOfTextAtSize(title.toUpperCase(), 26);
-  page.drawText(title.toUpperCase(), { x: rightX - titleWidth, y: topY - 18, size: 26, font: extraBold, color: toRgb(theme.primaryColor) });
+  page.drawText(title.toUpperCase(), {
+    x: rightX - titleWidth,
+    y: topY - 18,
+    size: 26,
+    font: extraBold,
+    color: toRgb(theme.primaryColor),
+  });
 
   let metaY = topY - 48;
   metaLines.forEach(({ label, value }) => {
     const labelWidth = font.widthOfTextAtSize(label, 9);
-    page.drawText(label, { x: rightX - labelWidth, y: metaY, size: 9, font, color: toRgb(theme.mutedText) });
+    page.drawText(label, {
+      x: rightX - labelWidth,
+      y: metaY,
+      size: 9,
+      font,
+      color: toRgb(theme.mutedText),
+    });
     const valueWidth = bold.widthOfTextAtSize(value, 11);
-    page.drawText(value, { x: rightX - valueWidth, y: metaY - 14, size: 11, font: bold, color: toRgb(theme.headerTextColor) });
+    page.drawText(value, {
+      x: rightX - valueWidth,
+      y: metaY - 14,
+      size: 11,
+      font: bold,
+      color: toRgb(theme.headerTextColor),
+    });
     metaY -= 24;
   });
 
   const contentBottom = Math.min(brandBottom, nameY, metaY);
   const separatorY = contentBottom - 18;
-  page.drawRectangle({ x: margin, y: separatorY, width: width - margin * 2, height: 0.8, color: toRgb(theme.tableBorderColor) });
+  page.drawRectangle({
+    x: margin,
+    y: separatorY,
+    width: width - margin * 2,
+    height: 0.8,
+    color: toRgb(theme.tableBorderColor),
+  });
   return separatorY - 24;
 };
 
@@ -307,8 +466,8 @@ export const drawInfoSectionCommon = (
   page: PDFPage,
   theme: InvoiceTemplateTheme,
   brand: BrandProfile,
-  actor: { name: string; email?: string | null; phone?: string | null },
-  customer: any,
+  actor: ActorInfo,
+  customer: CustomerInfo,
   font: PDFFont,
   bold: PDFFont,
   margin: number,
@@ -329,52 +488,154 @@ export const drawInfoSectionCommon = (
     ? customerNameParts.join(" - ")
     : "Customer";
 
-  const fromRows: Array<{ text: string; size?: number; font?: PDFFont; color?: ReturnType<typeof rgb> }> = [];
-  const fromHeading = (actor.name && actor.name.trim()) || brand.name || "Our Company";
-  fromRows.push({ text: fromHeading, size: 10, font: bold, color: toRgb(theme.headerTextColor) });
+  const fromRows: Array<{
+    text: string;
+    size?: number;
+    font?: PDFFont;
+    color?: ReturnType<typeof rgb>;
+  }> = [];
+  const fromHeading =
+    (actor.name && actor.name.trim()) || brand.name || "Our Company";
+  fromRows.push({
+    text: fromHeading,
+    size: 10,
+    font: bold,
+    color: toRgb(theme.headerTextColor),
+  });
 
   if ((brand.showBrandAddress ?? true) && brand.address) {
-    const addressLines = splitTextToSize(String(brand.address), columnWidth - 4, font, 8);
-    addressLines.forEach((line) => fromRows.push({ text: line, size: 8, font, color: toRgb(theme.mutedText) }));
+    const addressLines = splitTextToSize(
+      String(brand.address),
+      columnWidth - 4,
+      font,
+      8
+    );
+    addressLines.forEach((line) =>
+      fromRows.push({
+        text: line,
+        size: 8,
+        font,
+        color: toRgb(theme.mutedText),
+      })
+    );
   }
 
   const emailValues = uniqueValues([actor.email]);
-  emailValues.forEach((value) => fromRows.push({ text: value, size: 9, font, color: toRgb(theme.mutedText) }));
+  emailValues.forEach((value) =>
+    fromRows.push({
+      text: value,
+      size: 9,
+      font,
+      color: toRgb(theme.mutedText),
+    })
+  );
 
   const phoneValues = uniqueValues([actor.phone]);
-  phoneValues.forEach((value) => fromRows.push({ text: value, size: 9, font, color: toRgb(theme.mutedText) }));
+  phoneValues.forEach((value) =>
+    fromRows.push({
+      text: value,
+      size: 9,
+      font,
+      color: toRgb(theme.mutedText),
+    })
+  );
 
-  const billRows: Array<{ text: string; size?: number; font?: PDFFont; color?: ReturnType<typeof rgb> }> = [];
-  billRows.push({ text: customerDisplayName, size: 10, font: bold, color: toRgb(theme.headerTextColor) });
+  const billRows: Array<{
+    text: string;
+    size?: number;
+    font?: PDFFont;
+    color?: ReturnType<typeof rgb>;
+  }> = [];
+  billRows.push({
+    text: customerDisplayName,
+    size: 10,
+    font: bold,
+    color: toRgb(theme.headerTextColor),
+  });
 
   if (customer?.address) {
-    splitTextToSize(String(customer.address), columnWidth - 4, font, 8).forEach((line) =>
-      billRows.push({ text: line, size: 8, font, color: toRgb(theme.mutedText) })
+    splitTextToSize(
+      String(customer.address),
+      columnWidth - 4,
+      font,
+      8
+    ).forEach((line) =>
+      billRows.push({
+        text: line,
+        size: 8,
+        font,
+        color: toRgb(theme.mutedText),
+      })
     );
   }
 
   const customerEmails = uniqueValues([customer?.email]);
-  customerEmails.forEach((value) => billRows.push({ text: value, size: 9, font, color: toRgb(theme.mutedText) }));
+  customerEmails.forEach((value) =>
+    billRows.push({
+      text: value,
+      size: 9,
+      font,
+      color: toRgb(theme.mutedText),
+    })
+  );
 
   const customerPhones = uniqueValues([customer?.phone]);
-  customerPhones.forEach((value) => billRows.push({ text: value, size: 9, font, color: toRgb(theme.mutedText) }));
+  customerPhones.forEach((value) =>
+    billRows.push({
+      text: value,
+      size: 9,
+      font,
+      color: toRgb(theme.mutedText),
+    })
+  );
 
   const columns = [
-    { title: "From", rows: fromRows.length ? fromRows : [{ text: "-", size: 9, font, color: toRgb(theme.mutedText) }] },
-    { title: "Bill To", rows: billRows.length ? billRows : [{ text: "-", size: 9, font, color: toRgb(theme.mutedText) }] },
+    {
+      title: "From",
+      rows: fromRows.length
+        ? fromRows
+        : [{ text: "-", size: 9, font, color: toRgb(theme.mutedText) }],
+    },
+    {
+      title: "Bill To",
+      rows: billRows.length
+        ? billRows
+        : [{ text: "-", size: 9, font, color: toRgb(theme.mutedText) }],
+    },
   ];
 
   let lowestY = baseY;
   columns.forEach(({ title, rows }, index) => {
     const x = margin + index * (columnWidth + gap);
-    page.drawText(title.toUpperCase(), { x, y: baseY, size: 10, font: bold, color: toRgb(theme.headerAccentColor) });
-    page.drawRectangle({ x, y: baseY - 12, width: columnWidth, height: 0.6, color: toRgb(theme.tableBorderColor) });
+    page.drawText(title.toUpperCase(), {
+      x,
+      y: baseY,
+      size: 10,
+      font: bold,
+      color: toRgb(theme.headerAccentColor),
+    });
+    page.drawRectangle({
+      x,
+      y: baseY - 12,
+      width: columnWidth,
+      height: 0.6,
+      color: toRgb(theme.tableBorderColor),
+    });
     let lineY = baseY - 24;
     rows.slice(0, 10).forEach((row, rowIndex) => {
       const size = row.size ?? (rowIndex === 0 ? 10 : 9);
       const rowFont = row.font ?? (rowIndex === 0 ? bold : font);
-      const rowColor = row.color ?? toRgb(rowIndex === 0 ? theme.headerTextColor : theme.mutedText);
-      page.drawText(row.text, { x, y: lineY, size, font: rowFont, color: rowColor, maxWidth: columnWidth - 4 });
+      const rowColor =
+        row.color ??
+        toRgb(rowIndex === 0 ? theme.headerTextColor : theme.mutedText);
+      page.drawText(row.text, {
+        x,
+        y: lineY,
+        size,
+        font: rowFont,
+        color: rowColor,
+        maxWidth: columnWidth - 4,
+      });
       const gapY = rowIndex === 0 ? 16 : size && size <= 8 ? 11 : 12;
       lineY -= gapY;
     });
@@ -388,20 +649,26 @@ export const drawSignatureSectionCommon = async (
   currentPage: PDFPage,
   theme: InvoiceTemplateTheme,
   brand: BrandProfile,
-  actor: { name: string; email?: string | null; phone?: string | null },
+  actor: ActorInfo,
   bold: PDFFont,
   margin: number,
   startY: number,
   scale?: number
 ): Promise<{ page: PDFPage; finalY: number }> => {
-  let page = currentPage;
+  const page = currentPage;
   const s = Math.max(0.6, Math.min(1, scale ?? 1));
   const { width } = page.getSize();
   const sectionHeight = Math.floor(160 * s);
   let y = startY - 6;
 
   // Title
-  page.drawText("SIGNATURE", { x: margin, y, size: Math.max(8, Math.floor(10 * s)), font: bold, color: toRgb(theme.headerAccentColor) });
+  page.drawText("SIGNATURE", {
+    x: margin,
+    y,
+    size: Math.max(8, Math.floor(10 * s)),
+    font: bold,
+    color: toRgb(theme.headerAccentColor),
+  });
   y -= Math.floor(16 * s);
 
   // Box
@@ -409,7 +676,14 @@ export const drawSignatureSectionCommon = async (
   const boxY = y - sectionHeight;
   const boxW = width - margin * 2;
   const boxH = sectionHeight;
-  page.drawRectangle({ x: boxX, y: boxY, width: boxW, height: boxH, borderColor: toRgb(theme.tableBorderColor), borderWidth: 0.8 });
+  page.drawRectangle({
+    x: boxX,
+    y: boxY,
+    width: boxW,
+    height: boxH,
+    borderColor: toRgb(theme.tableBorderColor),
+    borderWidth: 0.8,
+  });
 
   // Signature image (if available)
   const { imageUrl, name: metaName } = resolveSignatureMeta(brand);
@@ -421,20 +695,31 @@ export const drawSignatureSectionCommon = async (
     if (sig) {
       const imgX = boxX + (boxW - sig.width) / 2;
       const imgY = boxY + boxH - padding - sig.height;
-      page.drawImage(sig.image, { x: imgX, y: imgY, width: sig.width, height: sig.height });
+      page.drawImage(sig.image, {
+        x: imgX,
+        y: imgY,
+        width: sig.width,
+        height: sig.height,
+      });
     }
   }
 
   // Caption (printed name)
   const caption = actor?.name || metaName || brand.name || "Authorized";
-  page.drawText(caption, { x: margin + 12, y: y - 16, size: Math.max(9, Math.floor(11 * s)), font: bold, color: toRgb(theme.headerTextColor) });
+  page.drawText(caption, {
+    x: margin + 12,
+    y: y - 16,
+    size: Math.max(9, Math.floor(11 * s)),
+    font: bold,
+    color: toRgb(theme.headerTextColor),
+  });
   const titleText = actor?.title || actor?.position || brand.signatureTitle;
   if (titleText) {
     page.drawText(String(titleText), {
       x: margin + 12,
       y: y - 28,
       size: Math.max(8, Math.floor(10 * s)),
-      font,
+      font: bold, // Changed to bold for consistency
       color: toRgb(theme.mutedText),
     });
   }
@@ -500,11 +785,21 @@ export const drawSignatureColumnsCommon = async (
       const maxW = colWidth - padding * 2;
       const maxH = boxHeight - padding * 2;
       if (sigMeta.imageUrl) {
-        const sig = await embedSignatureImage(pdf, sigMeta.imageUrl, maxW, Math.floor(maxH * 0.9));
+        const sig = await embedSignatureImage(
+          pdf,
+          sigMeta.imageUrl,
+          maxW,
+          Math.floor(maxH * 0.9)
+        );
         if (sig) {
           const imgX = boxX + (colWidth - sig.width) / 2;
-          const imgY = boxY + boxHeight - padding - sig.height;
-          page.drawImage(sig.image, { x: imgX, y: imgY, width: sig.width, height: sig.height });
+          const imgY = boxY + boxH - padding - sig.height;
+          page.drawImage(sig.image, {
+            x: imgX,
+            y: imgY,
+            width: sig.width,
+            height: sig.height,
+          });
         }
       }
     }

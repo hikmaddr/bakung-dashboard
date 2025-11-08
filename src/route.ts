@@ -3,24 +3,45 @@ import { prisma } from "@/lib/prisma";
 import { format } from "date-fns";
 import fs from "fs/promises";
 import path from "path";
+import type { Customer, Quotation, QuotationItem } from "@prisma/client";
+
+type QuotationWithRelations = Quotation & {
+  items: QuotationItem[];
+  customer: Customer | null;
+};
+
+type QuotationItemInput = {
+  product: string;
+  description: string;
+  quantity: number;
+  unit: string;
+  price: number;
+};
+
+type PrismaQuotationItem = {
+  quantity: number;
+  price: number;
+  subtotal: number;
+};
 
 // ==================================================
 // GET — Ambil semua quotation beserta total harga
 // ==================================================
-export async function GET(_req: NextRequest, _ctx: { params: Promise<{}> }) {
+export async function GET(_req: NextRequest, _ctx: unknown) {
   try {
-    const quotations = await prisma.quotation.findMany({
-      include: {
-        items: true, // Ambil relasi item dari QuotationItem
-        customer: true,
-      },
-      orderBy: { createdAt: "desc" },
-    });
+    const quotations: QuotationWithRelations[] =
+      await prisma.quotation.findMany({
+        include: {
+          items: true, // Ambil relasi item dari QuotationItem
+          customer: true,
+        },
+        orderBy: { createdAt: "desc" },
+      });
 
-    const data = quotations.map((q: any) => {
+    const data = quotations.map((q) => {
       const total = Array.isArray(q.items)
         ? q.items.reduce(
-            (acc: number, item: any) =>
+            (acc: number, item: QuotationItem) =>
               acc + (Number(item.quantity) || 0) * (Number(item.price) || 0),
             0
           )
@@ -32,14 +53,15 @@ export async function GET(_req: NextRequest, _ctx: { params: Promise<{}> }) {
         status: q.status ?? "Draft",
         date: q.date ? format(new Date(q.date), "dd/MM/yyyy") : "-",
         total,
-       customer: q.customer? `${q.customer.pic} - ${q.customer.company}` 
-  : "Tidak diketahui",
+        customer: q.customer
+          ? `${q.customer.pic} - ${q.customer.company}`
+          : "Tidak diketahui",
         projectFileUrl: q.projectFileUrl ?? null,
       };
     });
 
     return NextResponse.json(data);
-  } catch (error) {
+  } catch (error: unknown) {
     console.error("❌ Gagal ambil quotation:", error);
     return NextResponse.json(
       { message: "Gagal mengambil quotation" },
@@ -51,7 +73,7 @@ export async function GET(_req: NextRequest, _ctx: { params: Promise<{}> }) {
 // ==================================================
 // POST — Simpan quotation beserta item dan file
 // ==================================================
-export async function POST(req: NextRequest, _ctx: { params: Promise<{}> }) {
+export async function POST(req: NextRequest, _ctx: unknown) {
   try {
     const formData = await req.formData();
 
@@ -61,7 +83,9 @@ export async function POST(req: NextRequest, _ctx: { params: Promise<{}> }) {
     const customerId = Number(formData.get("customerId"));
     const projectDesc = formData.get("projectDescription") as string | null;
     const projectFile = formData.get("projectFile") as File | null;
-    const items = JSON.parse(formData.get("items") as string);
+    const items: QuotationItemInput[] = JSON.parse(
+      formData.get("items") as string
+    );
 
     let projectFileUrl: string | null = null;
 
@@ -79,7 +103,7 @@ export async function POST(req: NextRequest, _ctx: { params: Promise<{}> }) {
 
     // Simpan quotation + items
     // hitung subtotal per item dan totalAmount
-    const itemsForCreate = items.map((item: any) => ({
+    const itemsForCreate = items.map((item) => ({
       product: item.product,
       description: item.description,
       quantity: Number(item.quantity),
@@ -87,7 +111,10 @@ export async function POST(req: NextRequest, _ctx: { params: Promise<{}> }) {
       price: Number(item.price),
       subtotal: Number(item.quantity) * Number(item.price),
     }));
-    const totalAmount = itemsForCreate.reduce((acc: number, it: any) => acc + it.subtotal, 0);
+    const totalAmount = itemsForCreate.reduce(
+      (acc: number, it: PrismaQuotationItem) => acc + it.subtotal,
+      0
+    );
 
     const quotation = await prisma.quotation.create({
       data: {
@@ -108,7 +135,7 @@ export async function POST(req: NextRequest, _ctx: { params: Promise<{}> }) {
     });
 
     return NextResponse.json(quotation);
-  } catch (error) {
+  } catch (error: unknown) {
     console.error("❌ Gagal simpan quotation:", error);
     return NextResponse.json(
       { message: "Gagal menyimpan quotation" },

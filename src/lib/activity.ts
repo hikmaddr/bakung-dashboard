@@ -7,16 +7,25 @@ function extractIp(req: NextRequest): string | null {
     if (xf) return xf.split(",")[0].trim();
   } catch {}
   try {
-    const anyReq = req as any;
-    if (anyReq?.ip) return String(anyReq.ip);
+    const reqWithIp = req as NextRequest & { ip?: unknown };
+    if (reqWithIp.ip) return String(reqWithIp.ip);
   } catch {}
   return null;
 }
 
-export async function logActivity(req: NextRequest, opts: { userId?: number | null; action: string; entity?: string | null; entityId?: number | null; metadata?: any }): Promise<void> {
+export async function logActivity(
+  req: NextRequest,
+  opts: {
+    userId?: number | null;
+    action: string;
+    entity?: string | null;
+    entityId?: number | null;
+    metadata?: Record<string, unknown>;
+  }
+): Promise<void> {
   const ip = extractIp(req);
   const userAgent = req.headers.get("user-agent") || null;
-  const payload: any = { ...(opts.metadata || {}) };
+  const payload: Record<string, unknown> = { ...(opts.metadata || {}) };
   if (ip) payload.ip = ip;
   if (userAgent) payload.userAgent = userAgent;
   try {
@@ -34,7 +43,15 @@ export async function logActivity(req: NextRequest, opts: { userId?: number | nu
   }
 }
 
-export async function logLogin(req: NextRequest, opts: { userId?: number | null; action: "LOGIN" | "LOGOUT"; success?: boolean; message?: string | null }): Promise<void> {
+export async function logLogin(
+  req: NextRequest,
+  opts: {
+    userId?: number | null;
+    action: "LOGIN" | "LOGOUT";
+    success?: boolean;
+    message?: string | null;
+  }
+): Promise<void> {
   const ip = extractIp(req);
   const userAgent = req.headers.get("user-agent") || null;
   try {
@@ -52,4 +69,3 @@ export async function logLogin(req: NextRequest, opts: { userId?: number | null;
     console.error("[logLogin] Failed", e);
   }
 }
-

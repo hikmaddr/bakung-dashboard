@@ -4,8 +4,8 @@ export async function GET() {
   try {
     const invoices = await prisma.invoice.findMany({ take: 1 });
     return Response.json({ success: true, data: invoices });
-  } catch (error: any) {
-    return Response.json({ success: false, error: error?.message || "Unknown error" });
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : "Unknown error";
+    return Response.json({ success: false, error: message });
   }
 }
-

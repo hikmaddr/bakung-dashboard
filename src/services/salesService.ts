@@ -2,6 +2,16 @@ import { prisma } from "@/lib/prisma";
 import { generateNextNumber } from "@/lib/documentNumber";
 import { getActiveBrandProfile } from "@/lib/brand";
 
+class AppError extends Error {
+  statusCode: number;
+
+  constructor(message: string, statusCode: number) {
+    super(message);
+    this.name = "AppError";
+    this.statusCode = statusCode;
+  }
+}
+
 export type NormalizedItem = {
   productId?: number;
   product: string;
@@ -29,12 +39,12 @@ export const parseTaxMode = (raw: unknown) => {
   }
 };
 
-export const normalizeSalesOrderItems = (rawItems: unknown[]): NormalizedItem[] => {
+export const normalizeSalesOrderItems = (
+  rawItems: unknown[]
+): NormalizedItem[] => {
   return rawItems.map((raw) => {
     const item = raw as Record<string, unknown>;
-    const qRaw = Number(
-      typeof item.quantity !== "undefined" ? item.quantity : (item as any).qty ?? 0
-    ) || 0;
+    const qRaw = Number(item.quantity ?? item.qty ?? 0) || 0;
     const quantity = Math.max(0, Math.round(qRaw));
     const price = Math.max(0, Number(item.price) || 0);
     const baseSubtotal = quantity * price;
@@ -42,9 +52,7 @@ export const normalizeSalesOrderItems = (rawItems: unknown[]): NormalizedItem[] 
       baseSubtotal,
       Math.max(0, Number(item.discount) || 0)
     );
-    const parsedProductId = Number(
-      typeof item.productId !== "undefined" ? item.productId : (item as any).product_id
-    );
+    const parsedProductId = Number(item.productId ?? item.product_id);
     const productId =
       Number.isFinite(parsedProductId) && parsedProductId > 0
         ? parsedProductId
@@ -58,13 +66,18 @@ export const normalizeSalesOrderItems = (rawItems: unknown[]): NormalizedItem[] 
       unit: String(item.unit || "pcs"),
       price,
       discount,
-      imageUrl: typeof item.imageUrl === "string" ? (item.imageUrl as string) : null,
+      imageUrl:
+        typeof item.imageUrl === "string" ? (item.imageUrl as string) : null,
       subtotal: baseSubtotal,
     };
   });
 };
 
-export const computeSalesOrderTotals = (items: NormalizedItem[], extraDiscountRaw: unknown, taxMode: unknown) => {
+export const computeSalesOrderTotals = (
+  items: NormalizedItem[],
+  extraDiscountRaw: unknown,
+  taxMode: unknown
+) => {
   const subtotal = items.reduce((acc, it) => acc + it.subtotal, 0);
   const lineDiscount = items.reduce((acc, it) => acc + it.discount, 0);
   const baseAfterLine = Math.max(0, subtotal - lineDiscount);
@@ -132,14 +145,20 @@ export async function createSalesOrder(args: {
   const finalOrderNumber =
     typeof orderNumber === "string" && orderNumber.trim().length > 0
       ? orderNumber.trim()
-      : await generateNextNumber("salesOrder", { brandProfileId: brandId, date });
+      : await generateNextNumber("salesOrder", {
+          brandProfileId: brandId,
+          date,
+        });
 
   const order = await prisma.salesOrder.create({
     data: {
       orderNumber: finalOrderNumber,
       date,
       status: status ? String(status) : "Draft",
-      notes: typeof notes === "string" && notes.trim().length > 0 ? notes.trim() : null,
+      notes:
+        typeof notes === "string" && notes.trim().length > 0
+          ? notes.trim()
+          : null,
       customerId,
       quotationId,
       brandProfileId: brandId,
@@ -169,19 +188,35 @@ export async function createSalesOrder(args: {
 }
 
 export async function createSalesOrderFromQuotation(quotationId: number) {
-  const quotation = await prisma.quotation.findUnique({ where: { id: quotationId }, include: { items: true } });
+  const quotation = await prisma.quotation.findUnique({
+    where: { id: quotationId },
+    include: { items: true },
+  });
   if (!quotation) throw new Error("Quotation tidak ditemukan");
 
   // Pastikan quotation confirmed sebelum membuat SO
   if (quotation.status !== "Confirmed") {
-    await prisma.quotation.update({ where: { id: quotationId }, data: { status: "Confirmed" } });
+    await prisma.quotation.update({
+      where: { id: quotationId },
+      data: { status: "Confirmed" },
+    });
   }
 
-  const brand = quotation.brandProfileId ? await prisma.brandProfile.findUnique({ where: { id: quotation.brandProfileId } }) : await getActiveBrandProfile();
+  const brand = quotation.brandProfileId
+    ? await prisma.brandProfile.findUnique({
+        where: { id: quotation.brandProfileId },
+      })
+    : await getActiveBrandProfile();
   if (!brand?.id) throw new Error("Brand aktif tidak ditemukan");
 
-  const totalAmount = quotation.items.reduce((acc, it) => acc + (Number(it.price) || 0) * (Number(it.quantity) || 0), 0);
-  const orderNumber = await generateNextNumber("salesOrder", { brandProfileId: brand.id, date: new Date() });
+  const totalAmount = quotation.items.reduce(
+    (acc, it) => acc + (Number(it.price) || 0) * (Number(it.quantity) || 0),
+    0
+  );
+  const orderNumber = await generateNextNumber("salesOrder", {
+    brandProfileId: brand.id,
+    date: new Date(),
+  });
 
   const order = await prisma.salesOrder.create({
     data: {
@@ -212,20 +247,36 @@ export async function createSalesOrderFromQuotation(quotationId: number) {
 }
 
 export async function createInvoiceFromQuotation(quotationId: number) {
-  const quotation = await prisma.quotation.findUnique({ where: { id: quotationId }, include: { items: true } });
+  const quotation = await prisma.quotation.findUnique({
+    where: { id: quotationId },
+    include: { items: true },
+  });
   if (!quotation) throw new Error("Quotation tidak ditemukan");
 
   // Confirm quotation agar konsisten
   if (quotation.status !== "Confirmed") {
-    await prisma.quotation.update({ where: { id: quotationId }, data: { status: "Confirmed" } });
+    await prisma.quotation.update({
+      where: { id: quotationId },
+      data: { status: "Confirmed" },
+    });
   }
 
-  const brand = quotation.brandProfileId ? await prisma.brandProfile.findUnique({ where: { id: quotation.brandProfileId } }) : await getActiveBrandProfile();
+  const brand = quotation.brandProfileId
+    ? await prisma.brandProfile.findUnique({
+        where: { id: quotation.brandProfileId },
+      })
+    : await getActiveBrandProfile();
   if (!brand?.id) throw new Error("Brand aktif tidak ditemukan");
 
   const now = new Date();
-  const invoiceNumber = await generateNextNumber("invoice", { brandProfileId: brand.id, date: now });
-  const subtotal = quotation.items.reduce((acc, it) => acc + (Number(it.price) || 0) * (Number(it.quantity) || 0), 0);
+  const invoiceNumber = await generateNextNumber("invoice", {
+    brandProfileId: brand.id,
+    date: now,
+  });
+  const subtotal = quotation.items.reduce(
+    (acc, it) => acc + (Number(it.price) || 0) * (Number(it.quantity) || 0),
+    0
+  );
 
   const invoice = await prisma.invoice.create({
     data: {
@@ -277,14 +328,17 @@ export async function upsertSalesOrderFromQuotation(
 
   // Determine brand to use and optionally block Creative scope
   const brand = quotation.brandProfileId
-    ? await prisma.brandProfile.findUnique({ where: { id: quotation.brandProfileId } })
+    ? await prisma.brandProfile.findUnique({
+        where: { id: quotation.brandProfileId },
+      })
     : await getActiveBrandProfile();
   if (!brand?.id) throw new Error("Brand aktif tidak ditemukan");
   const scope = String(brand.businessScope || "").toUpperCase();
   if (options?.blockCreativeScope && scope === "CREATIVE") {
-    const err = new Error("Konversi ke Sales Order diblokir untuk scope Creative");
-    (err as any).statusCode = 403;
-    throw err;
+    throw new AppError(
+      "Konversi ke Sales Order diblokir untuk scope Creative",
+      403
+    );
   }
 
   // Check if SO already exists for this quotation
@@ -300,11 +354,17 @@ export async function upsertSalesOrderFromQuotation(
 
   // Ensure quotation Confirmed for consistency
   if (quotation.status !== "Confirmed") {
-    await prisma.quotation.update({ where: { id: quotationId }, data: { status: "Confirmed" } });
+    await prisma.quotation.update({
+      where: { id: quotationId },
+      data: { status: "Confirmed" },
+    });
   }
 
   if (!existingOrder) {
-    const orderNumber = await generateNextNumber("salesOrder", { brandProfileId: brand.id, date: new Date() });
+    const orderNumber = await generateNextNumber("salesOrder", {
+      brandProfileId: brand.id,
+      date: new Date(),
+    });
     const order = await prisma.salesOrder.create({
       data: {
         orderNumber,
@@ -323,7 +383,8 @@ export async function upsertSalesOrderFromQuotation(
             price: Number(item.price) || 0,
             discount: 0,
             imageUrl: null,
-            subtotal: (Number(item.quantity) || 0) * (Number(item.price) || 0),
+            subtotal:
+              (Number(item.quantity) || 0) * (Number(item.price) || 0),
           })),
         },
       },
@@ -336,14 +397,17 @@ export async function upsertSalesOrderFromQuotation(
   if (new Date(quotation.updatedAt) <= new Date(existingOrder.updatedAt)) {
     return {
       action: "skipped" as const,
-      reason: "Quotation sudah dikonfirmasi dan belum ada perubahan. Tidak disalin ulang.",
+      reason:
+        "Quotation sudah dikonfirmasi dan belum ada perubahan. Tidak disalin ulang.",
       order: existingOrder,
     };
   }
 
   // Sync items and totals to existing order
-  const [_, updated] = await prisma.$transaction([
-    prisma.salesOrderItem.deleteMany({ where: { salesOrderId: existingOrder.id } }),
+  const [, updated] = await prisma.$transaction([
+    prisma.salesOrderItem.deleteMany({
+      where: { salesOrderId: existingOrder.id },
+    }),
     prisma.salesOrder.update({
       where: { id: existingOrder.id },
       data: {
@@ -360,7 +424,8 @@ export async function upsertSalesOrderFromQuotation(
             price: Number(item.price) || 0,
             discount: 0,
             imageUrl: null,
-            subtotal: (Number(item.quantity) || 0) * (Number(item.price) || 0),
+            subtotal:
+              (Number(item.quantity) || 0) * (Number(item.price) || 0),
           })),
         },
       },
@@ -390,14 +455,17 @@ export async function upsertInvoiceFromQuotation(
   if (!quotation) throw new Error("Quotation tidak ditemukan");
 
   const brand = quotation.brandProfileId
-    ? await prisma.brandProfile.findUnique({ where: { id: quotation.brandProfileId } })
+    ? await prisma.brandProfile.findUnique({
+        where: { id: quotation.brandProfileId },
+      })
     : await getActiveBrandProfile();
   if (!brand?.id) throw new Error("Brand aktif tidak ditemukan");
   const scope = String(brand.businessScope || "").toUpperCase();
   if (options?.onlyCreativeScope && scope !== "CREATIVE") {
-    const err = new Error("Fitur hanya aktif untuk brand dengan scope Creative");
-    (err as any).statusCode = 403;
-    throw err;
+    throw new AppError(
+      "Fitur hanya aktif untuk brand dengan scope Creative",
+      403
+    );
   }
 
   // existing invoice check
@@ -413,12 +481,18 @@ export async function upsertInvoiceFromQuotation(
 
   // Ensure quotation is confirmed
   if (quotation.status !== "Confirmed") {
-    await prisma.quotation.update({ where: { id: quotationId }, data: { status: "Confirmed" } });
+    await prisma.quotation.update({
+      where: { id: quotationId },
+      data: { status: "Confirmed" },
+    });
   }
 
   if (!existingInvoice) {
     const now = new Date();
-    const invoiceNumber = await generateNextNumber("invoice", { brandProfileId: brand.id, date: now });
+    const invoiceNumber = await generateNextNumber("invoice", {
+      brandProfileId: brand.id,
+      date: now,
+    });
     const invoice = await prisma.invoice.create({
       data: {
         invoiceNumber,
@@ -439,7 +513,8 @@ export async function upsertInvoiceFromQuotation(
             price: Number(item.price) || 0,
             discount: 0,
             discountType: "percent",
-            subtotal: (Number(item.quantity) || 0) * (Number(item.price) || 0),
+            subtotal:
+              (Number(item.quantity) || 0) * (Number(item.price) || 0),
           })),
         },
       },
@@ -456,13 +531,14 @@ export async function upsertInvoiceFromQuotation(
     };
   }
 
-  const [__, updated] = await prisma.$transaction([
+  const [, updated] = await prisma.$transaction([
     prisma.invoiceItem.deleteMany({ where: { invoiceId: existingInvoice.id } }),
     prisma.invoice.update({
       where: { id: existingInvoice.id },
       data: {
         customerId: quotation.customerId,
-        brandProfileId: existingInvoice.brandProfileId ?? quotation.brandProfileId ?? brand.id,
+        brandProfileId:
+          existingInvoice.brandProfileId ?? quotation.brandProfileId ?? brand.id,
         subtotal,
         total: subtotal,
         items: {
@@ -474,7 +550,8 @@ export async function upsertInvoiceFromQuotation(
             price: Number(item.price) || 0,
             discount: 0,
             discountType: "percent",
-            subtotal: (Number(item.quantity) || 0) * (Number(item.price) || 0),
+            subtotal:
+              (Number(item.quantity) || 0) * (Number(item.price) || 0),
           })),
         },
       },
@@ -484,4 +561,3 @@ export async function upsertInvoiceFromQuotation(
 
   return { action: "updated" as const, invoice: updated };
 }
-

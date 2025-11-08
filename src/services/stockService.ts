@@ -1,7 +1,6 @@
 // Placeholder stock service to host business logic related to inventory/stock
 // Expand gradually as features are implemented.
 
-import { prisma } from "@/lib/prisma";
 
 export type StockMovement = {
   productId: number;

@@ -1,7 +1,6 @@
 // Placeholder purchase service to host business logic related to purchases/PO
 // Expand gradually as features are implemented.
 
-import { prisma } from "@/lib/prisma";
 
 export type PurchaseItem = {
   productId?: number;
@@ -13,7 +12,7 @@ export type PurchaseItem = {
 
 export async function normalizePurchaseItems(rawItems: unknown[]): Promise<PurchaseItem[]> {
   return (rawItems || []).map((raw) => {
-    const it = raw as any;
+    const it = raw as Record<string, unknown>;
     return {
       productId: Number(it.productId) > 0 ? Number(it.productId) : undefined,
       name: String(it.name || it.product || "").trim(),
