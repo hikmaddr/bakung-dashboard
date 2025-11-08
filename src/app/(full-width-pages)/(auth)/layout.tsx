@@ -22,7 +22,7 @@ export default function AuthLayout({
                 <Image
                   width={231}
                   height={48}
-                  src="/branding/logo-bakung-color-white.png"
+                  src="/branding/logo-bakung-color.png"
                   alt="Bakung Dashboard logo"
                   className="dark:hidden"
                 />

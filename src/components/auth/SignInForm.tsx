@@ -71,8 +71,11 @@ const SignInForm: React.FC = () => {
 
       // Jika profil lengkap → ke dashboard tanpa welcome
       router.push("/");
-    } catch (err) {
-      setError("Invalid credentials");
+    } catch (err: any) {
+      const message = typeof err?.message === "string" && err.message.trim()
+        ? err.message
+        : "Gagal login";
+      setError(message);
     } finally {
       setLoading(false);
     }
@@ -86,7 +89,7 @@ const SignInForm: React.FC = () => {
             <div className="mb-6 text-center">
               <Link className="mb-4 inline-block" href="/">
                 <Image
-                  src={"/branding/logo-bakung-color-white.png"}
+                  src={"/branding/logo-bakung-color.png"}
                   alt="Logo"
                   width={160}
                   height={30}

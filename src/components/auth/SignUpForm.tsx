@@ -80,8 +80,7 @@ const SignUpForm: React.FC = () => {
               />
             </Link>
             <p className="2xl:px-20">
-              Lorem ipsum dolor sit amet, consectetur adipiscing elit
-              suspendisse.
+              Kelola penjualan, faktur, dan brand dalam satu tempat.
             </p>
             <span className="mt-15 inline-block">
               <Image
@@ -97,7 +96,7 @@ const SignUpForm: React.FC = () => {
 
         <div className="w-full border-stroke dark:border-strokedark xl:w-1/2 xl:border-l-2">
           <div className="w-full p-4 sm:p-12.5 xl:p-17.5">
-            <span className="mb-1.5 block font-medium">Start for free</span>
+            {/* Hapus label promosi sesuai permintaan */}
             <h2 className="mb-9 text-2xl font-bold text-black dark:text-white sm:text-title-xl">
               Sign Up to Bakung Dashboard
             </h2>
