@@ -37,7 +37,7 @@ const nextConfig = {
       'date-fns',
     ],
   },
-  turbopack: {},
+  // Turbopack disabled for now to support custom SVGR webpack rules
   async headers() {
     return [
       {
