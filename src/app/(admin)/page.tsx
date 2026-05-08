@@ -107,6 +107,7 @@ async function getDashboardData(brandId?: number, rangeDays: number = 30): Promi
   const previousStart = new Date(currentStart.getTime() - rangeDays * 24 * 60 * 60 * 1000);
 
   const brandFilter = brandId ? Prisma.sql`AND brandProfileId = ${brandId}` : Prisma.empty;
+  const brandWhere = brandId ? { brandProfileId: brandId } : {};
 
   const [statsRaw] = await prisma.$queryRaw<any[]>(Prisma.sql`
     SELECT
