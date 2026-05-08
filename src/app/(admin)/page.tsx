@@ -211,20 +211,21 @@ async function getDashboardData(brandId?: number, rangeDays: number = 30): Promi
   ]);
 
   // Map raw stats back to variables
-  const customerCount = Number(statsRaw.customerCount || 0);
-  const newCustomersCount = Number(statsRaw.newCustomersCount || 0);
-  const productCount = Number(statsRaw.productCount || 0);
-  const quotationMonthly = { _sum: { totalAmount: statsRaw.quotationMonthlySum }, _count: statsRaw.quotationMonthlyCount };
-  const quotationPrev = { _sum: { totalAmount: statsRaw.quotationPrevSum } };
-  const salesOrderMonthly = { _sum: { totalAmount: statsRaw.salesOrderMonthlySum }, _count: statsRaw.salesOrderMonthlyCount };
-  const salesOrderPrev = { _sum: { totalAmount: statsRaw.salesOrderPrevSum } };
-  const invoiceMonthly = { _sum: { total: statsRaw.invoiceMonthlySum }, _count: statsRaw.invoiceMonthlyCount };
-  const invoicePrev = { _sum: { total: statsRaw.invoicePrevSum } };
-  const outstandingInvoices = { _sum: { total: statsRaw.outstandingSum } };
-  const pendingApprovalCount = Number(statsRaw.pendingApprovalCount || 0);
+  const stats = statsRaw?.[0] || {};
+  const customerCount = Number(stats.customerCount || 0);
+  const newCustomersCount = Number(stats.newCustomersCount || 0);
+  const productCount = Number(stats.productCount || 0);
+  const quotationMonthly = { _sum: { totalAmount: stats.quotationMonthlySum || 0 }, _count: stats.quotationMonthlyCount || 0 };
+  const quotationPrev = { _sum: { totalAmount: stats.quotationPrevSum || 0 } };
+  const salesOrderMonthly = { _sum: { totalAmount: stats.salesOrderMonthlySum || 0 }, _count: stats.salesOrderMonthlyCount || 0 };
+  const salesOrderPrev = { _sum: { totalAmount: stats.salesOrderPrevSum || 0 } };
+  const invoiceMonthly = { _sum: { total: stats.invoiceMonthlySum || 0 }, _count: stats.invoiceMonthlyCount || 0 };
+  const invoicePrev = { _sum: { total: stats.invoicePrevSum || 0 } };
+  const outstandingInvoices = { _sum: { total: stats.outstandingSum || 0 } };
+  const pendingApprovalCount = Number(stats.pendingApprovalCount || 0);
   const invoiceDueRows = invoiceDueRowsRaw;
-  const orderUnshippedCount = Number(statsRaw.orderUnshippedCount || 0);
-  const purchaseUnreceivedCount = Number(statsRaw.purchaseUnreceivedCount || 0);
+  const orderUnshippedCount = Number(stats.orderUnshippedCount || 0);
+  const purchaseUnreceivedCount = Number(stats.purchaseUnreceivedCount || 0);
 
   let topCustomers: DashboardData["topCustomers"] = [];
 
