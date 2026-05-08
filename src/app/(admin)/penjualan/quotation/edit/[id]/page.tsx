@@ -834,12 +834,12 @@ export default function EditQuotationPage() {
       typeof record.quotationNumber === "string" ? record.quotationNumber : ""
     );
     setDate(
-      rawDate ? dayjs(rawDate).format("YYYY-MM-DD") : dayjs().format("YYYY-MM-DD")
+      rawDate ? format(new Date(rawDate), "yyyy-MM-dd") : format(new Date(), "yyyy-MM-dd")
     );
     setValidUntil(
       rawValidUntil
-        ? dayjs(rawValidUntil).format("YYYY-MM-DD")
-        : dayjs().add(7, "day").format("YYYY-MM-DD")
+        ? format(new Date(rawValidUntil), "yyyy-MM-dd")
+        : format(addDays(new Date(), 7), "yyyy-MM-dd")
     );
     setProjectDescription(projectDesc);
     setProjectFile(null);

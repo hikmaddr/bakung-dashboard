@@ -55,7 +55,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Validation failed', details: validation.errors }, { status: 400 });
     }
 
-    const data = validation.data;
+    const data = validation.data!;
     let imageUrl = data.imageUrl;
 
     if (file && (file as any).size) {
@@ -64,8 +64,16 @@ export async function POST(req: NextRequest) {
 
     const row = await prisma.product.create({
       data: {
-        ...data,
-        imageUrl: imageUrl || null
+        sku: data.sku || `SKU-${Date.now()}`,
+        name: data.name,
+        description: data.description,
+        categoryId: data.categoryId,
+        unit: data.unit,
+        buyPrice: data.buyPrice,
+        sellPrice: data.sellPrice,
+        qty: data.qty,
+        imageUrl: imageUrl || null,
+        brandProfileId: data.brandProfileId || null,
       }
     });
 

@@ -29,8 +29,17 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Validation failed", details: validation.errors }, { status: 400 });
     }
 
+    const { pic, company, address, phone, email, brandProfileId } = validation.data!;
+    
     const newCustomer = await prisma.customer.create({
-      data: validation.data,
+      data: {
+        pic,
+        company,
+        address,
+        phone,
+        email: email || null,
+        brandProfileId: brandProfileId || null,
+      },
     });
 
     return NextResponse.json(newCustomer, { status: 201 });

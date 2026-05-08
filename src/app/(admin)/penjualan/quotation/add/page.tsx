@@ -929,8 +929,8 @@ export default function AddQuotationPage() {
   const handleReset = async () => {
     setDropdownOpen(false);
     setQuotationNumber(await fetchNewQuotationNumber());
-    setDate(dayjs().format("YYYY-MM-DD"));
-    setValidUntil(dayjs().add(7, "day").format("YYYY-MM-DD"));
+    setDate(format(new Date(), "yyyy-MM-dd"));
+    setValidUntil(format(addDays(new Date(), 7), "yyyy-MM-dd"));
     setProjectDescription("");
     setProjectFile(null);
     setSelectedCustomer("");
@@ -1234,7 +1234,7 @@ const submitQuotation = async (variant: "Draft" | "Confirmed" | "SendPDF") => {
                 <DatePicker
                   selected={date ? new Date(date) : null}
                   onChange={(val) =>
-                    setDate(val ? dayjs(val).format("YYYY-MM-DD") : "")
+                    setDate(val ? format(new Date(val), "yyyy-MM-dd") : "")
                   }
                   dateFormat="dd/MM/yyyy"
                   className="w-full border rounded-lg px-3 py-2 cursor-pointer shadow-sm focus:ring-blue-500 focus:border-blue-500"
@@ -1247,7 +1247,7 @@ const submitQuotation = async (variant: "Draft" | "Confirmed" | "SendPDF") => {
                 <DatePicker
                   selected={validUntil ? new Date(validUntil) : null}
                   onChange={(val) =>
-                    setValidUntil(val ? dayjs(val).format("YYYY-MM-DD") : "")
+                    setValidUntil(val ? format(new Date(val), "yyyy-MM-dd") : "")
                   }
                   dateFormat="dd/MM/yyyy"
                   className="w-full border rounded-lg px-3 py-2 cursor-pointer shadow-sm focus:ring-blue-500 focus:border-blue-500"

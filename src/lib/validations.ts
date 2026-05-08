@@ -18,7 +18,7 @@ export const customerSchema = z.object({
   company: z.string().min(1, "Company name is required"),
   email: z.string().email().optional().nullable().or(z.literal("")),
   phone: z.string().min(1, "Phone number is required"),
-  address: z.string().optional().nullable(),
+  address: z.string().default(""),
   brandProfileId: z.number().int().positive().optional().nullable(),
 });
 

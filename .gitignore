@@ -54,3 +54,6 @@ temp_seg.txt
 tmp*.pdf
 tmp_*.json
 *.backup
+
+.vercel
+.env*.local
