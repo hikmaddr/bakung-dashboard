@@ -47,7 +47,7 @@ function base64UrlDecode(b64url: string): string {
 }
 
 // Minimal guard: hanya buka /signin dan /api/auth (plus aset Next)
-export function middleware(req: NextRequest) {
+export async function middleware(req: NextRequest) {
   const { pathname } = req.nextUrl;
   const isApi = pathname.startsWith("/api");
 

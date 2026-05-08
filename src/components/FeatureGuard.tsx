@@ -1,7 +1,8 @@
 "use client";
-import React, { useCallback, useEffect, useState } from "react";
+import React, { useEffect, useMemo } from "react";
 import Link from "next/link";
 import LoadingSpinner from "@/components/common/LoadingSpinner";
+import { useBrandStore } from "@/store/useBrandStore";
 
 type ModuleKey = "sales" | "purchase" | "inventory" | "reporting" | "system";
 
@@ -78,79 +79,86 @@ export const FeatureGuard: React.FC<{
   children: React.ReactNode;
   fallback?: React.ReactNode;
 }> = ({ feature, children, fallback }) => {
-  const [enabled, setEnabled] = useState<boolean | null>(null);
-  const [error, setError] = useState<string | null>(null);
-
-  const fetchActiveBrandModules = useCallback(async () => {
-    try {
-      const response = await fetch("/api/brand-profiles/active", { cache: "no-store" });
-      if (!response.ok) throw new Error("Failed to fetch active brand profile");
-      const active = await response.json();
-      // Normalize modules and then apply scope-based gating to ensure consistency
-      const map = normalizeModulesAll(active?.modules);
-
-      const scope = String(active?.businessScope || "").toUpperCase();
-      if (scope === "CREATIVE") {
-        // Disable non-creative modules and features
-        map["sales.order"] = false;
-        map["sales.receipt"] = false;
-        map["sales.delivery"] = false;
-        map["purchase"] = false;
-        map["purchase.order"] = false;
-        map["purchase.invoice"] = false;
-        map["purchase.receipt"] = false;
-        map["purchase.receiving"] = false;
-        map["inventory"] = false;
-        map["inventory.products"] = false;
-        map["inventory.stock"] = false;
-      }
-
-      setEnabled(Boolean(map[feature]));
-      setError(null);
-    } catch (err: any) {
-      console.error("[FeatureGuard] load modules error:", err);
-      setEnabled(null);
-      setError(err?.message || "Unknown error");
-    }
-  }, [feature]);
+  const { activeBrand, loading, error, fetchActiveBrand } = useBrandStore();
 
   useEffect(() => {
-    fetchActiveBrandModules();
-    const handler = () => fetchActiveBrandModules();
+    fetchActiveBrand();
+    
+    // Listen for manual updates to refresh the store
+    const handler = () => fetchActiveBrand(true);
     window.addEventListener("brand-modules:updated", handler);
     return () => window.removeEventListener("brand-modules:updated", handler);
-  }, [fetchActiveBrandModules]);
+  }, [fetchActiveBrand]);
 
-  if (enabled === null) {
+  const enabled = useMemo(() => {
+    if (!activeBrand) return null;
+
+    const map = normalizeModulesAll(activeBrand.modules);
+    const scope = String(activeBrand.businessScope || "").toUpperCase();
+
+    if (scope === "CREATIVE") {
+      // Disable non-creative modules and features
+      map["sales.order"] = false;
+      map["sales.receipt"] = false;
+      map["sales.delivery"] = false;
+      map["purchase"] = false;
+      map["purchase.order"] = false;
+      map["purchase.invoice"] = false;
+      map["purchase.receipt"] = false;
+      map["purchase.receiving"] = false;
+      map["inventory"] = false;
+      map["inventory.products"] = false;
+      map["inventory.stock"] = false;
+    }
+
+    return Boolean(map[feature]);
+  }, [activeBrand, feature]);
+
+  if (loading && !activeBrand) {
     return (
       <div className="p-6">
         <div className="rounded-2xl border border-gray-200 bg-white p-6 dark:border-gray-800 dark:bg-gray-900">
           <LoadingSpinner inline size="sm" label="Memuat pengaturan modul…" />
-          {error && (
-            <p className="mt-3 text-xs text-red-600 dark:text-red-400">{String(error)}</p>
-          )}
         </div>
       </div>
     );
   }
 
+  if (error && !activeBrand) {
+    return (
+      <div className="p-6">
+        <div className="rounded-2xl border border-red-200 bg-red-50 p-6 dark:border-red-800/30 dark:bg-red-900/10">
+          <h2 className="text-lg font-semibold text-red-900 dark:text-red-400">Gagal memuat modul</h2>
+          <p className="mt-1 text-sm text-red-800 dark:text-red-300">{error}</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (enabled === null) {
+    // If we're not loading and have no activeBrand, it might mean no brand is selected
+    return null;
+  }
+
   if (!enabled) {
     return (
-      fallback ?? (
-        <div className="p-6">
-          <div className="rounded-2xl border border-amber-300 bg-amber-50 p-6">
-            <h2 className="text-lg font-semibold text-amber-900">Fitur dinonaktifkan</h2>
-            <p className="mt-1 text-sm text-amber-800">
-              Fitur ini tidak aktif pada Brand Profile yang sedang digunakan. Aktifkan fitur pada Brand Settings.
-            </p>
-            <div className="mt-4">
-              <Link href="/template-branding/brand-settings" className="inline-flex items-center rounded-full bg-amber-600 px-4 py-2 text-white shadow-sm hover:bg-amber-700">
-                Buka Brand Settings
-              </Link>
+      <>
+        {fallback ?? (
+          <div className="p-6">
+            <div className="rounded-2xl border border-amber-300 bg-amber-50 p-6 dark:border-amber-800/30 dark:bg-amber-900/10">
+              <h2 className="text-lg font-semibold text-amber-900 dark:text-amber-400">Fitur dinonaktifkan</h2>
+              <p className="mt-1 text-sm text-amber-800 dark:text-amber-300">
+                Fitur ini tidak aktif pada Brand Profile yang sedang digunakan. Aktifkan fitur pada Brand Settings.
+              </p>
+              <div className="mt-4">
+                <Link href="/template-branding/brand-settings" className="inline-flex items-center rounded-full bg-amber-600 px-4 py-2 text-white shadow-sm hover:bg-amber-700">
+                  Buka Brand Settings
+                </Link>
+              </div>
             </div>
           </div>
-        </div>
-      )
+        )}
+      </>
     );
   }
 
@@ -158,3 +166,4 @@ export const FeatureGuard: React.FC<{
 };
 
 export default FeatureGuard;
+

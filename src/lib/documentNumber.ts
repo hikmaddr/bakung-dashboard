@@ -1,5 +1,5 @@
 import { prisma } from "@/lib/prisma";
-import type { BrandProfile } from "@/types/brand";
+type BrandProfile = { id: number; name?: string | null; numberFormats?: unknown; [key: string]: unknown };
 
 export type DocumentType = "quotation" | "salesOrder" | "invoice" | "deliveryNote";
 
@@ -105,7 +105,6 @@ export async function generateNextNumber(
     // Be defensive: some deployments may not have Delivery model/table yet.
     // If Prisma throws, fall back to sequence starting at 0 so formatting still follows brand.
     try {
-      // @ts-expect-error: model may not exist in some schemas
       count = await (prisma as any).delivery.count({
         where: {
           deliveryNumber: { startsWith: prefix },

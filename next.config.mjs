@@ -5,12 +5,12 @@ const nextConfig = {
   reactStrictMode: true,
   eslint: {
     // Skip ESLint during production builds to prevent build failures due to lint errors
-    ignoreDuringBuilds: true,
+    ignoreDuringBuilds: false,
   },
   typescript: {
     // Abaikan error tipe saat build produksi agar deploy tidak ter-block
     // (sementara, sampai kompatibilitas tipe Next 15 disesuaikan di semua page)
-    ignoreBuildErrors: true,
+    ignoreBuildErrors: false,
   },
   images: {
     formats: ["image/avif", "image/webp"],

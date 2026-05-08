@@ -32,6 +32,7 @@ interface SalesOrder {
   customer: {
     pic: string;
     company: string;
+    phone?: string;
   };
   date: string;
   totalAmount: number;
@@ -40,6 +41,10 @@ interface SalesOrder {
 
 // Opsi Status
 const STATUS_OPTIONS = ["Approved", "Declined"] as const;
+
+const formatCurrency = (val: number) => {
+  return val.toLocaleString("id-ID", { style: "currency", currency: "IDR" });
+};
 
 // ================== HELPER: GET STATUS COLOR ==================
 const getStatusColor = (status: string) => {

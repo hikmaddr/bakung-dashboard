@@ -1,5 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { customerSchema, validateRequest } from "@/lib/validations";
 
 // GET: Ambil semua data customer
 export async function GET(req: NextRequest) {
@@ -22,14 +23,14 @@ export async function GET(req: NextRequest) {
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
-    const { pic, email, company, address, phone } = body;
+    const validation = validateRequest(customerSchema, body);
 
-    if (!pic || !company || !address || !phone) {
-      return NextResponse.json({ error: "Data tidak lengkap" }, { status: 400 });
+    if (!validation.success) {
+      return NextResponse.json({ error: "Validation failed", details: validation.errors }, { status: 400 });
     }
 
     const newCustomer = await prisma.customer.create({
-      data: { pic, email, company, address, phone },
+      data: validation.data,
     });
 
     return NextResponse.json(newCustomer, { status: 201 });

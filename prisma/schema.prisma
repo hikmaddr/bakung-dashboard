@@ -3,7 +3,7 @@ generator client {
 }
 
 datasource db {
-  provider = "mysql"
+  provider = "postgresql"
   url      = env("DATABASE_URL")
 }
 
@@ -63,13 +63,13 @@ model Quotation {
   status          String
   totalAmount     Float           @default(0)
   shareUrl        String?
-  customer        Customer        @relation(fields: [customerId], references: [id], map: "Quotation_customerId_fkey")
+  customer        Customer        @relation(fields: [customerId], references: [id])
   brand           BrandProfile?   @relation(fields: [brandProfileId], references: [id])
   items           QuotationItem[]
   salesOrders     SalesOrder[]
   invoices        Invoice[]
 
-  @@index([customerId], map: "Quotation_customerId_fkey")
+  @@index([customerId])
   @@index([brandProfileId])
   @@index([date])
   @@index([status])
@@ -89,9 +89,9 @@ model QuotationItem {
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
   subtotal    Float     @default(0)
-  quotation   Quotation @relation(fields: [quotationId], references: [id], map: "QuotationItem_quotationId_fkey")
+  quotation   Quotation @relation(fields: [quotationId], references: [id])
 
-  @@index([quotationId], map: "QuotationItem_quotationId_fkey")
+  @@index([quotationId])
   @@map("quotationitem")
 }
 
@@ -116,8 +116,8 @@ model SalesOrder {
   subtotal      Float            @default(0)
   taxAmount     Float            @default(0)
   taxMode       String           @default("none")
-  customer      Customer         @relation(fields: [customerId], references: [id], map: "SalesOrder_customerId_fkey")
-  quotation     Quotation?       @relation(fields: [quotationId], references: [id], map: "SalesOrder_quotationId_fkey")
+  customer      Customer         @relation(fields: [customerId], references: [id])
+  quotation     Quotation?       @relation(fields: [quotationId], references: [id])
   brand         BrandProfile?    @relation(fields: [brandProfileId], references: [id])
   items         SalesOrderItem[]
   paymentsIn    PaymentIn[]
@@ -125,8 +125,8 @@ model SalesOrder {
   purchases     PurchaseDirect[]
   shareUrl      String?
 
-  @@index([customerId], map: "SalesOrder_customerId_fkey")
-  @@index([quotationId], map: "SalesOrder_quotationId_fkey")
+  @@index([customerId])
+  @@index([quotationId])
   @@index([brandProfileId])
   @@index([date])
   @@index([status])
@@ -148,9 +148,9 @@ model SalesOrderItem {
   createdAt    DateTime   @default(now())
   updatedAt    DateTime   @updatedAt
   discount     Float      @default(0)
-  salesOrder   SalesOrder @relation(fields: [salesOrderId], references: [id], map: "SalesOrderItem_salesOrderId_fkey")
+  salesOrder   SalesOrder @relation(fields: [salesOrderId], references: [id])
 
-  @@index([salesOrderId], map: "SalesOrderItem_salesOrderId_fkey")
+  @@index([salesOrderId])
   @@map("salesorderitem")
 }
 
@@ -230,7 +230,7 @@ model ProductCategory {
   children    ProductCategory[] @relation("CategoryToParent")
   brand       BrandProfile?     @relation(fields: [brandProfileId], references: [id])
 
-  @@index([parentId], map: "productcategory_parentId_fkey")
+  @@index([parentId])
   @@index([brandProfileId])
   @@map("productcategory")
 }

@@ -171,7 +171,7 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
       return NextResponse.json({ success: false, message: "Brand aktif tidak ditemukan" }, { status: 404 });
     }
 
-    const actorName = auth?.user?.name || brand.name || "Kasir";
+    const actorName = (auth as any)?.user?.name || brand.name || "Kasir";
     const theme = resolveTheme(brand as any);
 
     const { pdf, font, bold, extraBold } = await initPdfWithBrandFonts();
@@ -276,7 +276,7 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
     let notesY = cardY - cardHeight - 24;
     page.drawText("NOTES", { x: margin, y: notesY, font: bold, size: 10, color: toRGB(toRgb255(theme.headerAccentColor)) });
     notesY -= 14;
-    const notes = (receipt.notes || "").trim();
+    const notes = String((invoice as any).notes || "").trim();
     if (notes) {
       const lines = notes.split(/\r?\n/);
       lines.forEach((line) => {
@@ -317,7 +317,7 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
       color: toRGB(toRgb255(theme.headerAccentColor)),
     });
     notesY -= 14;
-    const terms = (receipt.terms || brand.termsConditions || DEFAULT_TERMS.join("\n"))
+    const terms = String((invoice as any).terms || brand.termsConditions || DEFAULT_TERMS.join("\n"))
       .split(/\r?\n/)
       .filter((line) => line.trim().length)
       .slice(0, 8);
@@ -349,7 +349,7 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
     const invoiceNumber = invoice.invoiceNumber || `INV-${invoice.id}`;
     const customerName = invoice.customer?.pic || invoice.customer?.company || "Customer";
     const fileName = formatPdfFileName(invoiceNumber, customerName, `INV-${invoice.id}`);
-    const buffer = bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength);
+    const buffer = (bytes.buffer as ArrayBuffer).slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength);
 
     return new Response(buffer, {
       headers: {

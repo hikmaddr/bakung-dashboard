@@ -1,11 +1,12 @@
 "use client";
-import { useEffect, useRef, useState } from "react";
+import { use, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 
 type Item = { id?: number; productId?: number; name: string; qty: number; unit?: string; unitCost?: number };
 
-export default function PembelianLangsungEditPage({ params }: { params: { id: string } }) {
-  const id = Number(params.id);
+export default function PembelianLangsungEditPage({ params }: { params: Promise<{ id: string }> }) {
+  const { id: rawId } = use(params);
+  const id = Number(rawId);
   const router = useRouter();
   const [purchaseNumber, setPurchaseNumber] = useState("");
   const [date, setDate] = useState<string>(new Date().toISOString().slice(0,10));

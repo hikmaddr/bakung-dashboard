@@ -13,8 +13,9 @@ const sanitizeFileName = (value: string, fallback: string) => {
   return trimmed.replace(/[^a-zA-Z0-9._-]/g, "_");
 };
 
-export async function POST(req: Request, { params }: { params: { id: string } }) {
+export async function POST(req: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
+    const { id: rawId } = await params;
     if (!process.env.BLOB_READ_WRITE_TOKEN) {
       return NextResponse.json(
         { success: false, message: "Blob token belum dikonfigurasi" },
@@ -22,7 +23,7 @@ export async function POST(req: Request, { params }: { params: { id: string } })
       );
     }
 
-    const invoiceId = params.id;
+    const invoiceId = rawId;
     const numericId = Number(invoiceId);
     if (!invoiceId || Number.isNaN(numericId)) {
       return NextResponse.json(

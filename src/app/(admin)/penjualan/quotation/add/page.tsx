@@ -5,7 +5,7 @@ import ReactDOM from "react-dom";
 import PageBreadcrumb from "@/components/common/PageBreadCrumb";
 // ✅ Import useRouter dari next/navigation
 import { useRouter } from "next/navigation"; 
-import dayjs from "dayjs";
+import { format, addDays } from "date-fns";
 import { PlusCircle, Trash2, ChevronDown, Paperclip, X } from "lucide-react";
 import DatePicker from "react-datepicker";
 import "react-datepicker/dist/react-datepicker.css";
@@ -576,9 +576,9 @@ export default function AddQuotationPage() {
   // Header fields
   const [quotationNumber, setQuotationNumber] = useState("");
   const [numberLocked, setNumberLocked] = useState<boolean>(true);
-  const [date, setDate] = useState(dayjs().format("YYYY-MM-DD"));
+  const [date, setDate] = useState(format(new Date(), "yyyy-MM-dd"));
   const [validUntil, setValidUntil] = useState(
-    dayjs().add(7, "day").format("YYYY-MM-DD")
+    format(addDays(new Date(), 7), "yyyy-MM-dd")
   );
   const [projectDescription, setProjectDescription] = useState("");
   const [projectFile, setProjectFile] = useState<File | null>(null);

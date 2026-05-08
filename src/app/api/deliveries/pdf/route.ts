@@ -165,7 +165,7 @@ export async function POST(req: NextRequest) {
       if (overrides.footerText) (brand as any).footerText = overrides.footerText;
       if (overrides.paymentInfo) (brand as any).paymentInfo = overrides.paymentInfo;
     }
-    const theme: InvoiceTemplateTheme = resolveTheme(brand as any, templateId ?? (brand?.templateDefaults?.invoice as string | undefined));
+    const theme: InvoiceTemplateTheme = resolveTheme(brand as any, templateId ?? ((brand as any)?.templateDefaults?.deliveryNote as string | undefined));
 
     // Build PDF
     const { pdf, font: fontRegular, bold: fontBold, extraBold } = await initPdfWithBrandFonts();

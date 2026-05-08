@@ -1,15 +1,19 @@
 import type { Metadata } from "next";
+import { Prisma } from "@prisma/client";
 import { redirect } from "next/navigation";
 import Link from "next/link";
-import { ArrowUpRight } from "lucide-react";
-import { format, startOfMonth, subMonths } from "date-fns";
+import { startOfMonth, subMonths, format } from "date-fns";
 import { TrendChart } from "@/components/dashboard/TrendChart";
 import EmptyState from "@/components/EmptyState";
 import { prisma } from "@/lib/prisma";
 import { getAuth } from "@/lib/auth";
 import { getActiveBrandProfile, resolveAllowedBrandIds, isOwnerOnly } from "@/lib/brand";
 import AutoRefresh from "@/components/dashboard/AutoRefresh";
-
+import { MetricCards, type DashboardCard } from "@/components/dashboard/MetricCards";
+import { PipelineSummary, type PipelineGroup } from "@/components/dashboard/PipelineSummary";
+import { RecentTransactions, type RecentSection } from "@/components/dashboard/RecentTransactions";
+import { TopCustomers } from "@/components/dashboard/TopCustomers";
+import { InventorySummary } from "@/components/dashboard/InventorySummary";
 
 const currencyFormatter = new Intl.NumberFormat("id-ID", {
   style: "currency",
@@ -20,46 +24,6 @@ const currencyFormatter = new Intl.NumberFormat("id-ID", {
 const numberFormatter = new Intl.NumberFormat("id-ID", {
   maximumFractionDigits: 0,
 });
-
-type DashboardCard = {
-  key: string;
-  title: string;
-  value: number;
-  format: "currency" | "number";
-  lines: string[];
-  trend?: number | null;
-};
-
-type PipelineStatus = {
-  status: string;
-  label: string;
-  count: number;
-  percentage: number;
-};
-
-type PipelineGroup = {
-  key: string;
-  title: string;
-  total: number;
-  statuses: PipelineStatus[];
-};
-
-type RecentItem = {
-  id: number;
-  number: string;
-  customer: string;
-  amount: number;
-  date: Date;
-  status: string;
-  link: string;
-};
-
-type RecentSection = {
-  key: string;
-  title: string;
-  link: string;
-  items: RecentItem[];
-};
 
 type DashboardData = {
   cards: DashboardCard[];
@@ -93,49 +57,6 @@ const STATUS_LABELS: Record<string, string> = {
   issued: "Issued",
 };
 
-const STATUS_COLOR_MAP: Record<string, string> = {
-  draft: "bg-slate-400",
-  sent: "bg-blue-500",
-  confirmed: "bg-emerald-500",
-  approved: "bg-emerald-500",
-  rejected: "bg-rose-500",
-  cancelled: "bg-rose-400",
-  canceled: "bg-rose-400",
-  pending: "bg-amber-500",
-  processing: "bg-indigo-500",
-  completed: "bg-green-500",
-  paid: "bg-emerald-600",
-  overdue: "bg-orange-500",
-  partially_paid: "bg-sky-500",
-  issued: "bg-blue-600",
-};
-
-const STATUS_BADGE_MAP: Record<string, string> = {
-  draft: "bg-slate-100 text-slate-600 dark:bg-slate-500/10 dark:text-slate-300",
-  sent: "bg-blue-100 text-blue-600 dark:bg-blue-500/10 dark:text-blue-300",
-  confirmed: "bg-emerald-100 text-emerald-600 dark:bg-emerald-500/10 dark:text-emerald-300",
-  approved: "bg-emerald-100 text-emerald-600 dark:bg-emerald-500/10 dark:text-emerald-300",
-  rejected: "bg-rose-100 text-rose-600 dark:bg-rose-500/10 dark:text-rose-300",
-  cancelled: "bg-rose-100 text-rose-600 dark:bg-rose-500/10 dark:text-rose-300",
-  canceled: "bg-rose-100 text-rose-600 dark:bg-rose-500/10 dark:text-rose-300",
-  pending: "bg-amber-100 text-amber-600 dark:bg-amber-500/10 dark:text-amber-300",
-  processing: "bg-indigo-100 text-indigo-600 dark:bg-indigo-500/10 dark:text-indigo-300",
-  completed: "bg-green-100 text-green-600 dark:bg-green-500/10 dark:text-green-300",
-  paid: "bg-emerald-100 text-emerald-600 dark:bg-emerald-500/10 dark:text-emerald-300",
-  overdue: "bg-orange-100 text-orange-600 dark:bg-orange-500/10 dark:text-orange-300",
-  partially_paid: "bg-blue-100 text-blue-600 dark:bg-blue-500/10 dark:text-blue-300",
-  issued: "bg-blue-100 text-blue-600 dark:bg-blue-500/10 dark:text-blue-300",
-};
-
-const FALLBACK_COLORS = [
-  "bg-indigo-500",
-  "bg-sky-500",
-  "bg-teal-500",
-  "bg-fuchsia-500",
-  "bg-amber-500",
-  "bg-purple-500",
-];
-
 function formatCurrency(value: number) {
   return currencyFormatter.format(value ?? 0);
 }
@@ -151,16 +72,6 @@ function normalizeStatus(status: string) {
 function getStatusLabel(status: string) {
   const normalized = normalizeStatus(status);
   return STATUS_LABELS[normalized] ?? (status || "Unknown");
-}
-
-function getStatusColorClass(status: string, index: number) {
-  const normalized = normalizeStatus(status);
-  return STATUS_COLOR_MAP[normalized] ?? FALLBACK_COLORS[index % FALLBACK_COLORS.length];
-}
-
-function getStatusBadgeClass(status: string) {
-  const normalized = normalizeStatus(status);
-  return STATUS_BADGE_MAP[normalized] ?? "bg-slate-100 text-slate-600 dark:bg-slate-500/10 dark:text-slate-300";
 }
 
 function calcTrend(current: number, previous: number) {
@@ -186,6 +97,7 @@ function buildPipelineGroup(
   return { key, title, total, statuses };
 }
 
+
 async function getDashboardData(brandId?: number, rangeDays: number = 30): Promise<DashboardData> {
   const now = new Date();
   const currentMonthStart = startOfMonth(now);
@@ -194,48 +106,42 @@ async function getDashboardData(brandId?: number, rangeDays: number = 30): Promi
   const currentStart = new Date(now.getTime() - rangeDays * 24 * 60 * 60 * 1000);
   const previousStart = new Date(currentStart.getTime() - rangeDays * 24 * 60 * 60 * 1000);
 
-  const brandWhere: Record<string, number> | {} = brandId ? { brandProfileId: brandId } : {};
+  const brandFilter = brandId ? Prisma.sql`AND brandProfileId = ${brandId}` : Prisma.empty;
+
+  const [statsRaw] = await prisma.$queryRaw<any[]>(Prisma.sql`
+    SELECT
+      (SELECT COUNT(*) FROM Customer WHERE isDeleted = 0 ${brandFilter}) as customerCount,
+      (SELECT COUNT(*) FROM Customer WHERE isDeleted = 0 AND createdAt >= ${currentStart} ${brandFilter}) as newCustomersCount,
+      (SELECT COUNT(*) FROM Product WHERE isDeleted = 0 ${brandFilter}) as productCount,
+      (SELECT SUM(totalAmount) FROM Quotation WHERE isDeleted = 0 AND date >= ${currentStart} ${brandFilter}) as quotationMonthlySum,
+      (SELECT COUNT(*) FROM Quotation WHERE isDeleted = 0 AND date >= ${currentStart} ${brandFilter}) as quotationMonthlyCount,
+      (SELECT SUM(totalAmount) FROM Quotation WHERE isDeleted = 0 AND date >= ${previousStart} AND date < ${currentStart} ${brandFilter}) as quotationPrevSum,
+      (SELECT SUM(totalAmount) FROM SalesOrder WHERE isDeleted = 0 AND date >= ${currentStart} ${brandFilter}) as salesOrderMonthlySum,
+      (SELECT COUNT(*) FROM SalesOrder WHERE isDeleted = 0 AND date >= ${currentStart} ${brandFilter}) as salesOrderMonthlyCount,
+      (SELECT SUM(totalAmount) FROM SalesOrder WHERE isDeleted = 0 AND date >= ${previousStart} AND date < ${currentStart} ${brandFilter}) as salesOrderPrevSum,
+      (SELECT SUM(total) FROM Invoice WHERE isDeleted = 0 AND issueDate >= ${currentStart} ${brandFilter}) as invoiceMonthlySum,
+      (SELECT COUNT(*) FROM Invoice WHERE isDeleted = 0 AND issueDate >= ${currentStart} ${brandFilter}) as invoiceMonthlyCount,
+      (SELECT SUM(total) FROM Invoice WHERE isDeleted = 0 AND issueDate >= ${previousStart} AND issueDate < ${currentStart} ${brandFilter}) as invoicePrevSum,
+      (SELECT SUM(total) FROM Invoice WHERE isDeleted = 0 AND status NOT IN ('Paid', 'paid', 'PAID', 'Lunas', 'lunas', 'Completed', 'completed', 'Cancelled', 'cancelled', 'Canceled', 'canceled') ${brandFilter}) as outstandingSum,
+      (SELECT COUNT(*) FROM SalesOrder WHERE isDeleted = 0 AND status IN ('Pending', 'pending') ${brandFilter}) as pendingApprovalCount,
+      (SELECT COUNT(*) FROM Invoice WHERE isDeleted = 0 AND dueDate < ${now} AND paymentStatus NOT IN ('PAID', 'Paid', 'paid') ${brandFilter}) as invoiceDueCount,
+      (SELECT COUNT(*) FROM SalesOrder WHERE isDeleted = 0 AND status NOT IN ('shipped', 'Shipped', 'sent', 'Sent', 'dikirim', 'Dikirim', 'cancelled', 'Cancelled', 'canceled', 'Canceled') ${brandFilter}) as orderUnshippedCount,
+      (SELECT COUNT(*) FROM PurchaseDirect WHERE isDeleted = 0 AND status NOT IN ('Received', 'Canceled') ${brandFilter}) as purchaseUnreceivedCount
+  `);
 
   const [
-    customerCount,
-    newCustomersCount,
-    productCount,
-    quotationMonthly,
-    quotationPrev,
     quotationStatusesRaw,
     recentQuotationsRaw,
-    salesOrderMonthly,
-    salesOrderPrev,
     salesOrderStatusesRaw,
     recentSalesOrdersRaw,
     salesOrderTrendRaw,
-    invoiceMonthly,
-    invoicePrev,
     invoiceStatusesRaw,
     recentInvoicesRaw,
-    outstandingInvoices,
     invoiceTrendRaw,
     topCustomersRaw,
     lowStockProductsRaw,
-    // Alerts & notifications
-    pendingApprovalCount,
-    invoiceDueRows,
-    orderUnshippedCount,
-    purchaseUnreceivedCount,
+    invoiceDueRowsRaw,
   ] = await Promise.all([
-    prisma.customer.count({ where: { ...(brandWhere as any) } }),
-    prisma.customer.count({ where: { createdAt: { gte: currentStart }, ...(brandWhere as any) } }),
-    prisma.product.count({ where: { ...(brandWhere as any) } }),
-    prisma.quotation.aggregate({
-      where: { date: { gte: currentStart }, ...(brandWhere as any) },
-      _sum: { totalAmount: true },
-      _count: true,
-    }),
-    prisma.quotation.aggregate({
-      where: { date: { gte: previousStart, lt: currentStart }, ...(brandWhere as any) },
-      _sum: { totalAmount: true },
-      _count: true,
-    }),
     prisma.quotation.groupBy({
       by: ["status"],
       _count: { _all: true },
@@ -246,16 +152,6 @@ async function getDashboardData(brandId?: number, rangeDays: number = 30): Promi
       take: 6,
       include: { customer: { select: { company: true } } },
       where: brandId ? { brandProfileId: brandId } : undefined,
-    }),
-    prisma.salesOrder.aggregate({
-      where: { date: { gte: currentStart }, ...(brandWhere as any) },
-      _sum: { totalAmount: true },
-      _count: true,
-    }),
-    prisma.salesOrder.aggregate({
-      where: { date: { gte: previousStart, lt: currentStart }, ...(brandWhere as any) },
-      _sum: { totalAmount: true },
-      _count: true,
     }),
     prisma.salesOrder.groupBy({
       by: ["status"],
@@ -269,18 +165,8 @@ async function getDashboardData(brandId?: number, rangeDays: number = 30): Promi
       where: brandId ? { brandProfileId: brandId } : undefined,
     }),
     prisma.salesOrder.findMany({
-      where: { date: { gte: trendStart }, ...(brandWhere as any) },
+      where: { date: { gte: trendStart }, ...brandWhere },
       select: { date: true, totalAmount: true },
-    }),
-    prisma.invoice.aggregate({
-      where: { issueDate: { gte: currentStart }, ...(brandWhere as any) },
-      _sum: { total: true },
-      _count: true,
-    }),
-    prisma.invoice.aggregate({
-      where: { issueDate: { gte: previousStart, lt: currentStart }, ...(brandWhere as any) },
-      _sum: { total: true },
-      _count: true,
     }),
     prisma.invoice.groupBy({
       by: ["status"],
@@ -293,30 +179,8 @@ async function getDashboardData(brandId?: number, rangeDays: number = 30): Promi
       include: { customer: { select: { company: true } } },
       where: brandId ? { brandProfileId: brandId } : undefined,
     }),
-    prisma.invoice.aggregate({
-      where: {
-        status: {
-          notIn: [
-            "Paid",
-            "paid",
-            "PAID",
-            "Lunas",
-            "lunas",
-            "Completed",
-            "completed",
-            "Cancelled",
-            "cancelled",
-            "Canceled",
-            "canceled",
-          ],
-        },
-        ...(brandWhere as any),
-      },
-      _sum: { total: true },
-      _count: true,
-    }),
     prisma.invoice.findMany({
-      where: { issueDate: { gte: trendStart }, ...(brandWhere as any) },
+      where: { issueDate: { gte: trendStart }, ...brandWhere },
       select: { issueDate: true, total: true },
     }),
     prisma.invoice.groupBy({
@@ -335,50 +199,31 @@ async function getDashboardData(brandId?: number, rangeDays: number = 30): Promi
       take: 10,
       select: { id: true, name: true, sku: true, qty: true, unit: true },
     }),
-    // Pending approval — SO with status Pending
-    prisma.salesOrder.count({
-      where: {
-        ...(brandWhere as any),
-        status: { in: ["Pending", "pending"] },
-      },
-    }),
-    // Invoice due — overdue and not fully paid
     prisma.invoice.findMany({
       where: {
-        ...(brandWhere as any),
+        ...brandWhere,
         dueDate: { lt: now },
         paymentStatus: { notIn: ["PAID", "Paid", "paid"] },
       },
       select: { id: true, total: true, paidAmount: true },
     }),
-    // Orders not yet shipped — exclude shipped-like and canceled statuses
-    prisma.salesOrder.count({
-      where: {
-        ...(brandWhere as any),
-        status: {
-          notIn: [
-            "shipped",
-            "Shipped",
-            "sent",
-            "Sent",
-            "dikirim",
-            "Dikirim",
-            "cancelled",
-            "Cancelled",
-            "canceled",
-            "Canceled",
-          ],
-        },
-      },
-    }),
-    // Purchases not received — exclude Received and canceled
-    prisma.purchaseDirect.count({
-      where: {
-        ...(brandWhere as any),
-        status: { notIn: ["Received", "Canceled"] },
-      },
-    }),
   ]);
+
+  // Map raw stats back to variables
+  const customerCount = Number(statsRaw.customerCount || 0);
+  const newCustomersCount = Number(statsRaw.newCustomersCount || 0);
+  const productCount = Number(statsRaw.productCount || 0);
+  const quotationMonthly = { _sum: { totalAmount: statsRaw.quotationMonthlySum }, _count: statsRaw.quotationMonthlyCount };
+  const quotationPrev = { _sum: { totalAmount: statsRaw.quotationPrevSum } };
+  const salesOrderMonthly = { _sum: { totalAmount: statsRaw.salesOrderMonthlySum }, _count: statsRaw.salesOrderMonthlyCount };
+  const salesOrderPrev = { _sum: { totalAmount: statsRaw.salesOrderPrevSum } };
+  const invoiceMonthly = { _sum: { total: statsRaw.invoiceMonthlySum }, _count: statsRaw.invoiceMonthlyCount };
+  const invoicePrev = { _sum: { total: statsRaw.invoicePrevSum } };
+  const outstandingInvoices = { _sum: { total: statsRaw.outstandingSum } };
+  const pendingApprovalCount = Number(statsRaw.pendingApprovalCount || 0);
+  const invoiceDueRows = invoiceDueRowsRaw;
+  const orderUnshippedCount = Number(statsRaw.orderUnshippedCount || 0);
+  const purchaseUnreceivedCount = Number(statsRaw.purchaseUnreceivedCount || 0);
 
   let topCustomers: DashboardData["topCustomers"] = [];
 
@@ -623,7 +468,7 @@ export default async function DashboardPage({
   if (!auth?.userId) {
     return redirect(`/signin?redirect=/`);
   }
-  // Jika user bukan OWNER dan tidak memiliki brand yang diassign → tampilkan EmptyState
+  
   try {
     const allowed = await resolveAllowedBrandIds(auth.userId, (auth.roles as string[]) ?? [], []);
     const isOwner = isOwnerOnly(auth.roles);
@@ -635,31 +480,30 @@ export default async function DashboardPage({
         />
       );
     }
-  } catch (err) {
-    // Jika terjadi error, fail-safe: lanjutkan, namun data kemungkinan kosong/terblokir oleh middleware
-  }
+  } catch (err) {}
+
   let activeBrand: Awaited<ReturnType<typeof getActiveBrandProfile>> | null = null;
   try {
     activeBrand = await getActiveBrandProfile();
   } catch (err) {
     activeBrand = null;
   }
+
   const rangeParamRaw = sp?.range;
   const rangeParam = Array.isArray(rangeParamRaw)
     ? String(rangeParamRaw[0])
     : String(rangeParamRaw ?? "30d");
-  const rangeDays =
-    rangeParam === "90d" ? 90 : rangeParam === "180d" ? 180 : 30;
+  const rangeDays = rangeParam === "90d" ? 90 : rangeParam === "180d" ? 180 : 30;
+
   let data: Awaited<ReturnType<typeof getDashboardData>> | null = null;
   try {
     data = await getDashboardData(activeBrand?.id ?? undefined, rangeDays);
   } catch (err) {
-    console.error("Dashboard data load failed. Likely DB not reachable.", err);
-    // Render graceful fallback to avoid crash when DB connection fails
+    console.error("Dashboard data load failed.", err);
     return (
       <EmptyState
         title="Database tidak terhubung"
-        description="Aplikasi tidak dapat terhubung ke server database. Pastikan MySQL/MariaDB berjalan di 127.0.0.1:3306 dan variabel .env (DATABASE_URL) telah dikonfigurasi."
+        description="Aplikasi tidak dapat terhubung ke server database. Pastikan MySQL/MariaDB berjalan dan variabel .env (DATABASE_URL) telah dikonfigurasi."
       />
     );
   }
@@ -671,7 +515,7 @@ export default async function DashboardPage({
         <div>
           <h1 className="text-2xl font-semibold text-gray-900 dark:text-white/90 flex items-center gap-2">
             Dashboard Overview
-            {activeBrand?.name ? (
+            {activeBrand?.name && (
               <span
                 className="ml-1 inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-xs font-medium text-gray-700 dark:text-gray-300"
                 style={{ borderColor: activeBrand?.primaryColor || "#0EA5E9" }}
@@ -682,355 +526,56 @@ export default async function DashboardPage({
                 />
                 {activeBrand.name}
               </span>
-            ) : null}
+            )}
           </h1>
           <p className="text-sm text-gray-500 dark:text-gray-400">
             Ringkasan penjualan, pipeline, dan kesehatan inventori perusahaan Anda
-            {activeBrand?.name
-              ? ` — brand aktif: ${activeBrand.name}.`
-              : "."}
+            {activeBrand?.name ? ` — brand aktif: ${activeBrand.name}.` : "."}
           </p>
         </div>
         <div className="flex items-center gap-2">
-          <Link
-            href={`/?range=30d`}
-            className={`rounded-full px-3 py-1 text-xs font-semibold transition ${
-              rangeDays === 30
-                ? "bg-blue-50 text-blue-600 dark:bg-blue-500/10 dark:text-blue-300"
-                : "bg-gray-100 text-gray-600 hover:bg-gray-200 dark:bg-gray-800 dark:text-gray-300"
-            }`}
-          >
-            30 hari
-          </Link>
-          <Link
-            href={`/?range=90d`}
-            className={`rounded-full px-3 py-1 text-xs font-semibold transition ${
-              rangeDays === 90
-                ? "bg-blue-50 text-blue-600 dark:bg-blue-500/10 dark:text-blue-300"
-                : "bg-gray-100 text-gray-600 hover:bg-gray-200 dark:bg-gray-800 dark:text-gray-300"
-            }`}
-          >
-            90 hari
-          </Link>
-          <Link
-            href={`/?range=180d`}
-            className={`rounded-full px-3 py-1 text-xs font-semibold transition ${
-              rangeDays === 180
-                ? "bg-blue-50 text-blue-600 dark:bg-blue-500/10 dark:text-blue-300"
-                : "bg-gray-100 text-gray-600 hover:bg-gray-200 dark:bg-gray-800 dark:text-gray-300"
-            }`}
-          >
-            180 hari
-          </Link>
+          {["30d", "90d", "180d"].map((r) => (
+            <Link
+              key={r}
+              href={`/?range=${r}`}
+              className={`rounded-full px-3 py-1 text-xs font-semibold transition ${
+                rangeParam === r
+                  ? "bg-blue-50 text-blue-600 dark:bg-blue-500/10 dark:text-blue-300"
+                  : "bg-gray-100 text-gray-600 hover:bg-gray-200 dark:bg-gray-800 dark:text-gray-300"
+              }`}
+            >
+              {r === "30d" ? "30 hari" : r === "90d" ? "90 hari" : "180 hari"}
+            </Link>
+          ))}
         </div>
       </header>
 
-      <section className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        {data.cards.map((card) => {
-          const displayValue =
-            card.format === "currency"
-              ? formatCurrency(card.value)
-              : formatNumberValue(card.value);
-
-          return (
-            <div
-              key={card.key}
-              className="rounded-2xl border border-gray-200 bg-white p-5 dark:border-gray-800 dark:bg-white/[0.03] md:p-6"
-            >
-              <div className="flex items-start justify-between gap-3">
-                <div>
-                  <p className="text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
-                    <Link
-                      href={
-                        card.key === "customers"
-                          ? `/${"client/list"}?range=${rangeDays}d`
-                          : card.key === "quotations"
-                          ? `/penjualan/quotation?range=${rangeDays}d&status=Confirmed`
-                          : card.key === "salesOrders"
-                          ? `/penjualan/order-penjualan?range=${rangeDays}d&status=Approved`
-                          : card.key === "invoices"
-                          ? `/penjualan/invoice-penjualan?range=${rangeDays}d&status=Sent`
-                          : card.key === "pendingApproval"
-                          ? `/penjualan/order-penjualan?status=Pending`
-                          : card.key === "invoiceDue"
-                          ? `/penjualan/invoice-penjualan?status=Sent`
-                          : card.key === "orderUnshipped"
-                          ? `/penjualan/order-penjualan?status=Approved`
-                          : card.key === "purchaseUnreceived"
-                          ? `/pembelian/pembelian-langsung?status=Draft`
-                          : "/"
-                      }
-                      className="hover:text-blue-600 dark:hover:text-blue-300"
-                    >
-                      {card.title}
-                    </Link>
-                  </p>
-                  <p className="mt-3 text-2xl font-semibold text-gray-900 dark:text-white/90">
-                    {displayValue}
-                  </p>
-                </div>
-                {typeof card.trend === "number" ? (
-                  <span
-                    className={`inline-flex items-center rounded-full px-2 py-1 text-xs font-semibold ${
-                      card.trend >= 0
-                        ? "bg-emerald-50 text-emerald-600 dark:bg-emerald-500/10 dark:text-emerald-300"
-                        : "bg-rose-50 text-rose-600 dark:bg-rose-500/10 dark:text-rose-300"
-                    }`}
-                  >
-                    {card.trend >= 0 ? "+" : ""}
-                    {card.trend.toFixed(1)}%
-                  </span>
-                ) : null}
-              </div>
-              <ul className="mt-4 space-y-1 text-sm text-gray-500 dark:text-gray-400">
-                {card.lines.map((line, index) => (
-                  <li key={`${card.key}-line-${index}`}>{line}</li>
-                ))}
-              </ul>
-            </div>
-          );
-        })}
-      </section>
+      <MetricCards cards={data.cards} rangeDays={rangeDays} />
 
       <section className="grid grid-cols-1 gap-6 xl:grid-cols-3">
         <div className="rounded-2xl border border-gray-200 bg-white p-5 dark:border-gray-800 dark:bg-white/[0.03] xl:col-span-2">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <div>
               <h2 className="text-lg font-semibold text-gray-900 dark:text-white/90">
-                Cashflow 6 Bulan Terakhir
+                Tren Performa Penjualan
               </h2>
-              <p className="text-sm text-gray-500 dark:text-gray-400">
-                Perbandingan nilai sales order dan invoice.
-              </p>
+              <p className="text-sm text-gray-500">Nilai transaksi 6 bulan terakhir</p>
             </div>
-            <span className="rounded-full bg-gray-100 px-3 py-1 text-xs font-semibold uppercase tracking-wide text-gray-500 dark:bg-gray-800 dark:text-gray-300">
-              Diperbarui {format(new Date(), "dd MMM yyyy")}
-            </span>
           </div>
-          <div className="mt-4">
-            <TrendChart
-              categories={data.trend.categories}
-              series={data.trend.series}
-              valueType="currency"
-            />
+          <div className="mt-6 h-80">
+            <TrendChart categories={data.trend.categories} series={data.trend.series} valueType="currency" />
           </div>
         </div>
 
-        <div className="rounded-2xl border border-gray-200 bg-white p-5 dark:border-gray-800 dark:bg-white/[0.03]">
-          <div className="flex items-center justify-between">
-            <h2 className="text-lg font-semibold text-gray-900 dark:text-white/90">
-              Pipeline Status
-            </h2>
-            <span className="text-xs uppercase tracking-wide text-gray-400">
-              Live data
-            </span>
-          </div>
-
-          <div className="mt-4 space-y-5">
-            {data.pipeline.map((group) => (
-              <div key={group.key}>
-                <div className="flex items-center justify-between text-sm text-gray-500 dark:text-gray-400">
-                  <span className="font-semibold text-gray-700 dark:text-white/90">
-                    {group.title}
-                  </span>
-                  <span>{formatNumberValue(group.total)} total</span>
-                </div>
-                <ul className="mt-3 space-y-3">
-                  {group.statuses.map((status, index) => (
-                    <li key={`${group.key}-${status.status}-${index}`}>
-                      <div className="flex items-center justify-between text-sm">
-                        <div className="flex items-center gap-2">
-                          <span
-                            className={`h-2 w-2 rounded-full ${getStatusColorClass(
-                              status.status,
-                              index,
-                            )}`}
-                          />
-                          <span className="text-gray-700 dark:text-white/90">
-                            {status.label}
-                          </span>
-                        </div>
-                        <span className="text-gray-500 dark:text-gray-400">
-                          {formatNumberValue(status.count)} •{" "}
-                          {status.percentage.toFixed(1)}%
-                        </span>
-                      </div>
-                      <div className="mt-2 h-2 rounded-full bg-gray-100 dark:bg-gray-800">
-                        <div
-                          className={`h-2 rounded-full ${getStatusColorClass(
-                            status.status,
-                            index,
-                          )}`}
-                          style={{ width: `${status.percentage}%` }}
-                        />
-                      </div>
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            ))}
-          </div>
+        <div className="space-y-6">
+          <PipelineSummary pipeline={data.pipeline} />
+          <TopCustomers topCustomers={data.topCustomers} />
+          <InventorySummary inventory={data.inventory} />
         </div>
       </section>
 
-      <section className="grid grid-cols-1 gap-6 xl:grid-cols-3">
-        {data.recent.map((section) => (
-          <div
-            key={section.key}
-            className="rounded-2xl border border-gray-200 bg-white p-5 dark:border-gray-800 dark:bg-white/[0.03]"
-          >
-            <div className="flex items-center justify-between gap-2">
-              <div>
-                <h2 className="text-lg font-semibold text-gray-900 dark:text-white/90">
-                  {section.title}
-                </h2>
-                <p className="text-sm text-gray-500 dark:text-gray-400">
-                  Transaksi terbaru untuk ditindaklanjuti.
-                </p>
-              </div>
-              <Link
-                href={`${section.link}?range=${rangeDays}d`}
-                className="inline-flex items-center gap-1 rounded-full bg-blue-50 px-3 py-1 text-xs font-semibold text-blue-600 transition hover:bg-blue-100 dark:bg-blue-500/10 dark:text-blue-300 dark:hover:bg-blue-500/20"
-              >
-                Lihat semua
-                <ArrowUpRight className="h-4 w-4" />
-              </Link>
-            </div>
-
-            {section.items.length ? (
-              <ul className="mt-4 space-y-3">
-                {section.items.map((item) => (
-                  <li
-                    key={item.id}
-                    className="rounded-xl border border-gray-100 bg-gray-50/60 px-4 py-3 transition hover:border-blue-200 hover:bg-blue-50/60 dark:border-gray-800 dark:bg-white/[0.02] dark:hover:border-blue-500/40 dark:hover:bg-blue-500/5"
-                  >
-                    <div className="flex flex-wrap items-start justify-between gap-3">
-                      <div>
-                        <Link
-                          href={item.link}
-                          className="font-semibold text-gray-800 hover:text-blue-600 dark:text-white/90 dark:hover:text-blue-300"
-                        >
-                          {item.number}
-                        </Link>
-                        <p className="text-sm text-gray-500 dark:text-gray-400">
-                          {item.customer}
-                        </p>
-                      </div>
-                      <span
-                        className={`inline-flex items-center rounded-full px-2 py-1 text-xs font-semibold ${getStatusBadgeClass(
-                          item.status,
-                        )}`}
-                      >
-                        {getStatusLabel(item.status)}
-                      </span>
-                    </div>
-                    <div className="mt-3 flex items-center justify-between text-sm text-gray-500 dark:text-gray-400">
-                      <span>{format(item.date, "dd MMM yyyy")}</span>
-                      <span className="font-semibold text-gray-900 dark:text-white/90">
-                        {formatCurrency(item.amount)}
-                      </span>
-                    </div>
-                  </li>
-                ))}
-              </ul>
-            ) : (
-              <p className="mt-6 text-sm text-gray-500 dark:text-gray-400">
-                Belum ada data terbaru.
-              </p>
-            )}
-          </div>
-        ))}
-      </section>
-
-      <section className="grid grid-cols-1 gap-6 xl:grid-cols-2">
-        <div className="rounded-2xl border border-gray-200 bg-white p-5 dark:border-gray-800 dark:bg-white/[0.03]">
-          <div className="flex items-center justify-between">
-            <div>
-              <h2 className="text-lg font-semibold text-gray-900 dark:text-white/90">
-                Top Customers
-              </h2>
-              <p className="text-sm text-gray-500 dark:text-gray-400">
-                Berdasarkan total nilai invoice yang diterbitkan.
-              </p>
-            </div>
-          </div>
-
-          {data.topCustomers.length ? (
-            <ul className="mt-4 space-y-3">
-              {data.topCustomers.map((customer, index) => (
-                <li
-                  key={customer.id}
-                  className="flex items-center justify-between rounded-xl border border-gray-100 bg-gray-50/60 px-4 py-3 dark:border-gray-800 dark:bg-white/[0.02]"
-                >
-                  <div>
-                    <p className="font-semibold text-gray-800 dark:text-white/90">
-                      {index + 1}. {customer.name}
-                    </p>
-                    <p className="text-sm text-gray-500 dark:text-gray-400">
-                      {formatNumberValue(customer.invoices)} faktur
-                    </p>
-                  </div>
-                  <span className="text-sm font-semibold text-gray-900 dark:text-white/90">
-                    {formatCurrency(customer.total)}
-                  </span>
-                </li>
-              ))}
-            </ul>
-          ) : (
-            <p className="mt-6 text-sm text-gray-500 dark:text-gray-400">
-              Belum ada invoice yang tercatat.
-            </p>
-          )}
-        </div>
-
-        <div className="rounded-2xl border border-gray-200 bg-white p-5 dark:border-gray-800 dark:bg-white/[0.03]">
-          <div className="flex items-center justify-between gap-2">
-            <div>
-              <h2 className="text-lg font-semibold text-gray-900 dark:text-white/90">
-                Inventory Snapshot
-              </h2>
-              <p className="text-sm text-gray-500 dark:text-gray-400">
-                Produk dengan stok rendah (≤ 10).
-              </p>
-            </div>
-            <span className="rounded-full bg-blue-50 px-3 py-1 text-xs font-semibold text-blue-600 dark:bg-blue-500/10 dark:text-blue-300">
-              {formatNumberValue(data.inventory.totalProducts)} produk
-            </span>
-          </div>
-
-          {data.inventory.lowStock.length ? (
-            <ul className="mt-4 space-y-3">
-              {data.inventory.lowStock.map((product) => (
-                <li
-                  key={product.id}
-                  className="flex items-center justify-between rounded-xl border border-gray-100 px-4 py-3 dark:border-gray-800"
-                >
-                  <div>
-                    <p className="font-semibold text-gray-800 dark:text-white/90">
-                      {product.name}
-                    </p>
-                    <p className="text-xs uppercase tracking-wide text-gray-400 dark:text-gray-500">
-                      {product.sku}
-                    </p>
-                  </div>
-                  <div className="text-right">
-                    <p className="font-semibold text-gray-900 dark:text-white/90">
-                      {formatNumberValue(product.qty)} {product.unit}
-                    </p>
-                    <p className="text-xs text-gray-500 dark:text-gray-400">
-                      Sisa stok
-                    </p>
-                  </div>
-                </li>
-              ))}
-            </ul>
-          ) : (
-            <p className="mt-6 text-sm text-gray-500 dark:text-gray-400">
-              Tidak ada produk dengan stok rendah.
-            </p>
-          )}
-        </div>
-      </section>
+      <RecentTransactions recent={data.recent} />
     </div>
   );
 }
+

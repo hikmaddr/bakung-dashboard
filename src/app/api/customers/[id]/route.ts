@@ -1,7 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
 
-type RouteParams = { params: { id: string } };
+type RouteParams = { params: Promise<{ id: string }> };
 
 const parseId = (raw: string) => {
   const idNum = Number(raw);
@@ -9,7 +9,8 @@ const parseId = (raw: string) => {
 };
 
 export async function GET(_req: NextRequest, { params }: RouteParams) {
-  const idNum = parseId(params.id);
+  const { id } = await params;
+  const idNum = parseId(id);
   if (idNum == null) return NextResponse.json({ error: "Invalid id" }, { status: 400 });
   try {
     const row = await prisma.customer.findFirst({ where: { id: idNum, deletedAt: null } });
@@ -22,7 +23,8 @@ export async function GET(_req: NextRequest, { params }: RouteParams) {
 }
 
 export async function PUT(req: NextRequest, { params }: RouteParams) {
-  const idNum = parseId(params.id);
+  const { id } = await params;
+  const idNum = parseId(id);
   if (idNum == null) return NextResponse.json({ error: "Invalid id" }, { status: 400 });
   try {
     const body = await req.json();
@@ -42,7 +44,8 @@ export async function PUT(req: NextRequest, { params }: RouteParams) {
 }
 
 export async function DELETE(_req: NextRequest, { params }: RouteParams) {
-  const idNum = parseId(params.id);
+  const { id } = await params;
+  const idNum = parseId(id);
   if (idNum == null) return NextResponse.json({ error: "Invalid id" }, { status: 400 });
   try {
     await prisma.customer.update({

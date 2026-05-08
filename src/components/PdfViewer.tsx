@@ -8,10 +8,11 @@ type PdfViewerProps = {
   className?: string;
 };
 
-let pdfjsLibPromise: Promise<typeof import("pdfjs-dist/build/pdf")> | null = null;
+let pdfjsLibPromise: Promise<any> | null = null;
 
 const loadPdfJs = () => {
   if (!pdfjsLibPromise) {
+    // @ts-expect-error pdfjs-dist dynamic import
     pdfjsLibPromise = import("pdfjs-dist/build/pdf");
   }
   return pdfjsLibPromise;
@@ -24,9 +25,7 @@ export default function PdfViewer({ url, scale = 1, className }: PdfViewerProps)
 
   useEffect(() => {
     let cancelled = false;
-    let loadingTask:
-      | import("pdfjs-dist/types/web/interfaces").PDFDocumentLoadingTask
-      | null = null;
+    let loadingTask: any = null;
 
     const renderPdf = async () => {
       try {

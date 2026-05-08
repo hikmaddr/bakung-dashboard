@@ -130,7 +130,7 @@ export default function StokReportPage() {
     labels: categoryData.categories,
     dataLabels: {
       enabled: true,
-      formatter: (val) => `${val.toFixed(1)}%`
+      formatter: (val: any) => `${Number(val).toFixed(1)}%`
     },
     plotOptions: {
       pie: {

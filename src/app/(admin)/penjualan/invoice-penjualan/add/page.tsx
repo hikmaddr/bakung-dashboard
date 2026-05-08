@@ -585,6 +585,7 @@ export default function AddSalesInvoicePage() {
                               onSelectProduct={applyProductOptionToLine}
                               onManualInput={handleManualProductEntry}
                               resolveProductByInput={findProductByInput}
+                              defaultUnit={defaultUnit}
                             />
                             <textarea
                               value={line.description}
@@ -1297,6 +1298,7 @@ type ProductDropdownProps = {
   onSelectProduct: (lineId: number, product: ProductOption) => void;
   onManualInput: (lineId: number, value: string) => void;
   resolveProductByInput: (value: string) => ProductOption | null;
+  defaultUnit: string;
 };
 
 function ProductDropdown({
@@ -1307,6 +1309,7 @@ function ProductDropdown({
   onSelectProduct,
   onManualInput,
   resolveProductByInput,
+  defaultUnit,
 }: ProductDropdownProps) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");

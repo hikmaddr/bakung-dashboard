@@ -142,7 +142,7 @@ export default function FinanceExpensePage() {
 
       <div className="flex items-center justify-between">
         <div className="text-sm text-gray-500">Total: {total}</div>
-        <Pagination currentPage={page} itemsPerPage={limit} totalItems={total} onPageChange={setPage} onItemsPerPageChange={setLimit} />
+        <Pagination currentPage={page} totalPages={pages} onPageChange={setPage} limit={limit} onLimitChange={setLimit} />
       </div>
 
       {showForm && (

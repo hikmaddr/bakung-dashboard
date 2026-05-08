@@ -1,9 +1,10 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
 
-export async function GET(_req: NextRequest, { params }: { params: { id: string } }) {
+export async function GET(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
-    const id = Number(params.id);
+    const { id: rawId } = await params;
+    const id = Number(rawId);
     if (!Number.isFinite(id)) return NextResponse.json({ success: false, message: "ID tidak valid" }, { status: 400 });
     const receipt = await prisma.receipt.findUnique({ where: { id }, include: { payment: true } });
     if (!receipt) return NextResponse.json({ success: false, message: "Receipt tidak ditemukan" }, { status: 404 });

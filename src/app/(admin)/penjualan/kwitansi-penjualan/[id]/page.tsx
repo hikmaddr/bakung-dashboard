@@ -55,6 +55,7 @@ interface ReceiptData {
   total?: number | null;
   items?: ReceiptItem[];
   customer?: ReceiptCustomer | null;
+  brandProfileId?: number | null;
 }
 
 const normalizeNumber = (value: unknown): number => {

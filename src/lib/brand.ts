@@ -115,7 +115,7 @@ export async function resolveAllowedBrandIds(userId: number | null, roles?: stri
 export async function brandScopeWhere(field: string = "brandProfileId", userId?: number | null, roles?: string[] | null, requestedBrandIds?: number[]) {
   const allowed = await resolveAllowedBrandIds(userId ?? null, roles ?? [], requestedBrandIds);
   // OWNER bypass filter; selain OWNER harus memiliki brand yang diassign.
-  if (isOwnerOrAdmin(roles)) return {} as any;
-  if (!allowed || allowed.length === 0) return { [field]: -1 } as any; // no access
-  return { [field]: { in: allowed } } as any;
+  if (isOwnerOrAdmin(roles)) return {} as Record<string, unknown>;
+  if (!allowed || allowed.length === 0) return { [field]: -1 } as Record<string, unknown>; // no access
+  return { [field]: { in: allowed } } as Record<string, unknown>;
 }

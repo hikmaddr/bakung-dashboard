@@ -17,12 +17,14 @@ export async function verifyPassword(password: string, hash: string) {
 export type AuthTokenPayload = { userId: number; email: string; roles?: string[] };
 
 export function signToken(payload: AuthTokenPayload) {
-  const secret = process.env.JWT_SECRET || "dev_secret_change_me";
+  const secret = process.env.JWT_SECRET;
+  if (!secret) throw new Error("JWT_SECRET is not defined");
   return jwt.sign(payload, secret, { expiresIn: JWT_EXPIRES_IN });
 }
 
 export function verifyToken(token: string): AuthTokenPayload | null {
-  const secret = process.env.JWT_SECRET || "dev_secret_change_me";
+  const secret = process.env.JWT_SECRET;
+  if (!secret) throw new Error("JWT_SECRET is not defined");
   try {
     return jwt.verify(token, secret) as AuthTokenPayload;
   } catch {

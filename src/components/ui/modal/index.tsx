@@ -70,7 +70,7 @@ export const Modal: React.FC<ModalProps> = ({
       <motion.div
         ref={modalRef}
         className={`${contentClasses}  ${className}`}
-        onClick={(e) => e.stopPropagation()}
+        onClick={(e: React.MouseEvent) => e.stopPropagation()}
         initial={{ opacity: 0, y: 14, scale: isFullscreen ? 1 : 0.98 }}
         animate={{ opacity: 1, y: 0, scale: 1 }}
         exit={{ opacity: 0, y: 10, scale: isFullscreen ? 1 : 0.98 }}

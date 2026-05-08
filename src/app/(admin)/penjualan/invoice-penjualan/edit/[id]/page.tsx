@@ -29,6 +29,20 @@ type TaxMode =
   | "ppn_12_inclusive"
   | "ppn_12_exclusive";
 
+// Quotation linking
+type QuotationSummary = {
+  id: number;
+  quotationNumber: string;
+  status: string;
+  customerId: number;
+  customerName: string;
+  customerCompany: string;
+  date: string;
+  totalAmount: number;
+};
+
+const fmt = (n: number) => n.toLocaleString("id-ID", { style: "currency", currency: "IDR" });
+
 export default function EditSalesInvoicePage() {
   const router = useRouter();
   const { id } = useParams();
@@ -54,19 +68,6 @@ export default function EditSalesInvoicePage() {
   const [isPreviewOpen, setIsPreviewOpen] = useState(false);
   const canPreview = productLines.length > 0;
 
-  const fmt = (n: number) => n.toLocaleString("id-ID", { style: "currency", currency: "IDR" });
-
-  // Quotation linking
-  type QuotationSummary = {
-    id: number;
-    quotationNumber: string;
-    status: string;
-    customerId: number;
-    customerName: string;
-    customerCompany: string;
-    date: string;
-    totalAmount: number;
-  };
   const [quotations, setQuotations] = useState<QuotationSummary[]>([]);
   const [quotationsLoading, setQuotationsLoading] = useState(false);
   const [selectedQuotation, setSelectedQuotation] = useState<QuotationSummary | null>(null);

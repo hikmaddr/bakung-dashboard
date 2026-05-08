@@ -116,8 +116,8 @@ export async function GET(req: NextRequest) {
       whereInvoice.customerId = clientId;
     } else if (clientName && clientName.trim()) {
       // Filter by customer relation name contains (use relation filter)
-      whereSales.customer = { is: { name: { contains: clientName } } };
-      whereInvoice.customer = { is: { name: { contains: clientName } } };
+      whereSales.customer = { is: { company: { contains: clientName } } };
+      whereInvoice.customer = { is: { company: { contains: clientName } } };
     }
 
     // supplier filter for purchases
@@ -166,11 +166,11 @@ export async function GET(req: NextRequest) {
     const [soAr, invAr] = await Promise.all([
       prisma.salesOrder.findMany({
         where: { ...whereSales, AND: [{ totalAmount: { gt: 0 } }] },
-        select: { id: true, orderNumber: true, date: true, totalAmount: true, paidAmount: true, brandProfileId: true, customer: { select: { name: true } }, brand: { select: { name: true } } },
+        select: { id: true, orderNumber: true, date: true, totalAmount: true, paidAmount: true, brandProfileId: true, customer: { select: { company: true, pic: true } }, brand: { select: { name: true } } },
       }),
       prisma.invoice.findMany({
         where: { ...whereInvoice, AND: [{ total: { gt: 0 } }] },
-        select: { id: true, invoiceNumber: true, issueDate: true, total: true, paidAmount: true, brandProfileId: true, customer: { select: { name: true } }, brand: { select: { name: true } } },
+        select: { id: true, invoiceNumber: true, issueDate: true, total: true, paidAmount: true, brandProfileId: true, customer: { select: { company: true, pic: true } }, brand: { select: { name: true } } },
       }),
     ]);
     const arRows: any[] = [];
@@ -181,7 +181,7 @@ export async function GET(req: NextRequest) {
         id: r.id,
         number: r.orderNumber,
         date: r.date,
-        customer: r.customer?.name ?? "",
+        customer: (r.customer as any)?.company || (r.customer as any)?.pic || "",
         brandId: r.brandProfileId,
         brandName: r.brand?.name ?? "",
         total: r.totalAmount,
@@ -196,7 +196,7 @@ export async function GET(req: NextRequest) {
         id: r.id,
         number: r.invoiceNumber,
         date: r.issueDate,
-        customer: r.customer?.name ?? "",
+        customer: (r.customer as any)?.company || (r.customer as any)?.pic || "",
         brandId: r.brandProfileId,
         brandName: r.brand?.name ?? "",
         total: r.total,
@@ -319,7 +319,7 @@ export async function GET(req: NextRequest) {
       sales: {
         total: salesTotal,
         count: Number(salesAgg._count || 0) + Number(invoiceAgg._count || 0),
-        rows: salesRows.map((r) => ({ id: r.id, number: r.orderNumber, date: r.date, customer: r.customer?.name ?? "", total: r.totalAmount, paid: r.paidAmount, due: Number(r.totalAmount || 0) - Number(r.paidAmount || 0), brandId: r.brandProfileId, brandName: r.brand?.name ?? "" })),
+        rows: salesRows.map((r) => ({ id: r.id, number: r.orderNumber, date: r.date, customer: (r.customer as any)?.company || (r.customer as any)?.pic || "", total: r.totalAmount, paid: r.paidAmount, due: Number(r.totalAmount || 0) - Number(r.paidAmount || 0), brandId: r.brandProfileId, brandName: r.brand?.name ?? "" })),
       },
       purchases: {
         total: purchaseTotal,

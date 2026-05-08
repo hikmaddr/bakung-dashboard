@@ -44,7 +44,7 @@ export default function PenjualanReportPage() {
         setTopProducts(products);
         // Build category donut from top products
         const catMap: Record<string, number> = {};
-        products.forEach((p) => {
+        products.forEach((p: any) => {
           const key = p.category || "Lainnya";
           catMap[key] = (catMap[key] || 0) + p.total;
         });
@@ -134,7 +134,7 @@ export default function PenjualanReportPage() {
     },
     dataLabels: {
       enabled: true,
-      formatter: (val) => `${val.toFixed(1)}%`
+      formatter: (val: any) => `${Number(val).toFixed(1)}%`
     }
   };
 

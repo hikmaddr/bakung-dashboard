@@ -381,19 +381,10 @@ function EditBrandSettingsPage({ params }: PageProps) {
   };
 
   const selectedPdfTemplate = useMemo(
-    () => templateOptions.find((option) => option.id === selectedTemplateOption),
+    () =>
+      templateOptions.find((option) => option.id === selectedTemplateOption),
     [selectedTemplateOption]
   );
-
-  // Show loading state while profile is being fetched
-  if (loadingProfile || !profile) {
-    return (
-      <div className="flex items-center justify-center min-h-[400px]">
-        <Loader2 className="h-8 w-8 animate-spin" />
-        <span className="ml-2">Loading brand profile...</span>
-      </div>
-    );
-  }
 
   const activeModuleNames = useMemo(
     () =>
@@ -411,6 +402,16 @@ function EditBrandSettingsPage({ params }: PageProps) {
       [key]: !prev[key],
     }));
   };
+
+  // Show loading state while profile is being fetched
+  if (loadingProfile || !profile) {
+    return (
+      <div className="flex items-center justify-center min-h-[400px]">
+        <Loader2 className="h-8 w-8 animate-spin" />
+        <span className="ml-2">Loading brand profile...</span>
+      </div>
+    );
+  }
 
   const handleSubmit = (event: FormEvent) => {
     event.preventDefault();

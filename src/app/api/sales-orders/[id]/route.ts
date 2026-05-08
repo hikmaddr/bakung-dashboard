@@ -289,8 +289,8 @@ export async function PUT(
             });
             if (existingOut === 0) {
               for (const it of before.items) {
-                if (!it.productId || it.quantity === 0) continue;
-                const product = await tx.product.findFirst({ where: { id: it.productId } });
+                if (!it.product || it.quantity === 0) continue;
+                const product = await tx.product.findFirst({ where: { name: it.product } });
                 if (!product || !product.trackStock) continue;
                 await tx.product.update({ where: { id: product.id }, data: { qty: { decrement: it.quantity } } });
                 await tx.stockMutation.create({
@@ -319,8 +319,8 @@ export async function PUT(
             });
             if (hadOut > 0 && hadInReversal === 0) {
               for (const it of before.items) {
-                if (!it.productId || it.quantity === 0) continue;
-                const product = await tx.product.findFirst({ where: { id: it.productId } });
+                if (!it.product || it.quantity === 0) continue;
+                const product = await tx.product.findFirst({ where: { name: it.product } });
                 if (!product || !product.trackStock) continue;
                 await tx.product.update({ where: { id: product.id }, data: { qty: { increment: it.quantity } } });
                 await tx.stockMutation.create({

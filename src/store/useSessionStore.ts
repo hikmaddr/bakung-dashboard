@@ -91,12 +91,9 @@ export const useSessionStore = create<SessionState>()(
         activeBrandId: state.activeBrandId,
         user: state.user,
       }),
-      onRehydrateStorage: () => (state, error) => {
+      onRehydrateStorage: () => (_state, _error) => {
         // Setelah rehydrate dari storage, jangan tampilkan loading spinner panjang
         // AppContext tetap akan memanggil hydrate() untuk sinkronisasi server
-        if (!error) {
-          set({ loading: false });
-        }
       },
     }
   )

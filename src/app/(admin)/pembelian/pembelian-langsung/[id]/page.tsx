@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useState } from "react";
+import { use, useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 
@@ -21,8 +21,9 @@ type Purchase = {
   items: { id: number; name: string; qty: number; unit: string; unitCost?: number; productId?: number|null }[];
 };
 
-export default function PembelianLangsungDetailPage({ params }: { params: { id: string } }) {
-  const id = Number(params.id);
+export default function PembelianLangsungDetailPage({ params }: { params: Promise<{ id: string }> }) {
+  const { id: rawId } = use(params);
+  const id = Number(rawId);
   const router = useRouter();
   const [data, setData] = useState<Purchase|null>(null);
   const [loading, setLoading] = useState(true);

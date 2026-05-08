@@ -60,5 +60,5 @@ export async function sendNotificationToRole(
 }
 
 export async function getUserUnreadCount(userId: number) {
-  return prisma.notification.count({ where: { userId, read: false } });
+  return prisma.notification.count({ where: { userId, isRead: false } });
 }

@@ -531,7 +531,7 @@ function InvoicePageInner() {
                           <button onClick={() => downloadInvoice(r)} title="Download PDF" className="p-2 rounded-full hover:bg-gray-100 dark:hover:bg-white/5">
                             <Download className="h-4 w-4 text-emerald-600 dark:text-emerald-400" />
                           </button>
-                          {tab !== 'deleted' && !(tab==='payment' && invStatus==='Paid') && (
+                          {tab !== 'deleted' && !(tab==='payment' && invStatusLabel==='Paid') && (
                             <button onClick={() => confirmDelete(r.id)} title="Hapus" className="p-2 rounded-full hover:bg-gray-100 dark:hover:bg-white/5">
                               <Trash2 className="h-4 w-4 text-red-600 dark:text-red-400" />
                             </button>

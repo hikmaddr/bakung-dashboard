@@ -190,7 +190,7 @@ const drawItemsTable = async (
   const zebra = toRgb(theme.zebraRowColor);
   const border = toRgb(theme.tableBorderColor);
   const headerTextColor = rgb(1, 1, 1);
-  const primaryText = toRgb(theme.textColor);
+  const primaryText = toRgb(theme.headerTextColor);
   const mutedText = toRgb(theme.mutedText);
 
   let page = currentPage;
@@ -211,7 +211,7 @@ const drawItemsTable = async (
       y: y - headerHeight,
       width: tableWidth,
       height: headerHeight,
-      color: toRGB(toRgb255(theme.tableHeaderColor)),
+      color: toRGB(toRgb255(theme.tableHeaderBackground)),
     });
     let currentX = tableLeft;
     const headerSize = Math.max(9, Math.floor(10 * s));
@@ -436,8 +436,8 @@ const drawTotalsAndNotesInvoice = (
   
   // Pertama gambar baris ringkasan DI LUAR box (di atas box)
   let summaryCursor = startY; // mulai dari anchor startY
-  const labelColor = toRGB(toRgb255(theme.mutedTextColor));
-  const bodyColor = toRGB(toRgb255(theme.textColor));
+  const labelColor = toRGB(toRgb255(theme.mutedText));
+  const bodyColor = toRGB(toRgb255(theme.headerTextColor));
   const highlightColor = toRGB(toRgb255(theme.headerTextColor));
   if (summaryLines.length) {
     summaryLines.forEach((line) => {
@@ -749,7 +749,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
 
     const auth = await getAuth();
     let actor = {
-      name: (auth?.user?.name as string) || brand.name || "Sales",
+      name: ((auth as any)?.user?.name as string) || brand.name || "Sales",
       email: brand.email || null,
       phone: brand.phone || null,
     } as { name: string; email?: string | null; phone?: string | null };
@@ -938,7 +938,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
     }
 
     // Use ArrayBuffer slice to avoid Node Buffer and ensure Edge/Node compatibility
-    const body = pdfBytes.buffer.slice(pdfBytes.byteOffset, pdfBytes.byteOffset + pdfBytes.byteLength);
+    const body = (pdfBytes.buffer as ArrayBuffer).slice(pdfBytes.byteOffset, pdfBytes.byteOffset + pdfBytes.byteLength);
     const sp = req.nextUrl.searchParams;
     const previewMode = sp.get("preview") === "1" || sp.get("disposition") === "inline";
     const disposition = previewMode ? "inline" : "attachment";

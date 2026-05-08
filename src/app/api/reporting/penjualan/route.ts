@@ -54,9 +54,9 @@ export async function GET(req: Request) {
         orderBy: { issueDate: "asc" },
       }),
       prisma.invoiceItem.groupBy({
-        by: ["productId"],
-        _sum: { quantity: true, total: true },
-        orderBy: { _sum: { total: "desc" } },
+        by: ["name"],
+        _sum: { qty: true, subtotal: true },
+        orderBy: { _sum: { subtotal: "desc" } },
         take: 10,
         where: {
           invoice: { issueDate: { gte: start, lt: end }, ...(brandWhere as any) },
@@ -80,21 +80,13 @@ export async function GET(req: Request) {
       .map(([month, v]) => ({ month, total: v.total, invoices: v.invoices }));
 
     // Top products detail lookup
-    const topProductIds = itemsGrouped.map((g) => g.productId).filter(Boolean) as number[];
-    const topProductsInfo = topProductIds.length
-      ? await prisma.product.findMany({
-          where: { id: { in: topProductIds } },
-          select: { id: true, name: true, productCategory: { select: { name: true } } },
-        })
-      : [];
-    const topProducts = itemsGrouped.map((g) => {
-      const info = topProductsInfo.find((p) => p.id === g.productId);
+    const topProducts = itemsGrouped.map((g, index) => {
       return {
-        id: g.productId,
-        name: info?.name || `Product #${g.productId}`,
-        category: info?.productCategory?.name || null,
-        quantity: Number(g._sum.quantity || 0),
-        total: Number(g._sum.total || 0),
+        id: index,
+        name: g.name || `Unknown Product`,
+        category: null,
+        quantity: Number(g._sum.qty || 0),
+        total: Number(g._sum.subtotal || 0),
       };
     });
 

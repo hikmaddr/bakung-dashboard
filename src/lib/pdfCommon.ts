@@ -388,7 +388,7 @@ export const drawSignatureSectionCommon = async (
   currentPage: PDFPage,
   theme: InvoiceTemplateTheme,
   brand: BrandProfile,
-  actor: { name: string; email?: string | null; phone?: string | null },
+  actor: { name: string; email?: string | null; phone?: string | null; title?: string | null; position?: string | null },
   bold: PDFFont,
   margin: number,
   startY: number,
@@ -434,7 +434,7 @@ export const drawSignatureSectionCommon = async (
       x: margin + 12,
       y: y - 28,
       size: Math.max(8, Math.floor(10 * s)),
-      font,
+      font: bold,
       color: toRgb(theme.mutedText),
     });
   }

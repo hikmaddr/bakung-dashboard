@@ -120,13 +120,13 @@ const drawProjectDescription = (
   const s = 0.85; // mengikuti default Quotation
   const title = "PROJECT OVERVIEW";
   const titleSize = Math.max(9, Math.floor(11 * s));
-  const titleColor = toRGB(toRgb255(theme.mutedTextColor));
+  const titleColor = toRGB(toRgb255(theme.mutedText));
   page.drawText(title, { x: margin, y: startY, size: titleSize, font: bold, color: titleColor });
   let y = startY - Math.max(10, Math.floor(14 * s));
   const bodySize = Math.max(8, Math.floor(10 * s));
   const contentWidth = page.getSize().width - margin * 2;
   const lines = splitTextToSize(String(description), contentWidth, font, bodySize);
-  const bodyColor = toRGB(toRgb255(theme.textColor));
+  const bodyColor = toRGB(toRgb255(theme.headerTextColor));
   for (const line of lines) {
     page.drawText(line, { x: margin, y, size: bodySize, font, color: bodyColor });
     y -= bodySize + Math.max(4, Math.floor(6 * s));
@@ -151,7 +151,7 @@ const drawItemsTable = async (
   type ColumnKey = "description" | "image" | "qty" | "unit" | "price" | "amount";
   const columns: Array<{ key: ColumnKey; label: string; width: number; align: "left" | "center" | "right" }> = [
     { key: "description", label: "Description", width: options.showImage ? 0.34 : 0.5, align: "left" },
-    ...(options.showImage ? [{ key: "image" as const, label: "Image", width: 0.16, align: "center" }] : []),
+    ...(options.showImage ? [{ key: "image" as const, label: "Image", width: 0.16, align: "center" as const }] : []),
     { key: "qty", label: "Qty", width: 0.1, align: "center" },
     { key: "unit", label: "Unit", width: 0.12, align: "center" },
     { key: "price", label: "Price", width: options.showImage ? 0.14 : 0.14, align: "right" },
@@ -171,7 +171,7 @@ const drawItemsTable = async (
   const headerText = rgb(1, 1, 1);
   const zebra = toRgb(theme.zebraRowColor);
   const border = toRgb(theme.tableBorderColor);
-  const primaryText = toRgb(theme.textColor);
+  const primaryText = toRgb(theme.headerTextColor);
   const mutedText = toRgb(theme.mutedText);
 
   const descriptionIndex = columns.findIndex((column) => column.key === "description");
@@ -471,8 +471,8 @@ const drawTotalsAndNotes = (
   }
 
   // left column: NOTES -> PAYMENT INFO -> TERMS & CONDITIONS
-  const colTitleColor = toRGB(toRgb255(theme.mutedTextColor));
-  const textColorBody = toRGB(toRgb255(theme.textColor));
+  const colTitleColor = toRGB(toRgb255(theme.mutedText));
+  const textColorBody = toRGB(toRgb255(theme.headerTextColor));
   const bodySize = Math.max(8, Math.floor(9 * s));
   const titleSize = Math.max(9, Math.floor(10 * s));
   const leftX = margin;
@@ -648,7 +648,7 @@ export async function GET(
     } catch {}
     const templateDefaults = (brand?.templateDefaults ?? {}) as Record<string, string>;
     const theme = resolveTheme(brand as any, templateDefaults?.invoice);
-    let actor = { name: (auth?.user?.name as string) || brand?.name || "Sales", email: brand?.email || null, phone: brand?.phone || null } as { name: string; email?: string|null; phone?: string|null };
+    let actor = { name: ((auth as any)?.user?.name as string) || brand?.name || "Sales", email: brand?.email || null, phone: brand?.phone || null } as { name: string; email?: string|null; phone?: string|null };
     if (auth?.userId) {
       try {
         const user = await prisma.user.findUnique({ where: { id: auth.userId }, select: { name:true, firstName:true, lastName:true, email:true, phone:true, company:true } });

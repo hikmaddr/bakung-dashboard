@@ -171,23 +171,23 @@ export async function POST(req: NextRequest) {
       }
     }
     if (body.type === "IN" && body.refType === "SALES_ORDER") {
-      const so = await prisma.salesOrder.findFirst({ where: { id: body.refId, brandProfileId: brandId }, select: { paidAmount: true, totalAmount: true, soNumber: true } });
+      const so = await prisma.salesOrder.findFirst({ where: { id: body.refId, brandProfileId: brandId }, select: { paidAmount: true, totalAmount: true, orderNumber: true } });
       if (!so) return NextResponse.json({ success: false, message: "Sales Order tidak ditemukan" }, { status: 400 });
       const paid = Number(so.paidAmount || 0);
       const total = Number(so.totalAmount || 0);
       const remaining = total - paid;
       if (amount > remaining + EPS) {
-        return NextResponse.json({ success: false, message: `Pembayaran melebihi sisa tagihan SO ${so.soNumber || ""}. Sisa: ${Math.max(0, remaining).toFixed(2)}` }, { status: 400 });
+        return NextResponse.json({ success: false, message: `Pembayaran melebihi sisa tagihan SO ${so.orderNumber || ""}. Sisa: ${Math.max(0, remaining).toFixed(2)}` }, { status: 400 });
       }
     }
     if (body.type === "OUT" && body.refType === "PURCHASE") {
-      const pd = await prisma.purchaseDirect.findFirst({ where: { id: body.refId, brandProfileId: brandId }, select: { paidAmount: true, total: true, invoiceNumber: true } });
+      const pd = await prisma.purchaseDirect.findFirst({ where: { id: body.refId, brandProfileId: brandId }, select: { paidAmount: true, total: true, purchaseNumber: true } });
       if (!pd) return NextResponse.json({ success: false, message: "Purchase tidak ditemukan" }, { status: 400 });
       const paid = Number(pd.paidAmount || 0);
       const total = Number(pd.total || 0);
       const remaining = total - paid;
       if (amount > remaining + EPS) {
-        return NextResponse.json({ success: false, message: `Pembayaran melebihi sisa tagihan pembelian ${pd.invoiceNumber || ""}. Sisa: ${Math.max(0, remaining).toFixed(2)}` }, { status: 400 });
+        return NextResponse.json({ success: false, message: `Pembayaran melebihi sisa tagihan pembelian ${pd.purchaseNumber || ""}. Sisa: ${Math.max(0, remaining).toFixed(2)}` }, { status: 400 });
       }
     }
 

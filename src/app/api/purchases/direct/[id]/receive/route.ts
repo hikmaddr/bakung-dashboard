@@ -4,8 +4,9 @@ import { getAuth } from "@/lib/auth";
 import { getActiveBrandProfile, resolveAllowedBrandIds } from "@/lib/brand";
 import { logActivity } from "@/lib/activity";
 
-export async function POST(req: NextRequest, { params }: { params: { id: string } }) {
-  const id = Number(params.id);
+export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  const { id: rawId } = await params;
+  const id = Number(rawId);
   const auth = await getAuth();
   const brand = await getActiveBrandProfile();
   const purchase = await prisma.purchaseDirect.findFirst({ where: { id }, include: { items: true } });

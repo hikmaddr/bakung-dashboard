@@ -70,14 +70,14 @@ export async function GET(req: NextRequest, _ctx: { params: Promise<{}> }) {
           where: { quotationId: { in: quotationIds } },
           select: { quotationId: true },
         });
-        invoiceByQuotation = new Set(invoices.map((i) => i.quotationId));
+        invoiceByQuotation = new Set(invoices.map((i) => i.quotationId).filter((id): id is number => id !== null));
       } catch {}
       try {
         const salesOrders = await prisma.salesOrder.findMany({
           where: { quotationId: { in: quotationIds } },
           select: { quotationId: true },
         });
-        soByQuotation = new Set(salesOrders.map((s) => s.quotationId));
+        soByQuotation = new Set(salesOrders.map((s) => s.quotationId).filter((id): id is number => id !== null));
       } catch {}
     }
 

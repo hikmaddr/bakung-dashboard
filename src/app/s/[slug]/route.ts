@@ -3,9 +3,9 @@ import { prisma } from "@/lib/prisma";
 
 export const revalidate = 0;
 
-export async function GET(req: NextRequest, { params }: { params: { slug: string } }) {
+export async function GET(req: NextRequest, { params }: { params: Promise<{ slug: string }> }) {
   try {
-    const { slug } = params;
+    const { slug } = await params;
     if (!slug) {
       return NextResponse.json({ success: false, message: "Slug kosong" }, { status: 400 });
     }

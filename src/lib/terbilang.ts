@@ -56,7 +56,7 @@ export function terbilang(n: number): string {
   ];
 
   let abs = Math.floor(Math.abs(n));
-  let result: string[] = [];
+  const result: string[] = [];
 
   for (const [value, label] of UNITS) {
     if (abs >= value) {

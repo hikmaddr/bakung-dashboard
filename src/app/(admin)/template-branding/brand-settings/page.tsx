@@ -1952,7 +1952,7 @@ function BrandSettingsPage() {
                         <div className="flex items-center gap-2">
                           <Button
                             variant="outline"
-                            size="icon"
+                            size="sm"
                             onClick={() => fetchSignatureProfiles()}
                             disabled={signatureLoading}
                             aria-label="Refresh signature profiles"
