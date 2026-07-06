@@ -2,16 +2,31 @@ export const runtime = "nodejs";
 
 import { NextResponse, type NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { getActiveBrandProfile, resolveAllowedBrandIds } from "@/lib/brand";
-import { PDFDocument, rgb, StandardFonts, type PDFFont, type PDFPage } from "pdf-lib";
-import fontkit from "@pdf-lib/fontkit";
-import { getAuth } from "@/lib/auth";
+import { resolveAllowedBrandIds } from "@/lib/brand";
+import { rgb, type PDFFont, type PDFPage } from "pdf-lib";
 import { type InvoiceTemplateTheme, resolveTheme, resolveThankYou, resolvePaymentLines, toRgb255 } from "@/lib/quotationTheme";
-import { initPdfWithBrandFonts, drawHeaderCommon, drawInfoSectionCommon, drawSignatureSectionCommon, drawSignatureColumnsCommon, formatPdfFileName } from "@/lib/pdfCommon";
+import { initPdfWithBrandFonts, drawHeaderCommon, drawInfoSectionCommon, drawSignatureColumnsCommon, formatPdfFileName } from "@/lib/pdfCommon";
+import { createApiHandler } from "@/lib/api-handler";
 
-type RGBA = { r: number; g: number; b: number; a?: number };
-
-// Header & info will be handled by shared pdfCommon utilities
+type CreatePdfBody = {
+  number?: string;
+  date?: string;
+  refInvoice?: string;
+  receiverName?: string;
+  receiverAddress?: string;
+  receiverPhone?: string;
+  items?: Array<{ name: string; qty: number; unit: string }>;
+  senderName?: string;
+  expedition?: string;
+  shipDate?: string;
+  etaDate?: string;
+  note?: string;
+  driverName?: string;
+  vehicleNumber?: string;
+  brandSlug?: string;
+  templateId?: string;
+  brandOverrides?: Record<string, any>;
+};
 
 function drawItemsTable(
   page: PDFPage,
@@ -57,7 +72,7 @@ function drawItemsTable(
   return y;
 }
 
-function drawShipmentInfo(page: PDFPage, fontRegular: PDFFont, fontBold: PDFFont, theme: InvoiceTemplateTheme, info: { senderName?: string; expedition?: string; shipDate?: string; etaDate?: string; note?: string }, yStart: number) {
+function drawShipmentInfo(page: PDFPage, fontRegular: PDFFont, fontBold: PDFFont, theme: InvoiceTemplateTheme, info: { senderName?: string; expedition?: string; shipDate?: string; etaDate?: string; note?: string; driverName?: string; vehicleNumber?: string }, yStart: number) {
   const x = 40;
   const labelSize = 10;
   const valueSize = 11;
@@ -69,6 +84,7 @@ function drawShipmentInfo(page: PDFPage, fontRegular: PDFFont, fontBold: PDFFont
     { label: "Expedition", value: info.expedition || "-" },
     { label: "Ship Date", value: info.shipDate || "-" },
     { label: "ETA", value: info.etaDate || "-" },
+    { label: "Driver", value: info.driverName ? `${info.driverName} (${info.vehicleNumber || '-'})` : "-" },
     { label: "Note", value: info.note || "-" },
   ];
 
@@ -81,28 +97,8 @@ function drawShipmentInfo(page: PDFPage, fontRegular: PDFFont, fontBold: PDFFont
   return y;
 }
 
-// Signature will use shared component for consistency
-
-function drawFooter(page: PDFPage, fontRegular: PDFFont, fontBold: PDFFont, theme: InvoiceTemplateTheme, brand: any) {
-  const thank = resolveThankYou(theme);
-  const payLines = resolvePaymentLines(brand.paymentInfo || "");
-  const y = 60;
-  page.drawText(thank.message, { x: 40, y, size: 11, font: fontBold });
-  let ly = y - 16;
-  payLines.forEach((ln: string) => {
-    if (!ln) return;
-    page.drawText(ln, { x: 40, y: ly, size: 10, font: fontRegular, color: rgb(0.3, 0.3, 0.3) });
-    ly -= 14;
-  });
-  if (brand.footerText) {
-    const ft = String(brand.footerText).slice(0, 300);
-    page.drawText(ft, { x: 40, y: ly - 6, size: 9, font: fontRegular, color: rgb(0.4, 0.4, 0.4) });
-  }
-}
-
-export async function POST(req: NextRequest) {
-  try {
-    const body = await req.json();
+export const POST = createApiHandler({
+  handler: async (req, body: CreatePdfBody, { activeBrand, user }) => {
     const {
       number = "",
       date = "",
@@ -116,48 +112,25 @@ export async function POST(req: NextRequest) {
       shipDate = "",
       etaDate = "",
       note = "",
+      driverName = "",
+      vehicleNumber = "",
       brandSlug = "",
       templateId,
       brandOverrides,
     } = body || {};
 
-    // Resolve brand profile & theme (fallback ke brand aktif bila auth/slug tidak tersedia)
-    let brand = brandSlug
-      ? await prisma.brandProfile.findUnique({ where: { slug: String(brandSlug) } })
-      : await getActiveBrandProfile();
-    if (!brand) {
-      brand = {
-        id: 0,
-        name: "Default Brand",
-        logoUrl: null,
-        primaryColor: "#1E3A8A",
-        secondaryColor: "#EEF2FF",
-        overview: null,
-        website: null,
-        email: null,
-        address: null,
-        phone: null,
-        footerText: null,
-        isActive: true,
-        templateDefaults: null,
-        paymentInfo: null,
-        termsConditions: null,
-        showBrandName: true,
-        showBrandDescription: true,
-      } as any;
-    }
-    // RBAC guard: jika brand memiliki ID valid, pastikan user berhak mengakses
-    if (brand?.id && brand.id > 0) {
-      const auth = await getAuth();
-      const allowedBrandIds = await resolveAllowedBrandIds(
-        auth?.userId ?? null,
-        (auth?.roles as string[]) ?? [],
-        []
-      );
-      if (allowedBrandIds.length && !allowedBrandIds.includes(brand.id)) {
-        return NextResponse.json({ success: false, message: "Forbidden: brand scope" }, { status: 403 });
+    let brand = activeBrand;
+    if (brandSlug && brandSlug !== activeBrand.slug) {
+      const other = await prisma.brandProfile.findUnique({ where: { slug: brandSlug } });
+      if (other) {
+        const allowed = await resolveAllowedBrandIds(user.userId, user.roles || [], []);
+        if (allowed.length && !allowed.includes(other.id)) {
+          return NextResponse.json({ success: false, message: "Forbidden: brand scope" }, { status: 403 });
+        }
+        brand = other as any;
       }
     }
+
     if (brandOverrides && typeof brandOverrides === "object") {
       const overrides = brandOverrides as Record<string, unknown>;
       if (overrides.primaryColor) (brand as any).primaryColor = overrides.primaryColor;
@@ -165,6 +138,7 @@ export async function POST(req: NextRequest) {
       if (overrides.footerText) (brand as any).footerText = overrides.footerText;
       if (overrides.paymentInfo) (brand as any).paymentInfo = overrides.paymentInfo;
     }
+
     const theme: InvoiceTemplateTheme = resolveTheme(brand as any, templateId ?? ((brand as any)?.templateDefaults?.deliveryNote as string | undefined));
 
     // Build PDF
@@ -211,7 +185,7 @@ export async function POST(req: NextRequest) {
       Array.isArray(items) ? items.map((i: any) => ({ name: i?.name || "", qty: Number(i?.qty || 0), unit: i?.unit || "pcs" })) : [],
       tableStartY
     );
-    const shipEndY = drawShipmentInfo(page, fontRegular, fontBold, theme, { senderName, expedition, shipDate, etaDate, note }, itemsEndY - 20);
+    const shipEndY = drawShipmentInfo(page, fontRegular, fontBold, theme, { senderName, expedition, shipDate, etaDate, note, driverName, vehicleNumber }, itemsEndY - 20);
 
     const signatureResult = await drawSignatureColumnsCommon(
       pdf,
@@ -248,15 +222,5 @@ export async function POST(req: NextRequest) {
     const fileName = formatPdfFileName(number, receiverName, number || "Delivery", receiverName || "Receiver");
     const ab = (bytes.buffer as ArrayBuffer).slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength);
     return new Response(ab, { headers: { "Content-Type": "application/pdf", "Content-Disposition": `inline; filename="${fileName}"` } });
-  } catch (error) {
-    console.error("[deliveries/pdf] error", error);
-    try {
-      const sp = req.nextUrl.searchParams;
-      const debug = sp.get("debug") === "1";
-      const message = debug ? String((error as any)?.stack || (error as any)?.message || error || "Unknown error") : "Gagal membuat PDF";
-      return NextResponse.json({ success: false, message }, { status: 500 });
-    } catch {
-      return NextResponse.json({ success: false, message: "Gagal membuat PDF" }, { status: 500 });
-    }
   }
-}
+});

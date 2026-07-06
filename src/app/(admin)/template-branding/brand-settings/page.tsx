@@ -440,6 +440,45 @@ function BrandSettingsPage() {
   const showBrandEmail = formData.showBrandEmail ?? true;
   const showBrandWebsite = formData.showBrandWebsite ?? true;
   const showBrandAddress = formData.showBrandAddress ?? true;
+  const renderFormatPreview = (fmt: string) => {
+    if (!fmt) return "-";
+    const date = new Date();
+    const yyyy = String(date.getFullYear());
+    const mm = String(date.getMonth() + 1).padStart(2, "0");
+    const romans = ["I", "II", "III", "IV", "V", "VI", "VII", "VIII", "IX", "X", "XI", "XII"];
+    const roman = romans[date.getMonth()];
+    const fullName = (formData.name || "BRD").toUpperCase();
+    const brandPrefix = fullName.replace(/[^A-Za-z0-9]/g, "");
+
+    let result = fmt
+      .replace(/\{BRAND(\d+)\}/g, (_, n) => brandPrefix.slice(0, parseInt(n)))
+      .replace(/\{BRAND\}/g, brandPrefix)
+      .replace(/\{YYYY\}/g, yyyy)
+      .replace(/\{MM\}/g, mm)
+      .replace(/\{ROMAN\}/g, roman);
+
+    // Support both {SEQn} and {0000} styles
+    const seqMatch = fmt.match(/\{SEQ(\d+)\}/) || fmt.match(/\{0{2,}\}/);
+    let seqLen = 4;
+    if (seqMatch) {
+      if (seqMatch[0].includes("SEQ")) {
+        seqLen = Number(seqMatch[1]);
+      } else {
+        seqLen = seqMatch[0].length - 2; // Subtract {}
+      }
+    }
+    const seq = "1".padStart(seqLen, "0");
+    result = result.replace(/\{SEQ\d+\}/g, seq).replace(/\{0{2,}\}/g, seq);
+
+    // Support parenthesis-style placeholders if any
+    result = result.replace(/\(SEQ\d+\)/g, seq).replace(/\(0{2,}\)/g, seq);
+
+    if (!/\{BRAND\d*\}/i.test(fmt)) {
+      result = `${brandPrefix.slice(0, 3) || "BRD"}-${result}`;
+    }
+    return result;
+  };
+
   const selectedSignatureProfile = useMemo(() => {
     if (!formData.signatureProfileId) return undefined;
     return signatureProfiles.find(
@@ -1757,6 +1796,11 @@ function BrandSettingsPage() {
                       onChange={(e) => handleNestedInputChange("numberFormats", "quotation", e.target.value)}
                       className="border-2 focus:border-green-500 font-mono"
                     />
+                    <div className="flex items-center justify-between gap-2 mt-1">
+                      <p className="text-[10px] text-muted-foreground italic truncate">
+                        Preview: <span className="font-mono font-medium text-green-700">{renderFormatPreview(formData.numberFormats?.quotation || "")}</span>
+                      </p>
+                    </div>
                     <div className="pt-1">
                       <Checkbox
                         id="lock-quotation-number"
@@ -1782,6 +1826,11 @@ function BrandSettingsPage() {
                       onChange={(e) => handleNestedInputChange("numberFormats", "salesOrder", e.target.value)}
                       className="border-2 focus:border-green-500 font-mono"
                     />
+                    <div className="flex items-center justify-between gap-2 mt-1">
+                      <p className="text-[10px] text-muted-foreground italic truncate">
+                        Preview: <span className="font-mono font-medium text-green-700">{renderFormatPreview(formData.numberFormats?.salesOrder || "")}</span>
+                      </p>
+                    </div>
                     <div className="pt-1">
                       <Checkbox
                         id="lock-sales-order-number"
@@ -1807,6 +1856,11 @@ function BrandSettingsPage() {
                       onChange={(e) => handleNestedInputChange("numberFormats", "invoice", e.target.value)}
                       className="border-2 focus:border-green-500 font-mono"
                     />
+                    <div className="flex items-center justify-between gap-2 mt-1">
+                      <p className="text-[10px] text-muted-foreground italic truncate">
+                        Preview: <span className="font-mono font-medium text-green-700">{renderFormatPreview(formData.numberFormats?.invoice || "")}</span>
+                      </p>
+                    </div>
                     <div className="pt-1">
                       <Checkbox
                         id="lock-invoice-number"
@@ -1832,6 +1886,11 @@ function BrandSettingsPage() {
                       onChange={(e) => handleNestedInputChange("numberFormats", "deliveryNote", e.target.value)}
                       className="border-2 focus:border-green-500 font-mono"
                     />
+                    <div className="flex items-center justify-between gap-2 mt-1">
+                      <p className="text-[10px] text-muted-foreground italic truncate">
+                        Preview: <span className="font-mono font-medium text-green-700">{renderFormatPreview(formData.numberFormats?.deliveryNote || "")}</span>
+                      </p>
+                    </div>
                     <div className="pt-1">
                       <Checkbox
                         id="lock-delivery-note-number"
@@ -1851,9 +1910,14 @@ function BrandSettingsPage() {
 
                       <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
                         <h4 className="font-semibold text-blue-900 mb-2">Format Examples:</h4>
-                        <div className="text-sm text-blue-800 space-y-1">
-                          <p><strong>Current:</strong> {formData.numberFormats?.invoice?.replace('{YYYY}', '2025').replace('{0000}', '0001') || 'INV-2025-0001'}</p>
-                          <p><strong>Variables:</strong> {`{BRAND}`} = 3-letter code, {`{YYYY}`} = Year, {`{MM}`} = Month (01-12), {`{ROMAN}`} = Month in Roman, {`{SEQ4}`} = 4-digit sequence</p>
+                        <div className="text-sm text-blue-800 space-y-2">
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-1 bg-white/50 p-2 rounded border border-blue-100">
+                            <p><strong>Quo:</strong> <span className="font-mono">{renderFormatPreview(formData.numberFormats?.quotation || "")}</span></p>
+                            <p><strong>SO:</strong> <span className="font-mono">{renderFormatPreview(formData.numberFormats?.salesOrder || "")}</span></p>
+                            <p><strong>Inv:</strong> <span className="font-mono">{renderFormatPreview(formData.numberFormats?.invoice || "")}</span></p>
+                            <p><strong>DN:</strong> <span className="font-mono">{renderFormatPreview(formData.numberFormats?.deliveryNote || "")}</span></p>
+                          </div>
+                          <p><strong>Variables:</strong> {`{BRAND}`} = Full Name, {`{BRAND3}`} = 3-letter code, {`{YYYY}`} = Year, {`{MM}`} = Month, {`{ROMAN}`} = Roman Month, {`{SEQ4}`} = 4-digit sequence</p>
                           <p className="italic">Note: Jika {`{BRAND}`} tidak dicantumkan, sistem otomatis menambahkan prefix kode brand di depan nomor.</p>
                         </div>
                       </div>

@@ -79,11 +79,10 @@ export const formatPdfFileName = (
   fallbackCustomer = "Customer"
 ) => {
   const numberPart = sanitizeFileSegment(numberValue);
-  const customerPart = sanitizeFileSegment(customerValue);
   const safeNumber = numberPart || sanitizeFileSegment(fallbackNumber) || "Dokumen";
-  const safeCustomer = customerPart || sanitizeFileSegment(fallbackCustomer) || "Customer";
-  const normalizedNumber = safeNumber.replace(/-+/g, "/").replace(/\s*\/\s*/g, "/");
-  return `${normalizedNumber} - ${safeCustomer}.pdf`;
+  
+  // Return the filename matching the document number precisely
+  return `${safeNumber}.pdf`;
 };
 
 // Fonts (fallback ke PlusJakartaSans dari public/fonts)
@@ -217,7 +216,8 @@ export const initPdfWithBrandFonts = async () => {
   return { pdf, font, bold, extraBold, italic };
 };
 
-// Common header: brand on left, title & meta on right, separator line below
+// Common header (modern): accent bar di atas, brand kiri, title & meta kanan,
+// separator dua-tone di bawah. Warna mengikuti brand profile aktif.
 export const drawHeaderCommon = async (
   pdf: PDFDocument,
   page: PDFPage,
@@ -231,6 +231,11 @@ export const drawHeaderCommon = async (
   margin: number
 ): Promise<number> => {
   const { width, height } = page.getSize();
+
+  // Accent bar dua-tone di tepi atas halaman
+  page.drawRectangle({ x: 0, y: height - 6, width, height: 6, color: toRgb(theme.primaryColor) });
+  page.drawRectangle({ x: 0, y: height - 8.5, width, height: 2.5, color: toRgb(theme.secondaryColor) });
+
   const topY = height - margin;
   const leftX = margin;
   let currentY = topY - 12;
@@ -250,6 +255,10 @@ export const drawHeaderCommon = async (
   const brandOffsetDown = 3;
   let nameY = currentY - brandAscent - brandOffsetDown;
 
+  if (logoHeight > 0) {
+    nameY = currentY - (logoHeight / 2) - (brandAscent / 2) + 2;
+  }
+
   if ((brand.showBrandName ?? true) && brand.name) {
     page.drawText(brand.name, { x: nameX, y: nameY, size: brandNameSize, font: bold, color: toRgb(theme.primaryColor) });
     nameY -= 16;
@@ -261,7 +270,6 @@ export const drawHeaderCommon = async (
   }
 
   const brandContactLines: string[] = [];
-  // Tampilkan website terlebih dahulu, lalu email
   if ((brand.showBrandWebsite ?? true) && brand.website && brand.website.trim()) {
     brandContactLines.push(brand.website.trim());
   }
@@ -274,7 +282,6 @@ export const drawHeaderCommon = async (
     page.drawText(line, { x: leftX, y: contactY, size: 9, font, color: toRgb(theme.mutedText), maxWidth: Math.max(logoWidth, width * 0.25) });
     contactY -= 12;
   });
-  // Alamat perusahaan di bawah email (jika diizinkan)
   if ((brand.showBrandAddress ?? true) && brand.address && String(brand.address).trim().length > 0) {
     const addrLines = splitTextToSize(String(brand.address), Math.max(logoWidth, width * 0.25) - 2, font, 8);
     addrLines.forEach((line) => {
@@ -285,21 +292,44 @@ export const drawHeaderCommon = async (
   const brandBottom = (brandContactLines.length || ((brand.showBrandAddress ?? true) && brand.address)) ? contactY : topY - logoHeight - 20;
 
   const rightX = width - margin;
-  const titleWidth = extraBold.widthOfTextAtSize(title.toUpperCase(), 26);
-  page.drawText(title.toUpperCase(), { x: rightX - titleWidth, y: topY - 18, size: 26, font: extraBold, color: toRgb(theme.primaryColor) });
 
-  let metaY = topY - 48;
+  // Judul dokumen dengan chip berwarna lembut di belakangnya
+  const titleText = title.toUpperCase();
+  const titleSize = 24;
+  const titleWidth = extraBold.widthOfTextAtSize(titleText, titleSize);
+  const chipPadX = 12;
+  const chipPadY = 8;
+  const chipH = titleSize + chipPadY * 2 - 4;
+  page.drawRectangle({
+    x: rightX - titleWidth - chipPadX * 2,
+    y: topY - 18 - chipPadY,
+    width: titleWidth + chipPadX * 2,
+    height: chipH,
+    color: toRgb(theme.badgeBackground),
+  });
+  page.drawRectangle({
+    x: rightX - titleWidth - chipPadX * 2,
+    y: topY - 18 - chipPadY,
+    width: 3,
+    height: chipH,
+    color: toRgb(theme.primaryColor),
+  });
+  page.drawText(titleText, { x: rightX - titleWidth - chipPadX, y: topY - 14, size: titleSize, font: extraBold, color: toRgb(theme.primaryColor) });
+
+  let metaY = topY - 56;
   metaLines.forEach(({ label, value }) => {
-    const labelWidth = font.widthOfTextAtSize(label, 9);
-    page.drawText(label, { x: rightX - labelWidth, y: metaY, size: 9, font, color: toRgb(theme.mutedText) });
+    const labelWidth = font.widthOfTextAtSize(label.toUpperCase(), 8);
+    page.drawText(label.toUpperCase(), { x: rightX - labelWidth, y: metaY, size: 8, font, color: toRgb(theme.mutedText) });
     const valueWidth = bold.widthOfTextAtSize(value, 11);
-    page.drawText(value, { x: rightX - valueWidth, y: metaY - 14, size: 11, font: bold, color: toRgb(theme.headerTextColor) });
-    metaY -= 24;
+    page.drawText(value, { x: rightX - valueWidth, y: metaY - 13, size: 11, font: bold, color: toRgb(theme.headerTextColor) });
+    metaY -= 26;
   });
 
   const contentBottom = Math.min(brandBottom, nameY, metaY);
   const separatorY = contentBottom - 18;
-  page.drawRectangle({ x: margin, y: separatorY, width: width - margin * 2, height: 0.8, color: toRgb(theme.tableBorderColor) });
+  // Separator dua-tone: segmen tebal warna brand + garis tipis sisa lebar
+  page.drawRectangle({ x: margin, y: separatorY, width: 64, height: 2.4, color: toRgb(theme.primaryColor) });
+  page.drawRectangle({ x: margin + 64, y: separatorY + 0.7, width: width - margin * 2 - 64, height: 1, color: toRgb(theme.tableBorderColor) });
   return separatorY - 24;
 };
 
@@ -319,6 +349,7 @@ export const drawInfoSectionCommon = (
   const availableWidth = width - margin * 2 - gap;
   const columnWidth = availableWidth / 2;
   const baseY = startY - 6;
+  const padX = 12;
   const uniqueValues = (values: Array<string | null | undefined>) =>
     values
       .map((value) => (typeof value === "string" ? value.trim() : ""))
@@ -329,56 +360,76 @@ export const drawInfoSectionCommon = (
     ? customerNameParts.join(" - ")
     : "Customer";
 
-  const fromRows: Array<{ text: string; size?: number; font?: PDFFont; color?: ReturnType<typeof rgb> }> = [];
+  type Row = { text: string; size?: number; font?: PDFFont; color?: ReturnType<typeof rgb> };
+
+  const fromRows: Row[] = [];
   const fromHeading = (actor.name && actor.name.trim()) || brand.name || "Our Company";
   fromRows.push({ text: fromHeading, size: 10, font: bold, color: toRgb(theme.headerTextColor) });
-
+  uniqueValues([actor.email]).forEach((value) => fromRows.push({ text: value, size: 9, font, color: toRgb(theme.mutedText) }));
   if ((brand.showBrandAddress ?? true) && brand.address) {
-    const addressLines = splitTextToSize(String(brand.address), columnWidth - 4, font, 8);
-    addressLines.forEach((line) => fromRows.push({ text: line, size: 8, font, color: toRgb(theme.mutedText) }));
+    splitTextToSize(String(brand.address), columnWidth - padX * 2 - 4, font, 8).forEach((line) =>
+      fromRows.push({ text: line, size: 8, font, color: toRgb(theme.mutedText) })
+    );
   }
+  uniqueValues([actor.phone]).forEach((value) => fromRows.push({ text: value, size: 9, font, color: toRgb(theme.mutedText) }));
 
-  const emailValues = uniqueValues([actor.email]);
-  emailValues.forEach((value) => fromRows.push({ text: value, size: 9, font, color: toRgb(theme.mutedText) }));
-
-  const phoneValues = uniqueValues([actor.phone]);
-  phoneValues.forEach((value) => fromRows.push({ text: value, size: 9, font, color: toRgb(theme.mutedText) }));
-
-  const billRows: Array<{ text: string; size?: number; font?: PDFFont; color?: ReturnType<typeof rgb> }> = [];
+  const billRows: Row[] = [];
   billRows.push({ text: customerDisplayName, size: 10, font: bold, color: toRgb(theme.headerTextColor) });
-
+  uniqueValues([customer?.email]).forEach((value) => billRows.push({ text: value, size: 9, font, color: toRgb(theme.mutedText) }));
   if (customer?.address) {
-    splitTextToSize(String(customer.address), columnWidth - 4, font, 8).forEach((line) =>
+    splitTextToSize(String(customer.address), columnWidth - padX * 2 - 4, font, 8).forEach((line) =>
       billRows.push({ text: line, size: 8, font, color: toRgb(theme.mutedText) })
     );
   }
-
-  const customerEmails = uniqueValues([customer?.email]);
-  customerEmails.forEach((value) => billRows.push({ text: value, size: 9, font, color: toRgb(theme.mutedText) }));
-
-  const customerPhones = uniqueValues([customer?.phone]);
-  customerPhones.forEach((value) => billRows.push({ text: value, size: 9, font, color: toRgb(theme.mutedText) }));
+  uniqueValues([customer?.phone]).forEach((value) => billRows.push({ text: value, size: 9, font, color: toRgb(theme.mutedText) }));
 
   const columns = [
-    { title: "From", rows: fromRows.length ? fromRows : [{ text: "-", size: 9, font, color: toRgb(theme.mutedText) }] },
-    { title: "Bill To", rows: billRows.length ? billRows : [{ text: "-", size: 9, font, color: toRgb(theme.mutedText) }] },
+    { title: "From", rows: fromRows.length ? fromRows : [{ text: "-", size: 9, font, color: toRgb(theme.mutedText) } as Row] },
+    { title: "Bill To", rows: billRows.length ? billRows : [{ text: "-", size: 9, font, color: toRgb(theme.mutedText) } as Row] },
   ];
+
+  // Hitung tinggi panel per kolom terlebih dahulu (background digambar sebelum teks)
+  const rowsHeight = (rows: Row[]) => {
+    let h = 24;
+    rows.slice(0, 10).forEach((row, rowIndex) => {
+      const size = row.size ?? (rowIndex === 0 ? 10 : 9);
+      h += rowIndex === 0 ? 16 : size <= 8 ? 11 : 12;
+    });
+    return h + 10;
+  };
+  const panelHeight = Math.max(rowsHeight(columns[0].rows), rowsHeight(columns[1].rows));
 
   let lowestY = baseY;
   columns.forEach(({ title, rows }, index) => {
     const x = margin + index * (columnWidth + gap);
-    page.drawText(title.toUpperCase(), { x, y: baseY, size: 10, font: bold, color: toRgb(theme.headerAccentColor) });
-    page.drawRectangle({ x, y: baseY - 12, width: columnWidth, height: 0.6, color: toRgb(theme.tableBorderColor) });
-    let lineY = baseY - 24;
+
+    // Panel lembut + aksen kiri warna brand
+    page.drawRectangle({
+      x,
+      y: baseY - panelHeight + 14,
+      width: columnWidth,
+      height: panelHeight,
+      color: toRgb(theme.noteBackground),
+    });
+    page.drawRectangle({
+      x,
+      y: baseY - panelHeight + 14,
+      width: 3,
+      height: panelHeight,
+      color: toRgb(theme.primaryColor),
+    });
+
+    page.drawText(title.toUpperCase(), { x: x + padX, y: baseY, size: 9, font: bold, color: toRgb(theme.headerAccentColor) });
+    let lineY = baseY - 20;
     rows.slice(0, 10).forEach((row, rowIndex) => {
       const size = row.size ?? (rowIndex === 0 ? 10 : 9);
       const rowFont = row.font ?? (rowIndex === 0 ? bold : font);
       const rowColor = row.color ?? toRgb(rowIndex === 0 ? theme.headerTextColor : theme.mutedText);
-      page.drawText(row.text, { x, y: lineY, size, font: rowFont, color: rowColor, maxWidth: columnWidth - 4 });
+      page.drawText(row.text, { x: x + padX, y: lineY, size, font: rowFont, color: rowColor, maxWidth: columnWidth - padX * 2 });
       const gapY = rowIndex === 0 ? 16 : size && size <= 8 ? 11 : 12;
       lineY -= gapY;
     });
-    lowestY = Math.min(lowestY, lineY);
+    lowestY = Math.min(lowestY, baseY - panelHeight + 14);
   });
   return lowestY - 18;
 };

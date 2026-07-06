@@ -1,10 +1,10 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { getAuth } from "@/lib/auth";
-import { getActiveBrandProfile, resolveAllowedBrandIds } from "@/lib/brand";
 import { logActivity } from "@/lib/activity";
 import { sendNotificationToRole } from "@/lib/notification";
 import { saveFile } from "@/lib/storage";
+import { createApiHandler } from "@/lib/api-handler";
+import { resolveAllowedBrandIds } from "@/lib/brand";
 
 async function saveAttachments(formData: FormData) {
   const files: File[] = [];
@@ -22,12 +22,11 @@ async function saveAttachments(formData: FormData) {
   return attachments;
 }
 
-export async function GET(req: NextRequest) {
-  try {
-    const auth = await getAuth();
+export const GET = createApiHandler({
+  handler: async (req, _, { activeBrand, user }) => {
     const allowedBrandIds = await resolveAllowedBrandIds(
-      auth?.userId ?? null,
-      (auth?.roles as string[]) ?? [],
+      user.userId,
+      user.roles || [],
       []
     );
     const search = req.nextUrl.searchParams;
@@ -40,14 +39,13 @@ export async function GET(req: NextRequest) {
     const pageSize = parseInt(search.get("pageSize") || "20");
 
     const where: any = {};
-    // Scope by brand if provided, otherwise use active brand
     let brandId: number | null = null;
     if (brandIdStr) {
       const parsed = Number(brandIdStr);
       if (!Number.isNaN(parsed)) brandId = parsed;
     }
+
     if (brandId != null) {
-      // If brandId specified, enforce it is within allowed scope
       if (allowedBrandIds.length && !allowedBrandIds.includes(brandId)) {
         return NextResponse.json(
           { success: false, message: "Forbidden: brand scope" },
@@ -56,12 +54,10 @@ export async function GET(req: NextRequest) {
       }
       where.brandProfileId = brandId;
     } else {
-      // No brandId specified: restrict by allowed brands or active brand fallback
       if (allowedBrandIds.length) {
         where.brandProfileId = { in: allowedBrandIds };
       } else {
-        const brand = await getActiveBrandProfile();
-        if (brand?.id) where.brandProfileId = brand.id;
+        where.brandProfileId = activeBrand.id;
       }
     }
 
@@ -85,50 +81,39 @@ export async function GET(req: NextRequest) {
     ]);
 
     return NextResponse.json({ success: true, data: rows, total, page, pageSize });
-  } catch (e: any) {
-    return NextResponse.json(
-      { success: false, message: e?.message || "Gagal memuat data pembelian" },
-      { status: 500 },
-    );
   }
-}
+});
 
-export async function POST(req: NextRequest) {
-  try {
-    const auth = await getAuth();
-    const brand = await getActiveBrandProfile();
-
-    // Guard brand berdasarkan izin pengguna
-    if (!brand?.id) return NextResponse.json({ success: false, message: "Brand aktif tidak ditemukan" }, { status: 400 });
-    const allowedBrandIds = await resolveAllowedBrandIds(auth?.userId ?? null, (auth?.roles as string[]) ?? [], []);
-    if (!allowedBrandIds.includes(brand.id)) return NextResponse.json({ success: false, message: "Forbidden: brand scope" }, { status: 403 });
-
+export const POST = createApiHandler({
+  actionName: "PURCHASE_CREATE",
+  entityType: "purchase_direct",
+  handler: async (req, body, { activeBrand, user }) => {
     let payload: any = {};
     let attachments: any[] = [];
-    if (req.headers.get("content-type")?.includes("multipart/form-data")) {
-      const form = await req.formData();
-      const itemsRaw = form.get("items") as string | null;
-      attachments = await saveAttachments(form);
+
+    if (body instanceof FormData) {
+      const itemsRaw = body.get("items") as string | null;
+      attachments = await saveAttachments(body);
       payload = {
-        purchaseNumber: String(form.get("purchaseNumber") || ""),
-        date: new Date(String(form.get("date") || new Date().toISOString())),
-        supplierName: String(form.get("supplierName") || ""),
-        marketplaceOrderId: (form.get("marketplaceOrderId") as string) || undefined,
-        notes: (form.get("notes") as string) || undefined,
-        shippingCost: Number(form.get("shippingCost") || 0),
-        fee: Number(form.get("fee") || 0),
-        tax: Number(form.get("tax") || 0),
+        purchaseNumber: String(body.get("purchaseNumber") || ""),
+        date: new Date(String(body.get("date") || new Date().toISOString())),
+        supplierName: String(body.get("supplierName") || ""),
+        marketplaceOrderId: (body.get("marketplaceOrderId") as string) || undefined,
+        notes: (body.get("notes") as string) || undefined,
+        shippingCost: Number(body.get("shippingCost") || 0),
+        fee: Number(body.get("fee") || 0),
+        tax: Number(body.get("tax") || 0),
         items: itemsRaw ? JSON.parse(itemsRaw) : [],
       };
     } else {
-      payload = await req.json();
+      payload = body;
       attachments = payload.attachments || [];
     }
 
     if (!payload.purchaseNumber) {
       return NextResponse.json({ success: false, message: "purchaseNumber wajib" }, { status: 400 });
     }
-    // normalize items and compute totals
+
     const itemsNormalized = (payload.items || []).map((it: any) => ({
       productId: it.productId ?? null,
       name: it.name,
@@ -157,40 +142,25 @@ export async function POST(req: NextRequest) {
         fee,
         tax,
         total,
-        brandProfileId: brand.id,
-        createdByUserId: auth?.userId || null,
+        brandProfileId: activeBrand.id,
+        createdByUserId: user.userId,
         items: { create: itemsNormalized },
       },
       include: { items: true },
     });
-    // Catat aktivitas pembuatan purchase direct
-    try {
-      await logActivity(req, {
-        userId: auth?.userId || null,
-        action: "PURCHASE_CREATE",
-        entity: "purchase_direct",
-        entityId: created.id,
-        metadata: {
-          brandProfileId: brand.id,
-          purchaseNumber: created.purchaseNumber,
-          total: created.total,
-          supplierName: created.supplierName,
-          date: created.date,
-        },
-      });
-    } catch {}
+
     try {
       await sendNotificationToRole(
         "Owner",
         "Pembelian baru dibuat",
         `Pembelian ${created.purchaseNumber} berhasil dicatat dengan total ${created.total.toLocaleString()}.`,
         "info",
-        brand.id,
+        activeBrand.id,
         `/pembelian/pembelian-langsung/${created.id}`,
       );
     } catch {}
+
     return NextResponse.json({ success: true, data: created });
-  } catch (e: any) {
-    return NextResponse.json({ success: false, message: e?.message || "Gagal membuat pembelian" }, { status: 500 });
   }
-}
+});
+

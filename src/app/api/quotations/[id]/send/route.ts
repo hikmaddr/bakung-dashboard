@@ -22,17 +22,11 @@ export async function POST(
       via = String(body?.via || "").toLowerCase();
     } catch {}
 
-    const statusValue = via === "whatsapp"
-      ? "Sent via WhatsApp"
-      : via === "email"
-      ? "Sent via Email"
-      : via === "pdf"
-      ? "Sent via PDF"
-      : "Sent";
+    const statusValue = "Sent";
 
     const updated = await prisma.quotation.update({
       where: { id: qid },
-      data: { status: statusValue },
+      data: { status: statusValue, sentVia: via },
       include: { customer: true, items: true },
     });
 

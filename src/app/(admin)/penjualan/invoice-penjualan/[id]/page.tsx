@@ -389,22 +389,67 @@ export default function InvoiceDetailPage() {
   }, [brand]);
 
   const actorHeading = useMemo(() => {
-    if (!actor) return brand?.name || "Our Company";
-    const parts = [
-      actor?.name,
-      [actor?.firstName, actor?.lastName].filter(Boolean).join(" ").trim(),
-      actor?.company,
-      brand?.name,
-    ]
-      .filter(Boolean)
-      .map((value) => String(value).trim());
-    return parts.find((value) => value.length) || "Our Company";
+    // Parsing safety for JSON fields
+    const defaults = typeof brand?.templateDefaults === "string" 
+      ? JSON.parse(brand.templateDefaults) 
+      : brand?.templateDefaults;
+
+    // 1. Prioritaskan Signature Name dari Brand Settings
+    const sigName = defaults?.signatureName;
+    if (sigName) return sigName;
+
+    // 2. Fallback ke profile user (actor)
+    if (actor) {
+      const parts = [
+        actor?.name,
+        [actor?.firstName, actor?.lastName].filter(Boolean).join(" ").trim(),
+        actor?.company,
+        brand?.name,
+      ]
+        .filter(Boolean)
+        .map((value) => String(value).trim());
+      const found = parts.find((value) => value.length);
+      if (found) return found;
+    }
+
+    // 3. Fallback terakhir ke Brand Name
+    return brand?.name || "Our Company";
   }, [actor, brand]);
 
-  const actorContactLines = useMemo(
-    () => [actor?.email, actor?.phone].filter((value): value is string => Boolean(value)),
-    [actor?.email, actor?.phone]
-  );
+  const actorContactLines = useMemo(() => {
+    const lines: string[] = [];
+
+    // Parsing safety for JSON fields
+    const defaults = typeof brand?.templateDefaults === "string" 
+      ? JSON.parse(brand.templateDefaults) 
+      : brand?.templateDefaults;
+
+    // Prioritaskan info dari signature settings jika ada
+    const sigEmail = defaults?.signatureEmail;
+    if (sigEmail) lines.push(sigEmail);
+    else if (actor?.email) lines.push(actor.email);
+
+    return lines;
+  }, [actor, brand]);
+
+  const actorPhone = useMemo(() => {
+    const defaults = typeof brand?.templateDefaults === "string" 
+      ? JSON.parse(brand.templateDefaults) 
+      : brand?.templateDefaults;
+    return defaults?.signaturePhone || actor?.phone || null;
+  }, [actor, brand]);
+
+  const signatureUrl = useMemo(() => {
+    try {
+      const defaults = typeof brand?.templateDefaults === "string" 
+        ? JSON.parse(brand.templateDefaults) 
+        : brand?.templateDefaults || {};
+      
+      return brand?.signatureImageUrl || defaults.signatureImageUrl || defaults.signatureUrl || null;
+    } catch (e) {
+      return brand?.signatureImageUrl || null;
+    }
+  }, [brand]);
 
   const customerHeading = useMemo(() => {
     if (!invoice?.customer) return "Customer";
@@ -434,15 +479,15 @@ export default function InvoiceDetailPage() {
 
     return (
       <div
-        className="w-full max-w-[820px] overflow-hidden rounded-xl border bg-white shadow"
-        style={{ borderColor: `${theme.tableBorderColor}55` }}
+        className="mx-auto w-[794px] overflow-hidden rounded-xl border bg-white shadow-xl"
+        style={{ borderColor: `${theme.tableBorderColor}55`, minHeight: "1123px" }}
       >
         <div
           className="space-y-10 px-10 py-10 text-sm leading-relaxed"
           style={{ color: theme.headerTextColor }}
         >
           <header className="flex flex-wrap items-start justify-between gap-6">
-            <div className="flex flex-1 items-start gap-3">
+            <div className="flex flex-1 items-center gap-3">
               <div className="flex flex-col items-start">
                 {brand?.logoUrl ? (
                   <img
@@ -461,21 +506,11 @@ export default function InvoiceDetailPage() {
                     Logo
                   </div>
                 )}
-                {brandContactLines.length > 0 && (
-                  <div
-                    className="mt-2 space-y-0.5 text-xs"
-                    style={{ color: theme.mutedText }}
-                  >
-                    {brandContactLines.map((line) => (
-                      <div key={line}>{line}</div>
-                    ))}
-                  </div>
-                )}
               </div>
               <div className="flex-1">
                 {brand?.showBrandName !== false && brand?.name && (
                   <h2
-                    className="text-2xl font-semibold leading-tight"
+                    className="whitespace-nowrap text-2xl font-semibold leading-tight"
                     style={{ color: theme.primaryColor }}
                   >
                     {brand.name}
@@ -554,6 +589,11 @@ export default function InvoiceDetailPage() {
                 <div className="font-semibold" style={{ color: theme.headerTextColor }}>
                   {actorHeading}
                 </div>
+                {actorContactLines.map((line) => (
+                  <div key={line} style={{ color: theme.mutedText }}>
+                    {line}
+                  </div>
+                ))}
                 {brand?.showBrandAddress !== false && brand?.address && (
                   <div
                     className="whitespace-pre-line text-xs"
@@ -562,11 +602,11 @@ export default function InvoiceDetailPage() {
                     {brand.address}
                   </div>
                 )}
-                {actorContactLines.map((line) => (
-                  <div key={line} style={{ color: theme.mutedText }}>
-                    {line}
+                {actorPhone && (
+                  <div style={{ color: theme.mutedText }}>
+                    {actorPhone}
                   </div>
-                ))}
+                )}
               </div>
             </div>
             <div>
@@ -584,6 +624,11 @@ export default function InvoiceDetailPage() {
                 <div className="font-semibold" style={{ color: theme.headerTextColor }}>
                   {customerHeading}
                 </div>
+                {invoice.customer?.email && (
+                  <div style={{ color: theme.mutedText }}>
+                    {invoice.customer.email}
+                  </div>
+                )}
                 {invoice.customer?.address && (
                   <div
                     className="whitespace-pre-line text-xs"
@@ -592,13 +637,11 @@ export default function InvoiceDetailPage() {
                     {invoice.customer.address}
                   </div>
                 )}
-                {[invoice.customer?.email, invoice.customer?.phone]
-                  .filter((value): value is string => Boolean(value))
-                  .map((value) => (
-                    <div key={value} style={{ color: theme.mutedText }}>
-                      {value}
-                    </div>
-                  ))}
+                {invoice.customer?.phone && (
+                  <div style={{ color: theme.mutedText }}>
+                    {invoice.customer.phone}
+                  </div>
+                )}
               </div>
             </div>
           </section>
@@ -617,10 +660,10 @@ export default function InvoiceDetailPage() {
               <table className="w-full border-collapse text-sm">
                 <colgroup>
                   <col style={{ width: "50%" }} />
+                  <col style={{ width: "10%" }} />
                   <col style={{ width: "12%" }} />
-                  <col style={{ width: "12%" }} />
-                  <col style={{ width: "13%" }} />
-                  <col style={{ width: "13%" }} />
+                  <col style={{ width: "14%" }} />
+                  <col style={{ width: "14%" }} />
                 </colgroup>
                 <thead>
                   <tr
@@ -761,9 +804,50 @@ export default function InvoiceDetailPage() {
               </div>
             </div>
 
-            <div>
+            <div className="space-y-4">
+              {/* Summary Lines moved ABOVE the box */}
               <div
-                className="rounded-2xl p-6 text-right shadow-sm"
+                className="space-y-2 rounded-xl border px-5 py-4 text-sm text-slate-600"
+                style={{ borderColor: `${theme.tableBorderColor}55` }}
+              >
+                <div className="flex justify-between border-b border-slate-100 pb-2">
+                  <span>Subtotal</span>
+                  <span className="font-semibold text-slate-700">{formatCurrency(computedSubtotal)}</span>
+                </div>
+                {normalizeNumber(invoice?.lineDiscount) > 0 && (
+                  <div className="flex justify-between border-b border-slate-100 pb-2">
+                    <span>Line Discount</span>
+                    <span className="text-rose-500">- {formatCurrency(invoice?.lineDiscount)}</span>
+                  </div>
+                )}
+                {extraDiscountAmount > 0 && (
+                  <div className="flex justify-between border-b border-slate-100 pb-2">
+                    <span>Extra Discount</span>
+                    <span className="text-rose-500">- {formatCurrency(extraDiscountAmount)}</span>
+                  </div>
+                )}
+                {normalizeNumber(invoice?.shippingCost) > 0 && (
+                  <div className="flex justify-between border-b border-slate-100 pb-2">
+                    <span>Shipping</span>
+                    <span className="text-slate-700">{formatCurrency(invoice?.shippingCost)}</span>
+                  </div>
+                )}
+                {normalizeNumber(invoice?.taxAmount) > 0 && (
+                  <div className="flex justify-between border-b border-slate-100 pb-2">
+                    <span>Tax</span>
+                    <span className="text-slate-700">{formatCurrency(invoice?.taxAmount)}</span>
+                  </div>
+                )}
+                {normalizeNumber(invoice?.downPayment) > 0 && (
+                  <div className="flex justify-between border-b border-slate-100 pb-2">
+                    <span>Down Payment</span>
+                    <span className="text-rose-500">- {formatCurrency(invoice?.downPayment)}</span>
+                  </div>
+                )}
+              </div>
+
+              <div
+                className="rounded-2xl p-8 text-right shadow-sm"
                 style={{
                   backgroundColor: theme.totalBackground,
                   color: theme.totalTextColor,
@@ -772,79 +856,28 @@ export default function InvoiceDetailPage() {
                 <div className="text-xs font-semibold uppercase tracking-wide">
                   Total Due
                 </div>
-                <div className="mt-3 text-3xl font-bold">
+                <div className="mt-3 text-4xl font-bold">
                   {formatCurrency(invoice.total)}
                 </div>
                 {thankYouAndTerms.message && (
-                  <div className="mt-4 text-xs">{thankYouAndTerms.message}</div>
+                  <div className="mt-4 text-xs opacity-90">{thankYouAndTerms.message}</div>
                 )}
-              </div>
-
-              <div
-                className="mt-4 space-y-2 rounded-xl border px-5 py-4 text-sm text-slate-600"
-                style={{ borderColor: `${theme.tableBorderColor}55` }}
-              >
-                <div className="flex justify-between">
-                  <span>Subtotal</span>
-                  <span>{formatCurrency(computedSubtotal)}</span>
-                </div>
-                {normalizeNumber(invoice?.lineDiscount) > 0 && (
-                  <div className="flex justify-between">
-                    <span>Line Discount</span>
-                    <span>- {formatCurrency(invoice?.lineDiscount)}</span>
-                  </div>
-                )}
-                {extraDiscountAmount > 0 && (
-                  <div className="flex justify-between">
-                    <span>Extra Discount</span>
-                    <span>- {formatCurrency(extraDiscountAmount)}</span>
-                  </div>
-                )}
-                {normalizeNumber(invoice?.shippingCost) > 0 && (
-                  <div className="flex justify-between">
-                    <span>Shipping</span>
-                    <span>{formatCurrency(invoice?.shippingCost)}</span>
-                  </div>
-                )}
-                {normalizeNumber(invoice?.taxAmount) > 0 && (
-                  <div className="flex justify-between">
-                    <span>Tax</span>
-                    <span>{formatCurrency(invoice?.taxAmount)}</span>
-                  </div>
-                )}
-                {normalizeNumber(invoice?.downPayment) > 0 && (
-                  <div className="flex justify-between">
-                    <span>Down Payment</span>
-                    <span>- {formatCurrency(invoice?.downPayment)}</span>
-                  </div>
-                )}
-                <div className="flex justify-between border-t pt-3 font-semibold text-slate-900">
-                  <span>Total</span>
-                  <span>{formatCurrency(invoice.total)}</span>
-                </div>
               </div>
             </div>
           </section>
 
-          <section className="space-y-3">
-            <div
-              className="text-xs font-semibold uppercase tracking-wide"
-              style={{ color: theme.headerAccentColor }}
-            >
-              Signature
-            </div>
-            <div
-              className="rounded-xl border px-6 py-8 text-center"
-              style={{ borderColor: `${theme.tableBorderColor}88` }}
-            >
-              <div
-                className="text-sm font-semibold"
-                style={{ color: theme.headerTextColor }}
-              >
-                {actorHeading || brand?.name || "Authorized"}
+          <section className="flex flex-col items-end pt-10">
+            <div className="text-center">
+              <div className="text-sm font-bold mb-4 text-right">Hormat Kami,</div>
+              <div className="flex justify-end mb-4 h-24">
+                {signatureUrl ? (
+                  <img src={signatureUrl} alt="Signature" className="h-full w-auto object-contain" />
+                ) : (
+                  <div className="w-48 border-b-2 border-slate-300 self-end"></div>
+                )}
               </div>
-              <div className="mt-6 text-xs text-slate-400">
-                (Tanda tangan dan stempel jika diperlukan)
+              <div className="text-sm font-bold text-right" style={{ color: theme.headerTextColor }}>
+                {actorHeading || brand?.name || "Authorized Signature"}
               </div>
             </div>
           </section>

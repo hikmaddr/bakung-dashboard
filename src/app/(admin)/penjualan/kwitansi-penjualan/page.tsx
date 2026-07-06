@@ -10,13 +10,18 @@ import { downloadCSV, downloadXLSX } from "@/lib/exporters";
 import toast from "react-hot-toast";
 import FeatureGuard from "@/components/FeatureGuard";
 import { formatDownloadFileName } from "@/utils/downloadFilename";
+import { Search, Receipt, PlusCircle } from "lucide-react";
 
 type ReceiptRow = {
   id: number;
+  receiptId?: number;
   receiptNumber: string;
   date: string;
   total: number;
   customer?: { pic?: string; company?: string };
+  status: any;
+  paymentStatus: any;
+  dueDate: string | null;
   _ts?: number; // key for local drafts deletion
 };
 
@@ -251,6 +256,9 @@ type ReceiptRow = {
               date: new Date(d.ts).toLocaleDateString('id-ID'),
               total: Number(d.total || 0),
               customer: d.customer || undefined,
+              status: "Draft",
+              paymentStatus: "UNPAID",
+              dueDate: null,
               _ts: d.ts,
             }))
           : [];
@@ -282,6 +290,9 @@ type ReceiptRow = {
               date: r.date ? new Date(r.date).toLocaleDateString('id-ID') : '-',
               total: Number(r.total || 0),
               customer: r.customer || undefined,
+              status: r.status || "Draft",
+              paymentStatus: r.paymentStatus || "UNPAID",
+              dueDate: r.dueDate || null,
             }))
           : [];
         if (cancelled) return;
@@ -304,38 +315,6 @@ type ReceiptRow = {
     })();
     return () => { cancelled = true; };
   }, []);
-
-  // Enrich status untuk kwitansi non-draft berdasarkan status invoice terkait
-  useEffect(() => {
-    const nonDraft = rows.filter(r => !(r._ts && r.id === r._ts));
-    if (nonDraft.length === 0) { setStatusMap({}); return; }
-    let cancelled = false;
-    (async () => {
-      try {
-        const entries = await Promise.all(
-          nonDraft.map(async (r) => {
-            try {
-              const res = await fetch(`/api/invoices/${r.id}`, { cache: 'no-store' });
-              const json = await res.json();
-              if (!res.ok || json?.success === false) throw new Error(json?.message || 'Gagal memuat invoice');
-              const inv = json.data || {};
-              const label = getInvoiceStatusLabel(inv);
-              return [r.id, label] as const;
-            } catch {
-              return [r.id, 'Pending'] as const;
-            }
-          })
-        );
-        if (cancelled) return;
-        const map: Record<number, any> = {};
-        for (const [id, label] of entries) map[id] = label;
-        setStatusMap(map);
-      } catch {
-        if (!cancelled) setStatusMap({});
-      }
-    })();
-    return () => { cancelled = true; };
-  }, [rows]);
 
   const filtered = useMemo(() => {
     const q = searchTerm.toLowerCase().trim();
@@ -438,35 +417,53 @@ type ReceiptRow = {
     <div className="sales-scope p-6 min-h-screen">
       <PageBreadcrumb pageTitle="Kwitansi Penjualan" />
 
-      <div className="rounded-2xl border border-gray-200 bg-white p-6 min-h-[70vh] overflow-visible flex flex-col gap-4">
-        {/* Toolbar */}
-        <div className="mb-2 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <input
-            type="text"
-            placeholder="Cari pelanggan / nomor kwitansi..."
-            value={searchTerm}
-            onChange={(e) => { setSearchTerm(e.target.value); setPage(1); }}
-            className="h-11 w-full sm:w-64 rounded-lg border border-gray-300 bg-transparent px-4 py-2.5 text-sm text-gray-800 placeholder:text-gray-400 focus:ring-3 focus:outline-hidden"
-          />
-          <div className="flex items-center gap-3">
+      <div className="rounded-2xl border border-gray-200 bg-white shadow-sm dark:border-gray-800 dark:bg-gray-900">
+        <div className="flex flex-col gap-4 border-b border-gray-100 px-6 py-5 lg:flex-row lg:items-center lg:justify-between dark:border-gray-800">
+          <div>
+            <h2 className="text-xl font-semibold text-gray-800 dark:text-white">Daftar Kwitansi</h2>
+            <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
+              Kwitansi yang telah diterbitkan untuk invoice yang sudah dibayar (Lunas atau DP).
+            </p>
+          </div>
+          <div className="flex flex-wrap items-center gap-3">
             <div className="relative">
-              <button onClick={() => setShowDropdown(v=>!v)} className="border px-4 py-2 rounded-md flex items-center gap-2 hover:bg-gray-50">
+              <button
+                className="flex items-center gap-2 rounded-full border border-gray-200 px-4 py-2 text-sm font-medium text-gray-600 transition hover:border-gray-300 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-white/5"
+                onClick={() => setShowDropdown(!showDropdown)}
+              >
                 <Download className="h-4 w-4" />
                 Unduh & Bagikan
                 <ChevronDown className="h-4 w-4" />
               </button>
               {showDropdown && (
-                <div className="absolute right-0 mt-2 w-52 bg-white shadow-lg rounded-md border z-10">
-                  <ul className="py-2 text-sm text-gray-700">
-                    <li className="px-4 py-2 hover:bg-gray-100 cursor-pointer">Unduh Semua Dokumen</li>
-                    <li className="px-4 py-2 hover:bg-gray-100 cursor-pointer" onClick={() => {
-                      if (!filtered.length) { toast.error('Tidak ada data untuk diekspor'); return; }
-                      downloadCSV(filtered, 'kwitansi.csv'); setShowDropdown(false);
-                    }}>Ekspor data CSV</li>
-                    <li className="px-4 py-2 hover:bg-gray-100 cursor-pointer" onClick={async () => {
-                      if (!filtered.length) { toast.error('Tidak ada data untuk diekspor'); return; }
-                      await downloadXLSX(filtered, 'kwitansi.xlsx', 'Kwitansi'); setShowDropdown(false);
-                    }}>Ekspor data XLSX</li>
+                <div className="absolute right-0 mt-2 w-52 bg-white shadow-lg rounded-xl border border-gray-100 z-50 dark:bg-gray-900 dark:border-gray-800">
+                  <ul className="py-2 text-sm text-gray-700 dark:text-gray-300">
+                    <li
+                      className="px-4 py-2 hover:bg-gray-100 cursor-pointer dark:hover:bg-white/5"
+                      onClick={() => {
+                        if (!filtered.length) {
+                          toast.error("Tidak ada data untuk diekspor");
+                          return;
+                        }
+                        downloadCSV(filtered, "kwitansi.csv");
+                        setShowDropdown(false);
+                      }}
+                    >
+                      Ekspor data CSV
+                    </li>
+                    <li
+                      className="px-4 py-2 hover:bg-gray-100 cursor-pointer dark:hover:bg-white/5"
+                      onClick={async () => {
+                        if (!filtered.length) {
+                          toast.error("Tidak ada data untuk diekspor");
+                          return;
+                        }
+                        await downloadXLSX(filtered, "kwitansi.xlsx", "Kwitansi");
+                        setShowDropdown(false);
+                      }}
+                    >
+                      Ekspor data XLSX
+                    </li>
                   </ul>
                 </div>
               )}
@@ -474,56 +471,76 @@ type ReceiptRow = {
           </div>
         </div>
 
-        {/* Table or Empty State */}
-        <div className="overflow-x-auto overflow-y-visible rounded-lg border bg-white shadow-sm min-h-[50vh] flex-1">
-          {paged.length === 0 ? (
-            <EmptyState
-              title="Belum ada kwitansi penjualan"
-              description="Buat Kwitansi Penjualan atau kirim Invoice Penjualan untuk menyediakan beragam metode pembayaran kepada pelanggan Anda."
-            />
-          ) : (
-            <table className="w-full text-sm">
-              <thead className="bg-gray-50 text-gray-700">
-                <tr>
-                  <th className="px-4 py-3 text-left">Customer</th>
-                  <th className="px-4 py-3 text-left">No. Kwitansi</th>
-                  <th className="px-4 py-3 text-left">Tanggal</th>
-                  <th className="px-4 py-3 text-left">Status</th>
-                  <th className="px-4 py-3 text-right">Nilai Invoice</th>
-                  <th className="px-4 py-3 text-right">Tindakan</th>
-                </tr>
-              </thead>
-              <tbody>
-                {paged.map((r) => (
-                  <tr key={r.id} className="border-t hover:bg-gray-50 transition">
-                    <td className="px-4 py-3">{customerText(r)}</td>
-                    <td className="px-4 py-3">{r.receiptNumber}</td>
-                    <td className="px-4 py-3">{r.date}</td>
-                    <td className="px-4 py-3">
-                      <StatusBadge status={(r._ts && r.id === r._ts) ? "Draft" : (statusMap[r.id] || "Pending")} />
-                    </td>
-                    <td className="px-4 py-3 text-right">{fmt(r.total)}</td>
-                    <td className="px-4 py-3 text-right">
-                      <div className="inline-flex items-center justify-end gap-2">
-                        <button onClick={() => openPreview(r)} title="Lihat" className="p-2 rounded-full hover:bg-gray-100">
-                          <Eye className="h-4 w-4 text-gray-600" />
-                        </button>
-                        <button onClick={() => openSjModal(r)} title="Buat Surat Jalan" className="p-2 rounded-full hover:bg-gray-100">
-                          <Truck className="h-4 w-4 text-indigo-600" />
-                        </button>
-                        <button onClick={() => downloadKw(r)} title="Download PDF" className="p-2 rounded-full hover:bg-gray-100">
-                          <Download className="h-4 w-4 text-emerald-600" />
-                        </button>
-                        <button onClick={() => deleteDraft(r)} title="Hapus" className="p-2 rounded-full hover:bg-gray-100">
-                          <Trash2 className="h-4 w-4 text-red-600" />
-                        </button>
-                      </div>
-                    </td>
+        <div className="space-y-4 px-6 py-5">
+          <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+            <div className="flex flex-1 items-center gap-3">
+              <div className="relative flex-1">
+                <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
+                <input
+                  type="text"
+                  placeholder="Cari pelanggan / nomor kwitansi..."
+                  value={searchTerm}
+                  onChange={(e) => { setSearchTerm(e.target.value); setPage(1); }}
+                  className="h-11 w-full rounded-xl border border-gray-200 bg-gray-50 pl-9 pr-3 text-sm text-gray-700 outline-none transition focus:border-blue-300 focus:bg-white focus:ring-2 focus:ring-blue-100 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200 dark:placeholder:text-gray-500 dark:focus:border-blue-500"
+                />
+              </div>
+            </div>
+            <div className="flex items-center gap-2 rounded-full border border-dashed border-gray-200 px-3 py-2 text-xs text-gray-500 dark:border-gray-700 dark:text-gray-400">
+              <Receipt className="h-3.5 w-3.5" />
+              {filtered.length} kwitansi ditemukan
+            </div>
+          </div>
+
+          <div className="overflow-hidden rounded-2xl border border-gray-100 dark:border-gray-800">
+            {paged.length === 0 ? (
+              <EmptyState
+                title="Belum ada kwitansi penjualan"
+                description="Buat Kwitansi Penjualan atau kirim Invoice Penjualan untuk menyediakan beragam metode pembayaran kepada pelanggan Anda."
+              />
+            ) : (
+              <table className="w-full text-sm">
+                <thead className="bg-gray-50 text-gray-700 dark:bg-white/5 dark:text-white/80">
+                  <tr>
+                    <th className="px-4 py-3 text-left">Customer</th>
+                    <th className="px-4 py-3 text-left">No. Kwitansi</th>
+                    <th className="px-4 py-3 text-left">Tanggal</th>
+                    <th className="px-4 py-3 text-left">Status</th>
+                    <th className="px-4 py-3 text-right">Nilai Invoice</th>
+                    <th className="px-4 py-3 text-right">Tindakan</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          )}
+                </thead>
+                <tbody>
+                  {paged.map((r) => (
+                    <tr key={r.id} className="border-t hover:bg-gray-50 transition dark:border-gray-800 dark:hover:bg-white/5">
+                      <td className="px-4 py-3 text-gray-800 dark:text-gray-200">{customerText(r)}</td>
+                      <td className="px-4 py-3 text-gray-800 dark:text-gray-200 font-medium">{r.receiptNumber}</td>
+                      <td className="px-4 py-3 text-gray-600 dark:text-gray-400">{r.date}</td>
+                      <td className="px-4 py-3">
+                        <StatusBadge status={getInvoiceStatusLabel(r)} />
+                      </td>
+                      <td className="px-4 py-3 text-right font-medium text-gray-900 dark:text-white">{fmt(r.total)}</td>
+                      <td className="px-4 py-3 text-right">
+                        <div className="inline-flex items-center justify-end gap-2">
+                          <button onClick={() => openPreview(r)} title="Lihat" className="p-2 rounded-full hover:bg-gray-100 dark:hover:bg-white/5 transition">
+                            <Eye className="h-4 w-4 text-gray-600 dark:text-gray-300" />
+                          </button>
+                          <button onClick={() => openSjModal(r)} title="Buat Surat Jalan" className="p-2 rounded-full hover:bg-gray-100 dark:hover:bg-white/5 transition">
+                            <Truck className="h-4 w-4 text-indigo-600 dark:text-indigo-400" />
+                          </button>
+                          <button onClick={() => downloadKw(r)} title="Download PDF" className="p-2 rounded-full hover:bg-gray-100 dark:hover:bg-white/5 transition">
+                            <Download className="h-4 w-4 text-emerald-600 dark:text-emerald-400" />
+                          </button>
+                          <button onClick={() => deleteDraft(r)} title="Hapus" className="p-2 rounded-full hover:bg-gray-100 dark:hover:bg-white/5 transition">
+                            <Trash2 className="h-4 w-4 text-red-600 dark:text-red-400" />
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+          </div>
         </div>
 
         {/* Pagination */}

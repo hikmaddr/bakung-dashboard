@@ -1,9 +1,9 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { generateNextNumber } from "@/lib/documentNumber";
-import { getActiveBrandProfile } from "@/lib/brand";
+import { createApiHandler } from "@/lib/api-handler";
 
-export async function GET(req: NextRequest) {
-  try {
+export const GET = createApiHandler({
+  handler: async (req, _, { activeBrand }) => {
     const dateParam = req.nextUrl.searchParams.get("date");
     let dt: Date;
     if (dateParam && /^\d{4}-\d{2}-\d{2}$/.test(dateParam)) {
@@ -12,13 +12,12 @@ export async function GET(req: NextRequest) {
     } else {
       dt = dateParam ? new Date(dateParam) : new Date();
     }
-    const brandParam = req.nextUrl.searchParams.get("brandId");
-    const brandProfileId = brandParam ? Number(brandParam) : (await getActiveBrandProfile())?.id ?? undefined;
+    
+    const brandProfileId = activeBrand.id;
     const number = await generateNextNumber("deliveryNote", { brandProfileId, date: dt });
-    return NextResponse.json({ deliveryNumber: number, number });
-  } catch (e) {
-    console.error("GET /api/deliveries/next-number error:", e);
-    return NextResponse.json({ error: "Gagal menghitung nomor" }, { status: 500 });
+    
+    return NextResponse.json({ success: true, deliveryNumber: number, number });
   }
-}
+});
+
 

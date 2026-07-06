@@ -23,6 +23,7 @@ export async function GET() {
       data: {
         id: user.id,
         email: user.email,
+        username: user.username,
         name: user.name,
         firstName: user.firstName,
         lastName: user.lastName,
@@ -62,6 +63,7 @@ export async function PUT(req: Request) {
 
     // Update profile fields
     if (body.name != null) data.name = body.name;
+    if (body.username != null) data.username = body.username;
     if (body.firstName != null) data.firstName = body.firstName;
     if (body.lastName != null) data.lastName = body.lastName;
     if (body.phone != null) data.phone = body.phone;
@@ -89,6 +91,7 @@ export async function PUT(req: Request) {
       data: {
         id: updated.id,
         email: updated.email,
+        username: updated.username,
         name: updated.name,
         firstName: updated.firstName,
         lastName: updated.lastName,

@@ -5,10 +5,12 @@ import { Modal } from "../ui/modal";
 import Button from "../ui/button/Button";
 import Input from "../form/input/InputField";
 import Label from "../form/Label";
+import toast from "react-hot-toast";
 
 interface UserProfile {
   id: string;
   email: string;
+  username?: string;
   name: string;
   firstName?: string;
   lastName?: string;
@@ -65,11 +67,13 @@ export default function UserInfoCard() {
       const result = await response.json();
       if (result.success) {
         setProfile(result.data);
+        toast.success("Informasi pribadi berhasil diperbarui!");
         closeModal();
       } else {
-        console.error('Failed to update profile:', result.message);
+        toast.error(result.message || "Gagal memperbarui informasi.");
       }
     } catch (error) {
+      toast.error("Terjadi kesalahan saat menyimpan.");
       console.error('Failed to update profile:', error);
     }
   };
@@ -138,6 +142,15 @@ export default function UserInfoCard() {
               </p>
               <p className="text-sm font-medium text-gray-800 dark:text-white/90">
                 {profile?.bio || '-'}
+              </p>
+            </div>
+
+            <div>
+              <p className="mb-2 text-xs leading-normal text-gray-500 dark:text-gray-400">
+                Username
+              </p>
+              <p className="text-sm font-medium text-gray-800 dark:text-white/90">
+                {profile?.username || '-'}
               </p>
             </div>
           </div>
@@ -220,6 +233,15 @@ export default function UserInfoCard() {
                     />
                   </div>
 
+                  <div className="col-span-2 lg:col-span-1">
+                    <Label>Username</Label>
+                    <Input
+                      type="text"
+                      value={formData.username || ""}
+                      onChange={(e) => handleInputChange("username", e.target.value)}
+                    />
+                  </div>
+
                   <div className="col-span-2">
                     <Label>Bio</Label>
                     <Input
@@ -235,7 +257,7 @@ export default function UserInfoCard() {
               <Button size="sm" variant="outline" onClick={closeModal}>
                 Close
               </Button>
-              <Button size="sm" onClick={handleSave}>
+              <Button size="sm" type="button" onClick={handleSave}>
                 Save Changes
               </Button>
             </div>

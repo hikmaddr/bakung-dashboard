@@ -203,25 +203,67 @@ export default function SalesOrderDetailPage() {
   }, [brand]);
 
   const actorHeading = useMemo(() => {
-    if (!actor) return brand?.name || "Our Company";
-    const parts = [
-      actor?.name,
-      [actor?.firstName, actor?.lastName].filter(Boolean).join(" ").trim(),
-      actor?.company,
-      brand?.name,
-    ]
-      .filter(Boolean)
-      .map((value) => String(value).trim());
-    return parts.find((value) => value.length) || "Our Company";
+    // Parsing safety for JSON fields
+    const defaults = typeof brand?.templateDefaults === "string" 
+      ? JSON.parse(brand.templateDefaults) 
+      : brand?.templateDefaults;
+
+    // 1. Prioritaskan Signature Name dari Brand Settings
+    const sigName = defaults?.signatureName;
+    if (sigName) return sigName;
+
+    // 2. Fallback ke profile user (actor)
+    if (actor) {
+      const parts = [
+        actor?.name,
+        [actor?.firstName, actor?.lastName].filter(Boolean).join(" ").trim(),
+        actor?.company,
+        brand?.name,
+      ]
+        .filter(Boolean)
+        .map((value) => String(value).trim());
+      const found = parts.find((value) => value.length);
+      if (found) return found;
+    }
+
+    // 3. Fallback terakhir ke Brand Name
+    return brand?.name || "Our Company";
   }, [actor, brand]);
 
-  const actorContactLines = useMemo(
-    () =>
-      [actor?.email, actor?.phone].filter(
-        (value): value is string => Boolean(value)
-      ),
-    [actor?.email, actor?.phone]
-  );
+  const actorContactLines = useMemo(() => {
+    const lines: string[] = [];
+
+    // Parsing safety for JSON fields
+    const defaults = typeof brand?.templateDefaults === "string" 
+      ? JSON.parse(brand.templateDefaults) 
+      : brand?.templateDefaults;
+
+    // Prioritaskan info dari signature settings jika ada
+    const sigEmail = defaults?.signatureEmail;
+    if (sigEmail) lines.push(sigEmail);
+    else if (actor?.email) lines.push(actor.email);
+
+    return lines;
+  }, [actor, brand]);
+
+  const actorPhone = useMemo(() => {
+    const defaults = typeof brand?.templateDefaults === "string" 
+      ? JSON.parse(brand.templateDefaults) 
+      : brand?.templateDefaults;
+    return defaults?.signaturePhone || actor?.phone || null;
+  }, [actor, brand]);
+
+  const signatureUrl = useMemo(() => {
+    try {
+      const defaults = typeof brand?.templateDefaults === "string" 
+        ? JSON.parse(brand.templateDefaults) 
+        : brand?.templateDefaults || {};
+      
+      return brand?.signatureImageUrl || defaults.signatureImageUrl || defaults.signatureUrl || null;
+    } catch (e) {
+      return brand?.signatureImageUrl || null;
+    }
+  }, [brand]);
 
   const customerHeading = useMemo(() => {
     if (!order?.customer) return "Customer";
@@ -679,7 +721,7 @@ export default function SalesOrderDetailPage() {
               style={{ color: currentTheme.headerTextColor }}
             >
               <header className="flex flex-wrap items-start justify-between gap-6">
-                <div className="flex flex-1 items-start gap-3">
+                <div className="flex flex-1 items-center gap-3">
                   <div className="flex flex-col items-start">
                     {brand?.logoUrl ? (
                       // eslint-disable-next-line @next/next/no-img-element
@@ -699,21 +741,11 @@ export default function SalesOrderDetailPage() {
                         Logo
                       </div>
                     )}
-                    {brandContactLines.length > 0 && (
-                      <div
-                        className="mt-2 space-y-0.5 text-xs"
-                        style={{ color: currentTheme.mutedText }}
-                      >
-                        {brandContactLines.map((line) => (
-                          <div key={line}>{line}</div>
-                        ))}
-                      </div>
-                    )}
                   </div>
                   <div className="flex-1">
                     {brand?.showBrandName !== false && brand?.name && (
                       <h2
-                        className="text-2xl font-semibold leading-tight"
+                        className="whitespace-nowrap text-2xl font-semibold leading-tight"
                         style={{ color: currentTheme.primaryColor }}
                       >
                         {brand.name}
@@ -805,6 +837,11 @@ export default function SalesOrderDetailPage() {
                         {brand.address}
                       </div>
                     )}
+                    {actorPhone && (
+                      <div style={{ color: currentTheme.mutedText }}>
+                        {actorPhone}
+                      </div>
+                    )}
                   </div>
                 </div>
                 <div>
@@ -825,6 +862,11 @@ export default function SalesOrderDetailPage() {
                     >
                       {customerHeading}
                     </div>
+                    {order.customer?.email && (
+                      <div style={{ color: currentTheme.mutedText }}>
+                        {order.customer.email}
+                      </div>
+                    )}
                     {order.customer?.address && (
                       <div
                         className="whitespace-pre-line text-xs"
@@ -833,13 +875,11 @@ export default function SalesOrderDetailPage() {
                         {order.customer.address}
                       </div>
                     )}
-                    {[order.customer?.email, order.customer?.phone]
-                      .filter((value): value is string => Boolean(value))
-                      .map((value) => (
-                        <div key={value} style={{ color: currentTheme.mutedText }}>
-                          {value}
-                        </div>
-                      ))}
+                    {order.customer?.phone && (
+                      <div style={{ color: currentTheme.mutedText }}>
+                        {order.customer.phone}
+                      </div>
+                    )}
                   </div>
                 </div>
               </section>
@@ -1080,82 +1120,67 @@ export default function SalesOrderDetailPage() {
                   </div>
                 </div>
 
-                <div>
+                <div className="space-y-4">
+                  {/* Summary Lines moved ABOVE the box */}
+                  <div className="space-y-2 px-2 text-sm font-medium text-slate-500">
+                    <div className="flex justify-between border-b border-slate-100 pb-2">
+                      <span>Subtotal</span>
+                      <span className="font-semibold text-slate-700">{formatCurrency(subtotal)}</span>
+                    </div>
+                    {lineDiscount > 0 && (
+                      <div className="flex justify-between border-b border-slate-100 pb-2">
+                        <span>Line Discount</span>
+                        <span className="text-rose-500">- {formatCurrency(lineDiscount)}</span>
+                      </div>
+                    )}
+                    {extraDiscount > 0 && (
+                      <div className="flex justify-between border-b border-slate-100 pb-2">
+                        <span>Extra Discount</span>
+                        <span className="text-rose-500">- {formatCurrency(extraDiscount)}</span>
+                      </div>
+                    )}
+                    {taxAmount > 0 && (
+                      <div className="flex justify-between border-b border-slate-100 pb-2">
+                        <span>Tax</span>
+                        <span className="text-slate-700">{formatCurrency(taxAmount)}</span>
+                      </div>
+                    )}
+                  </div>
+
                   <div
-                    className="rounded-2xl p-6 text-right shadow-sm"
+                    className="rounded-2xl p-8 text-right shadow-sm"
                     style={{
-                      backgroundColor: currentTheme.totalBackground,
-                      color: currentTheme.totalTextColor,
+                      backgroundColor: currentTheme.primaryColor,
+                      color: "#FFFFFF",
                     }}
                   >
-                    <div className="text-xs font-semibold uppercase tracking-wide">
+                    <div className="text-xs font-semibold uppercase tracking-wide opacity-80">
                       Total Due
                     </div>
-                    <div className="mt-3 text-3xl font-bold">
+                    <div className="mt-3 text-4xl font-bold">
                       {formatCurrency(totalAmount)}
                     </div>
                     {thankYouAndTerms.message && (
-                      <div className="mt-4 text-xs">
+                      <div className="mt-4 text-xs opacity-90">
                         {thankYouAndTerms.message}
                       </div>
                     )}
                   </div>
-
-                  <div
-                    className="mt-4 space-y-2 rounded-xl border px-5 py-4 text-sm text-slate-600"
-                    style={{
-                      borderColor: `${currentTheme.tableBorderColor}55`,
-                    }}
-                  >
-                    <div className="flex justify-between">
-                      <span>Subtotal</span>
-                      <span>{formatCurrency(subtotal)}</span>
-                    </div>
-                    {lineDiscount > 0 && (
-                      <div className="flex justify-between">
-                        <span>Line Discount</span>
-                        <span>-{formatCurrency(lineDiscount)}</span>
-                      </div>
-                    )}
-                    {extraDiscount > 0 && (
-                      <div className="flex justify-between">
-                        <span>Additional Discount</span>
-                        <span>-{formatCurrency(extraDiscount)}</span>
-                      </div>
-                    )}
-                    {taxAmount > 0 && (
-                      <div className="flex justify-between">
-                        <span>Tax</span>
-                        <span>{formatCurrency(taxAmount)}</span>
-                      </div>
-                    )}
-                    <div className="flex justify-between border-t pt-3 font-semibold text-slate-900">
-                      <span>Total</span>
-                      <span>{formatCurrency(totalAmount)}</span>
-                    </div>
-                  </div>
                 </div>
               </section>
 
-              <section className="space-y-4">
-                <div
-                  className="text-xs font-semibold uppercase tracking-wide"
-                  style={{ color: currentTheme.headerAccentColor }}
-                >
-                  Signature
-                </div>
-                <div
-                  className="rounded-xl border px-6 py-8 text-center"
-                  style={{ borderColor: `${currentTheme.tableBorderColor}88` }}
-                >
-                  <div
-                    className="text-sm font-semibold"
-                    style={{ color: currentTheme.headerTextColor }}
-                  >
-                    {actorHeading || brand?.name || "Authorized"}
+              <section className="flex flex-col items-end pt-10">
+                <div className="text-center">
+                  <div className="text-sm font-bold mb-4 text-right">Hormat Kami,</div>
+                  <div className="flex justify-end mb-4 h-24">
+                    {signatureUrl ? (
+                      <img src={signatureUrl} alt="Signature" className="h-full w-auto object-contain" />
+                    ) : (
+                      <div className="w-48 border-b-2 border-slate-300 self-end"></div>
+                    )}
                   </div>
-                  <div className="mt-6 text-xs text-slate-400">
-                    (Tanda tangan dan stempel jika diperlukan)
+                  <div className="text-sm font-bold text-right" style={{ color: currentTheme.headerTextColor }}>
+                    {actorHeading || brand?.name || "Authorized Signature"}
                   </div>
                 </div>
               </section>

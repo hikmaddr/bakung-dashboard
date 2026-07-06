@@ -39,10 +39,10 @@
 - [x] **Cache Brand Modules Client-Side**: Created `useBrandStore` (Zustand) and refactored `FeatureGuard.tsx` to eliminate redundant API calls.
 - [x] **Add Loading Skeletons**: Added `src/app/(admin)/loading.tsx` for premium perceived performance.
 - [x] **Refactor Dashboard Monolith**: Extracted UI into modular components (MetricCards, PipelineSummary, etc.).
-- [ ] **Optimize Dependencies**: Remove duplicate libraries (e.g., choose between `date-fns` and `dayjs`, consolidate PDF libraries like `jspdf`/`pdf-lib`).
+- [x] **Optimize Dependencies**: Removed `dayjs` in favor of `date-fns` for consistency and smaller bundle size. Consolidated PDF data handling.
 
 ## Phase 3: Security Hardening
-- [ ] **Implement Input Validation**: Partially implemented. Installed `zod` and applied schemas to `products` and `customers` API routes.
+- [x] **Implement Input Validation**: Fully implemented for primary modules. Applied Zod schemas to `products`, `customers`, `quotations`, `sales-orders`, and `invoices` API routes.
 - [ ] **Implement Rate Limiting**: Add rate limits (e.g., via Vercel Edge middleware or Upstash) to authentication and public endpoints to prevent brute-force attacks.
 - [ ] **Add CSRF Protection**: Ensure mutation endpoints (POST/PUT/DELETE) have proper CSRF protection.
 - [ ] **Implement JWT Refresh Token Rotation**: Separate long-lived refresh tokens from short-lived access tokens to limit exposure if a token is leaked.
@@ -51,8 +51,8 @@
 - [x] **Refactor Dashboard Monolith**: Completed in Phase 2.
 - [ ] **Standardize Status Enums**: Update Prisma schema to use enums for statuses (e.g., Quotation, SalesOrder, Invoice) instead of free-text strings to prevent inconsistencies.
 - [ ] **Create Shared API Handler**: Build a wrapper for API routes to centralize authentication, error handling, and validation logic.
-- [ ] **Add Module-Level Error Boundaries**: Create `error.tsx` for specific route groups to prevent localized errors from crashing the entire application.
-- [ ] **Standardize Soft Delete**: Add `isDeleted` and `deletedAt` to models that are missing it (like `Expense`, `Payment`, `StockMutation`, and `Receipt`) for consistency.
+- [x] **Add Module-Level Error Boundaries**: Created premium `error.tsx` for the `(admin)` route group to handle runtime failures gracefully.
+- [x] **Standardize Soft Delete**: Added `isDeleted` and `deletedAt` to all remaining models (`Expense`, `Payment`, `Receipt`, `StockMutation`, etc.) and synced with database.
 
 ## Phase 5: Code Quality Cleanup
 - [ ] **Migrate `<img>` to `<Image />`**: Replace all raw `<img>` tags in `brand-settings/page.tsx`, `template-manager/page.tsx`, and `quotation/[id]/page.tsx` with Next.js `<Image />` for LCP optimization and bandwidth reduction.

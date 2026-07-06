@@ -9,6 +9,7 @@ import Image from "next/image";
 import Avatar from "@/components/ui/Avatar";
 import AvatarCropperModal from "./AvatarCropperModal";
 import { useGlobal } from "@/context/AppContext";
+import toast from "react-hot-toast";
 
 
 export default function UserMetaCard() {
@@ -99,8 +100,11 @@ export default function UserMetaCard() {
       const json = await res.json();
       if (json?.success && json?.url) {
         setFormData((prev) => ({ ...prev, avatar: json.url }));
+        toast.success("Foto berhasil diunggah!");
       } else {
-        setAvatarError(json?.error || "Gagal mengunggah avatar");
+        const msg = json?.error || "Gagal mengunggah avatar";
+        setAvatarError(msg);
+        toast.error(msg);
       }
     } catch (e: any) {
       setAvatarError(e?.message || "Gagal mengunggah avatar");
@@ -128,13 +132,15 @@ export default function UserMetaCard() {
       const json = await res.json();
       if (json.success) {
         setProfile(json.data);
+        toast.success("Profil berhasil diperbarui!");
         // Refresh global context to update header/user dropdown immediately
         try { await refresh(); } catch {}
         closeModal();
       } else {
-        console.error("Failed to update profile:", json.message);
+        toast.error(json.message || "Gagal memperbarui profil.");
       }
     } catch (e) {
+      toast.error("Terjadi kesalahan saat menyimpan.");
       console.error("Failed to update profile", e);
     }
   };

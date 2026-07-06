@@ -18,6 +18,11 @@ export type UserInfo = {
 
 type SessionState = {
   activeBrandId: number | null;
+  activeBrand: any | null;
+  brands: any[];
+  metrics: {
+    invoiceOpen: number;
+  };
   user: UserInfo | null;
   loading: boolean;
   setActiveBrandId: (id: number | null) => void;
@@ -26,75 +31,76 @@ type SessionState = {
   hydrate: () => Promise<void>;
 };
 
+const initialState = {
+  activeBrandId: null,
+  activeBrand: null,
+  brands: [],
+  metrics: {
+    invoiceOpen: 0,
+  },
+  user: null,
+  loading: true,
+};
+
 export const useSessionStore = create<SessionState>()(
   persist(
     (set, get) => ({
-      activeBrandId: null,
-      user: null,
-      loading: true,
+      ...initialState,
       setActiveBrandId: (id) => set({ activeBrandId: id }),
       setUser: (u) => set({ user: u }),
       setLoading: (v) => set({ loading: v }),
       hydrate: async () => {
-        // Hindari hydrasi paralel, namun izinkan panggilan pertama saat state masih default
         const s = get();
-        const isDefault = s.user == null && s.activeBrandId == null;
-        if (s.loading && !isDefault) return;
+        // Allow re-hydration even if loading, but not too frequently
         set({ loading: true });
         try {
-          // Load user profile
-          const profileRes = await api.get<{ success: boolean; data?: any }>("/api/profile");
-          if (profileRes?.success && profileRes.data) {
-            const d = profileRes.data;
-            const user: UserInfo = {
-              id: d.id,
-              email: d.email,
-              name: d.name ?? null,
-              firstName: d.firstName ?? null,
-              lastName: d.lastName ?? null,
-              phone: d.phone ?? null,
-              avatar: d.avatar ?? null,
-              isActive: typeof d.isActive === "boolean" ? d.isActive : undefined,
-              roles: Array.isArray(d.roles) ? d.roles : [],
-            };
-            set({ user });
+          const res = await api.get<{ 
+            success: boolean; 
+            data?: {
+              user: any;
+              activeBrand: any;
+              brands: any[];
+              metrics: any;
+            } 
+          }>("/api/init");
+          
+          if (res?.success && res.data) {
+            const { user, activeBrand, brands, metrics } = res.data;
+            set({ 
+              user: {
+                ...user,
+                name: user.name ?? null,
+                roles: Array.isArray(user.roles) ? user.roles : [],
+              },
+              activeBrand,
+              activeBrandId: activeBrand?.id ?? null,
+              brands: Array.isArray(brands) ? brands : [],
+              metrics: metrics ?? { invoiceOpen: 0 },
+              loading: false
+            });
           } else {
-            set({ user: null });
+            set({ user: null, loading: false });
           }
-
-          // Resolve active brand id via brand access check
-          const brandRes = await api.get<{
-            success: boolean;
-            allowed?: boolean;
-            brandProfileId?: number;
-            activeBrandId?: number;
-          }>("/api/auth/brand-access-check");
-          const resolved =
-            typeof brandRes?.activeBrandId === "number"
-              ? brandRes.activeBrandId
-              : brandRes?.brandProfileId;
-          if (brandRes?.success && brandRes.allowed && typeof resolved === "number") {
-            set({ activeBrandId: resolved });
+        } catch (e: any) {
+          // 401 is expected when not logged in — don't pollute the console
+          if (e?.status !== 401) {
+            console.error("[useSessionStore] Hydrate failed:", e);
           }
-        } catch (e) {
-          set({ user: null });
-        } finally {
-          set({ loading: false });
+          set({ user: null, loading: false });
         }
       },
     }),
     {
       name: "app-session",
       storage: createJSONStorage(() => sessionStorage),
-      // Persist hanya field data; fungsi tidak ikut terserialisasi
+      skipHydration: true,
       partialize: (state) => ({
         activeBrandId: state.activeBrandId,
+        activeBrand: state.activeBrand,
+        brands: state.brands,
         user: state.user,
+        metrics: state.metrics,
       }),
-      onRehydrateStorage: () => (_state, _error) => {
-        // Setelah rehydrate dari storage, jangan tampilkan loading spinner panjang
-        // AppContext tetap akan memanggil hydrate() untuk sinkronisasi server
-      },
     }
   )
 );

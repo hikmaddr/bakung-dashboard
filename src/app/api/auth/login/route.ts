@@ -6,13 +6,20 @@ import { sendNotificationToUser } from "@/lib/notification";
 
 export async function POST(req: NextRequest) {
   try {
-    const { email, password } = await req.json();
-    if (!email || !password) {
-      return NextResponse.json({ success: false, message: "Email dan password wajib." }, { status: 400 });
+    const { identifier, email, password } = await req.json();
+    const loginValue = identifier || email;
+
+    if (!loginValue || !password) {
+      return NextResponse.json({ success: false, message: "Email/Username dan password wajib." }, { status: 400 });
     }
 
-    const user = await prisma.user.findUnique({
-      where: { email },
+    const user = await prisma.user.findFirst({
+      where: {
+        OR: [
+          { email: loginValue },
+          { username: loginValue },
+        ],
+      },
       include: { roles: { include: { role: true } } },
     });
 

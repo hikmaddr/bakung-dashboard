@@ -13,8 +13,7 @@ export const formatDownloadFileName = (
   fallbackCustomer = "Customer"
 ) => {
   const numberPart = sanitizeSegment(numberValue) || sanitizeSegment(fallbackNumber) || "Dokumen";
-  const customerPart =
-    sanitizeSegment(customerValue) || sanitizeSegment(fallbackCustomer) || "Customer";
-  const normalizedNumber = numberPart.replace(/-+/g, "/").replace(/\s*\/\s*/g, "/");
-  return `${normalizedNumber} - ${customerPart}.pdf`;
+  
+  // Return the filename exactly matching the document number
+  return `${numberPart}.pdf`;
 };

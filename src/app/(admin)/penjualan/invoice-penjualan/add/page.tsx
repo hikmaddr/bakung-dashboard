@@ -356,52 +356,59 @@ export default function AddSalesInvoicePage() {
   const total = useMemo(() => Math.max(0, totalBeforeDP - (downPayment || 0)), [totalBeforeDP, downPayment]);
 
   // Prefill from Sales Order if available
-  useEffect(() => {
+  useLayoutEffect(() => {
     try {
       const raw = localStorage.getItem("newInvoiceFromSO");
       if (!raw) return;
       const data = JSON.parse(raw);
       if (data?.from === "sales-order") {
+        console.log("Prefilling Invoice from Sales Order:", data);
+        
         // set client (PIC) dan perusahaan, lock client picker
-        setClient(data.customer?.pic || "");
-        setClientCompany(data.customer?.company || "");
+        if (data.customer?.pic) setClient(data.customer.pic);
+        if (data.customer?.company) setClientCompany(data.customer.company);
         setClientReadOnly(true);
+        
         if (Number(data.customer?.id)) {
           setCustomerId(Number(data.customer.id));
         }
-          if (Array.isArray(data.items) && data.items.length) {
-            setProductLines(
-              data.items.map((it: any, idx: number) => ({
-                id: Date.now() + idx,
-                productId: it.productId || 0,
-                name: String(it.name || it.description || ""),
-                description: it.description || "",
-                qty: Number(it.qty) || 1,
-                price: Number(it.price) || 0,
-                discount: Number(it.discount) || 0,
-                discountType: (it.discountType as any) === "amount" || (it.discountType as any) === "percent" ? it.discountType : "percent",
-              tax: Number(it.tax) || 0,
-            }))
-          );
+
+        if (Array.isArray(data.items) && data.items.length) {
+          const mappedLines = data.items.map((it: any, idx: number) => ({
+            id: Date.now() + idx,
+            productId: it.productId || 0,
+            name: String(it.name || it.description || ""),
+            description: it.description || "",
+            qty: Number(it.qty) || 1,
+            unit: it.unit || defaultUnit,
+            price: Number(it.price) || 0,
+            discount: Number(it.discount) || 0,
+            discountType: (it.discountType as any) === "amount" || (it.discountType as any) === "percent" ? it.discountType : "percent",
+            tax: Number(it.tax) || 0,
+          }));
+          setProductLines(mappedLines);
         }
+
         // Simpan quotationId / quotationNumber untuk ditautkan setelah daftar quotations dimuat
         if (data.quotationId) {
-          setPendingQuotationId(Number(data.quotationId) || null);
-          const foundQuotation = quotations.find(q => q.id === Number(data.quotationId));
-          if (foundQuotation) setSelectedQuotation(foundQuotation);
+          setPendingQuotationId(Number(data.quotationId));
         } else if (data.quotationNumber) {
-          const qnum = String(data.quotationNumber);
-          setPendingQuotationNumber(qnum);
-          const foundByNumber = quotations.find(q => q.quotationNumber === qnum);
-          if (foundByNumber) setSelectedQuotation(foundByNumber);
+          setPendingQuotationNumber(String(data.quotationNumber));
         }
-        // Jangan isi otomatis Instruksi Khusus; biarkan kosong untuk invoice
+        
+        if (data.date) {
+          setInvoiceDate(new Date(data.date).toISOString().slice(0, 10));
+        }
+
+        // Bersihkan setelah berhasil diproses (gunakan timeout kecil agar state sempat diaplikasikan)
+        setTimeout(() => {
+          localStorage.removeItem("newInvoiceFromSO");
+        }, 500);
       }
-    } catch {}
-    finally {
-      localStorage.removeItem("newInvoiceFromSO");
+    } catch (err) {
+      console.error("Error prefilling invoice:", err);
     }
-  }, []);
+  }, [defaultUnit]);
 
   const handleSubmit = async () => {
     if (!customerId) {

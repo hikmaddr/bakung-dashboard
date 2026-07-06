@@ -14,6 +14,9 @@ import { PipelineSummary, type PipelineGroup } from "@/components/dashboard/Pipe
 import { RecentTransactions, type RecentSection } from "@/components/dashboard/RecentTransactions";
 import { TopCustomers } from "@/components/dashboard/TopCustomers";
 import { InventorySummary } from "@/components/dashboard/InventorySummary";
+import { ActionCenter, type ActionItem } from "@/components/dashboard/ActionCenter";
+import { ReceivablesCard, type ReceivablesData } from "@/components/dashboard/ReceivablesCard";
+import { unstable_cache } from "next/cache";
 
 const currencyFormatter = new Intl.NumberFormat("id-ID", {
   style: "currency",
@@ -38,6 +41,8 @@ type DashboardData = {
     totalProducts: number;
     lowStock: { id: number; name: string; sku: string; qty: number; unit: string }[];
   };
+  actions: ActionItem[];
+  receivables: ReceivablesData;
 };
 
 const STATUS_LABELS: Record<string, string> = {
@@ -98,36 +103,44 @@ function buildPipelineGroup(
 }
 
 
-async function getDashboardData(brandId?: number, rangeDays: number = 30): Promise<DashboardData> {
-  const now = new Date();
+const getCachedDashboardData = unstable_cache(
+  async (brandId?: number, rangeDays: number = 30): Promise<DashboardData> => {
+    const now = new Date();
+
   const currentMonthStart = startOfMonth(now);
   const previousMonthStart = startOfMonth(subMonths(now, 1));
   const trendStart = subMonths(currentMonthStart, 5);
   const currentStart = new Date(now.getTime() - rangeDays * 24 * 60 * 60 * 1000);
   const previousStart = new Date(currentStart.getTime() - rangeDays * 24 * 60 * 60 * 1000);
 
-  const brandFilter = brandId ? Prisma.sql`AND brandProfileId = ${brandId}` : Prisma.empty;
+  const brandFilter = brandId ? Prisma.sql`AND "brandProfileId" = ${brandId}` : Prisma.empty;
   const brandWhere = brandId ? { brandProfileId: brandId } : {};
 
   const [statsRaw] = await prisma.$queryRaw<any[]>(Prisma.sql`
     SELECT
-      (SELECT COUNT(*) FROM Customer WHERE isDeleted = 0 ${brandFilter}) as customerCount,
-      (SELECT COUNT(*) FROM Customer WHERE isDeleted = 0 AND createdAt >= ${currentStart} ${brandFilter}) as newCustomersCount,
-      (SELECT COUNT(*) FROM Product WHERE isDeleted = 0 ${brandFilter}) as productCount,
-      (SELECT SUM(totalAmount) FROM Quotation WHERE isDeleted = 0 AND date >= ${currentStart} ${brandFilter}) as quotationMonthlySum,
-      (SELECT COUNT(*) FROM Quotation WHERE isDeleted = 0 AND date >= ${currentStart} ${brandFilter}) as quotationMonthlyCount,
-      (SELECT SUM(totalAmount) FROM Quotation WHERE isDeleted = 0 AND date >= ${previousStart} AND date < ${currentStart} ${brandFilter}) as quotationPrevSum,
-      (SELECT SUM(totalAmount) FROM SalesOrder WHERE isDeleted = 0 AND date >= ${currentStart} ${brandFilter}) as salesOrderMonthlySum,
-      (SELECT COUNT(*) FROM SalesOrder WHERE isDeleted = 0 AND date >= ${currentStart} ${brandFilter}) as salesOrderMonthlyCount,
-      (SELECT SUM(totalAmount) FROM SalesOrder WHERE isDeleted = 0 AND date >= ${previousStart} AND date < ${currentStart} ${brandFilter}) as salesOrderPrevSum,
-      (SELECT SUM(total) FROM Invoice WHERE isDeleted = 0 AND issueDate >= ${currentStart} ${brandFilter}) as invoiceMonthlySum,
-      (SELECT COUNT(*) FROM Invoice WHERE isDeleted = 0 AND issueDate >= ${currentStart} ${brandFilter}) as invoiceMonthlyCount,
-      (SELECT SUM(total) FROM Invoice WHERE isDeleted = 0 AND issueDate >= ${previousStart} AND issueDate < ${currentStart} ${brandFilter}) as invoicePrevSum,
-      (SELECT SUM(total) FROM Invoice WHERE isDeleted = 0 AND status NOT IN ('Paid', 'paid', 'PAID', 'Lunas', 'lunas', 'Completed', 'completed', 'Cancelled', 'cancelled', 'Canceled', 'canceled') ${brandFilter}) as outstandingSum,
-      (SELECT COUNT(*) FROM SalesOrder WHERE isDeleted = 0 AND status IN ('Pending', 'pending') ${brandFilter}) as pendingApprovalCount,
-      (SELECT COUNT(*) FROM Invoice WHERE isDeleted = 0 AND dueDate < ${now} AND paymentStatus NOT IN ('PAID', 'Paid', 'paid') ${brandFilter}) as invoiceDueCount,
-      (SELECT COUNT(*) FROM SalesOrder WHERE isDeleted = 0 AND status NOT IN ('shipped', 'Shipped', 'sent', 'Sent', 'dikirim', 'Dikirim', 'cancelled', 'Cancelled', 'canceled', 'Canceled') ${brandFilter}) as orderUnshippedCount,
-      (SELECT COUNT(*) FROM PurchaseDirect WHERE isDeleted = 0 AND status NOT IN ('Received', 'Canceled') ${brandFilter}) as purchaseUnreceivedCount
+      (SELECT COUNT(*) FROM customer WHERE "isDeleted" = false ${brandFilter}) as customerCount,
+      (SELECT COUNT(*) FROM customer WHERE "isDeleted" = false AND "createdAt" >= ${currentStart} ${brandFilter}) as newCustomersCount,
+      (SELECT COUNT(*) FROM product WHERE "isDeleted" = false ${brandFilter}) as productCount,
+      (SELECT SUM("totalAmount") FROM quotation WHERE "isDeleted" = false AND "date" >= ${currentStart} ${brandFilter}) as quotationMonthlySum,
+      (SELECT COUNT(*) FROM quotation WHERE "isDeleted" = false AND "date" >= ${currentStart} ${brandFilter}) as quotationMonthlyCount,
+      (SELECT SUM("totalAmount") FROM quotation WHERE "isDeleted" = false AND "date" >= ${previousStart} AND "date" < ${currentStart} ${brandFilter}) as quotationPrevSum,
+      (SELECT SUM("totalAmount") FROM salesorder WHERE "isDeleted" = false AND "date" >= ${currentStart} ${brandFilter}) as salesOrderMonthlySum,
+      (SELECT COUNT(*) FROM salesorder WHERE "isDeleted" = false AND "date" >= ${currentStart} ${brandFilter}) as salesOrderMonthlyCount,
+      (SELECT SUM("totalAmount") FROM salesorder WHERE "isDeleted" = false AND "date" >= ${previousStart} AND "date" < ${currentStart} ${brandFilter}) as salesOrderPrevSum,
+      (SELECT SUM("total") FROM invoice WHERE "isDeleted" = false AND "issueDate" >= ${currentStart} ${brandFilter}) as invoiceMonthlySum,
+      (SELECT COUNT(*) FROM invoice WHERE "isDeleted" = false AND "issueDate" >= ${currentStart} ${brandFilter}) as invoiceMonthlyCount,
+      (SELECT SUM("total") FROM invoice WHERE "isDeleted" = false AND "issueDate" >= ${previousStart} AND "issueDate" < ${currentStart} ${brandFilter}) as invoicePrevSum,
+      (SELECT SUM("total") FROM invoice WHERE "isDeleted" = false AND status NOT IN ('Paid', 'Void', 'Canceled') ${brandFilter}) as outstandingSum,
+      (SELECT COUNT(*) FROM salesorder WHERE "isDeleted" = false AND status IN ('Draft', 'Confirmed') ${brandFilter}) as pendingApprovalCount,
+      (SELECT COUNT(*) FROM invoice WHERE "isDeleted" = false AND "dueDate" < ${now} AND "paymentStatus" != 'PAID' ${brandFilter}) as invoiceDueCount,
+      (SELECT COUNT(*) FROM salesorder WHERE "isDeleted" = false AND status NOT IN ('Shipping', 'Delivered', 'Completed', 'Canceled') ${brandFilter}) as orderUnshippedCount,
+      (SELECT COUNT(*) FROM purchasedirect WHERE "isDeleted" = false AND status NOT IN ('Received', 'Canceled') ${brandFilter}) as purchaseUnreceivedCount,
+      (SELECT SUM(
+          (COALESCE("supplierCost", 0) + COALESCE("titipanCostAdjustment", 0) + COALESCE("taxAdjustment", 0)) * "quantity"
+        ) FROM salesorderitem soi 
+        JOIN salesorder so ON soi."salesOrderId" = so.id 
+        WHERE so."isDeleted" = false AND so."date" >= ${currentStart} ${brandFilter}
+      ) as totalSalesCost
   `);
 
   const [
@@ -165,10 +178,12 @@ async function getDashboardData(brandId?: number, rangeDays: number = 30): Promi
       include: { customer: { select: { company: true } } },
       where: brandId ? { brandProfileId: brandId } : undefined,
     }),
-    prisma.salesOrder.findMany({
-      where: { date: { gte: trendStart }, ...brandWhere },
-      select: { date: true, totalAmount: true },
-    }),
+    prisma.$queryRaw<any[]>(Prisma.sql`
+      SELECT TO_CHAR("date", 'YYYY-MM') as month, SUM("totalAmount") as total
+      FROM salesorder
+      WHERE "isDeleted" = false AND "date" >= ${trendStart} ${brandFilter}
+      GROUP BY 1 ORDER BY 1 ASC
+    `),
     prisma.invoice.groupBy({
       by: ["status"],
       _count: { _all: true },
@@ -180,10 +195,12 @@ async function getDashboardData(brandId?: number, rangeDays: number = 30): Promi
       include: { customer: { select: { company: true } } },
       where: brandId ? { brandProfileId: brandId } : undefined,
     }),
-    prisma.invoice.findMany({
-      where: { issueDate: { gte: trendStart }, ...brandWhere },
-      select: { issueDate: true, total: true },
-    }),
+    prisma.$queryRaw<any[]>(Prisma.sql`
+      SELECT TO_CHAR("issueDate", 'YYYY-MM') as month, SUM("total") as total
+      FROM invoice
+      WHERE "isDeleted" = false AND "issueDate" >= ${trendStart} ${brandFilter}
+      GROUP BY 1 ORDER BY 1 ASC
+    `),
     prisma.invoice.groupBy({
       by: ["customerId"],
       _sum: { total: true },
@@ -204,9 +221,9 @@ async function getDashboardData(brandId?: number, rangeDays: number = 30): Promi
       where: {
         ...brandWhere,
         dueDate: { lt: now },
-        paymentStatus: { notIn: ["PAID", "Paid", "paid"] },
+        paymentStatus: { notIn: ["PAID"] },
       },
-      select: { id: true, total: true, paidAmount: true },
+      select: { id: true, total: true, paidAmount: true, dueDate: true },
     }),
   ]);
 
@@ -226,6 +243,40 @@ async function getDashboardData(brandId?: number, rangeDays: number = 30): Promi
   const invoiceDueRows = invoiceDueRowsRaw;
   const orderUnshippedCount = Number(stats.orderUnshippedCount || 0);
   const purchaseUnreceivedCount = Number(stats.purchaseUnreceivedCount || 0);
+  const totalSalesCost = Number(stats.totalSalesCost || 0);
+  const netMargin = Number(salesOrderMonthly._sum.totalAmount || 0) - totalSalesCost;
+  const marginPercent = salesOrderMonthly._sum.totalAmount ? (netMargin / Number(salesOrderMonthly._sum.totalAmount)) * 100 : 0;
+
+  // --- Piutang & aging (cash flow) ---
+  const nowTs = now.getTime();
+  const agingBuckets = [
+    { label: "1\u201330 hari", amount: 0, count: 0 },
+    { label: "31\u201360 hari", amount: 0, count: 0 },
+    { label: "> 60 hari", amount: 0, count: 0 },
+  ];
+  let overdueTotal = 0;
+  const dueRows = Array.isArray(invoiceDueRows) ? invoiceDueRows : [];
+  dueRows.forEach((row: any) => {
+    const remaining = Math.max(0, Number(row.total || 0) - Number(row.paidAmount || 0));
+    if (remaining <= 0) return;
+    overdueTotal += remaining;
+    const days = row.dueDate ? Math.floor((nowTs - new Date(row.dueDate).getTime()) / 86400000) : 0;
+    const bucket = days <= 30 ? agingBuckets[0] : days <= 60 ? agingBuckets[1] : agingBuckets[2];
+    bucket.amount += remaining;
+    bucket.count += 1;
+  });
+  const receivables: ReceivablesData = {
+    outstandingTotal: Number(outstandingInvoices._sum.total ?? 0),
+    overdueTotal,
+    overdueCount: dueRows.length,
+    aging: agingBuckets,
+  };
+  const actions: ActionItem[] = [
+    { key: "pendingApproval", count: pendingApprovalCount },
+    { key: "invoiceDue", count: dueRows.length, amount: overdueTotal },
+    { key: "orderUnshipped", count: orderUnshippedCount },
+    { key: "purchaseUnreceived", count: purchaseUnreceivedCount },
+  ];
 
   let topCustomers: DashboardData["topCustomers"] = [];
 
@@ -245,41 +296,6 @@ async function getDashboardData(brandId?: number, rangeDays: number = 30): Promi
   }
 
   const cards: DashboardCard[] = [
-    {
-      key: "pendingApproval",
-      title: "Pending Approval",
-      value: pendingApprovalCount,
-      format: "number",
-      lines: [
-        pendingApprovalCount
-          ? `${formatNumberValue(pendingApprovalCount)} order menunggu persetujuan`
-          : "Tidak ada order menunggu persetujuan",
-      ],
-    },
-    {
-      key: "customers",
-      title: "Total Customers",
-      value: customerCount,
-      format: "number",
-      lines: [
-        newCustomersCount
-          ? `${formatNumberValue(newCustomersCount)} pelanggan baru periode ini`
-          : "Belum ada pelanggan baru periode ini",
-      ],
-    },
-    {
-      key: "quotations",
-      title: "Quotation Volume",
-      value: Number(quotationMonthly._sum.totalAmount ?? 0),
-      format: "currency",
-      lines: [
-        `${formatNumberValue(quotationMonthly._count ?? 0)} dokumen periode ini`,
-      ],
-      trend: calcTrend(
-        Number(quotationMonthly._sum.totalAmount ?? 0),
-        Number(quotationPrev._sum.totalAmount ?? 0),
-      ),
-    },
     {
       key: "salesOrders",
       title: "Sales Order Revenue",
@@ -313,45 +329,32 @@ async function getDashboardData(brandId?: number, rangeDays: number = 30): Promi
         Number(invoicePrev._sum.total ?? 0),
       ),
     },
-    // Alerts following revenue cards
     {
-      key: "invoiceDue",
-      title: "Invoice Jatuh Tempo",
-      value: Array.isArray(invoiceDueRows) ? invoiceDueRows.length : 0,
-      format: "number",
+      key: "netMargin",
+      title: "Net Margin",
+      value: netMargin,
+      format: "currency",
       lines: [
-        (() => {
-          const totalOutstanding = (Array.isArray(invoiceDueRows) ? invoiceDueRows : []).reduce(
-            (acc, it) => acc + Math.max(0, Number(it.total || 0) - Number(it.paidAmount || 0)),
-            0,
-          );
-          return totalOutstanding > 0
-            ? `Tunggakan ${formatCurrency(totalOutstanding)}`
-            : "Tidak ada tunggakan";
-        })(),
+        `HPP + biaya: ${formatCurrency(totalSalesCost)}`,
+        `${marginPercent.toFixed(1)}% dari total revenue`,
       ],
+      trend: marginPercent > 20 ? 1 : marginPercent > 0 ? 0 : -1,
     },
     {
-      key: "orderUnshipped",
-      title: "Order Belum Dikirim",
-      value: orderUnshippedCount,
-      format: "number",
+      key: "quotations",
+      title: "Quotation Volume",
+      value: Number(quotationMonthly._sum.totalAmount ?? 0),
+      format: "currency",
       lines: [
-        orderUnshippedCount
-          ? `${formatNumberValue(orderUnshippedCount)} order perlu pengiriman`
-          : "Tidak ada order menunggu pengiriman",
+        `${formatNumberValue(quotationMonthly._count ?? 0)} dokumen periode ini`,
+        newCustomersCount
+          ? `${formatNumberValue(newCustomersCount)} pelanggan baru (total ${formatNumberValue(customerCount)})`
+          : `Total ${formatNumberValue(customerCount)} pelanggan`,
       ],
-    },
-    {
-      key: "purchaseUnreceived",
-      title: "Pembelian Belum Diterima",
-      value: purchaseUnreceivedCount,
-      format: "number",
-      lines: [
-        purchaseUnreceivedCount
-          ? `${formatNumberValue(purchaseUnreceivedCount)} pembelian menunggu penerimaan`
-          : "Tidak ada pembelian menunggu penerimaan",
-      ],
+      trend: calcTrend(
+        Number(quotationMonthly._sum.totalAmount ?? 0),
+        Number(quotationPrev._sum.totalAmount ?? 0),
+      ),
     },
   ];
 
@@ -370,14 +373,12 @@ async function getDashboardData(brandId?: number, rangeDays: number = 30): Promi
 
   const ordersByMonth = new Map<string, number>(monthKeys.map((key) => [key, 0]));
   salesOrderTrendRaw.forEach((item) => {
-    const key = format(startOfMonth(item.date), "yyyy-MM");
-    ordersByMonth.set(key, (ordersByMonth.get(key) ?? 0) + Number(item.totalAmount ?? 0));
+    ordersByMonth.set(item.month, Number(item.total ?? 0));
   });
 
   const invoicesByMonth = new Map<string, number>(monthKeys.map((key) => [key, 0]));
   invoiceTrendRaw.forEach((item) => {
-    const key = format(startOfMonth(item.issueDate), "yyyy-MM");
-    invoicesByMonth.set(key, (invoicesByMonth.get(key) ?? 0) + Number(item.total ?? 0));
+    invoicesByMonth.set(item.month, Number(item.total ?? 0));
   });
 
   const trend = {
@@ -439,18 +440,28 @@ async function getDashboardData(brandId?: number, rangeDays: number = 30): Promi
     },
   ];
 
-  return {
-    cards,
-    trend,
-    pipeline,
-    recent,
-    topCustomers,
-    inventory: {
-      totalProducts: productCount,
-      lowStock: lowStockProductsRaw,
-    },
-  };
+    return {
+      cards,
+      trend,
+      pipeline,
+      recent,
+      topCustomers,
+      inventory: {
+        totalProducts: productCount,
+        lowStock: lowStockProductsRaw,
+      },
+      actions,
+      receivables,
+    };
+  },
+  ["dashboard-data"],
+  { revalidate: 60, tags: ["dashboard"] }
+);
+
+async function getDashboardData(brandId?: number, rangeDays: number = 30) {
+  return getCachedDashboardData(brandId, rangeDays);
 }
+
 
 export const metadata: Metadata = {
   title: "Dashboard Overview | Bakung Dashboard",
@@ -552,6 +563,8 @@ export default async function DashboardPage({
         </div>
       </header>
 
+      <ActionCenter items={data.actions} />
+
       <MetricCards cards={data.cards} rangeDays={rangeDays} />
 
       <section className="grid grid-cols-1 gap-6 xl:grid-cols-3">
@@ -570,6 +583,7 @@ export default async function DashboardPage({
         </div>
 
         <div className="space-y-6">
+          <ReceivablesCard data={data.receivables} />
           <PipelineSummary pipeline={data.pipeline} />
           <TopCustomers topCustomers={data.topCustomers} />
           <InventorySummary inventory={data.inventory} />

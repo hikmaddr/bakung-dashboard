@@ -1,8 +1,8 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { getActiveBrandProfile, resolveAllowedBrandIds } from "@/lib/brand";
-import { getAuth } from "@/lib/auth";
+import { resolveAllowedBrandIds } from "@/lib/brand";
 import { logActivity } from "@/lib/activity";
+import { createApiHandler } from "@/lib/api-handler";
 
 type CreatePaymentBody = {
   type: "IN" | "OUT";
@@ -12,7 +12,7 @@ type CreatePaymentBody = {
   refType: "SALES_ORDER" | "INVOICE" | "PURCHASE" | "EXPENSE";
   refId: number;
   notes?: string;
-  brandProfileId?: number; // optional override
+  isDP?: boolean;
 };
 
 function monthRange(d: Date) {
@@ -39,11 +39,21 @@ async function recalcPaymentStatusForRef(brandId: number, refType: "SALES_ORDER"
     if (!so) return;
     const paidAgg = await prisma.payment.aggregate({
       _sum: { amount: true },
-      where: { brandProfileId: brandId, refType: "SALES_ORDER", refId, type: "IN" },
+      where: { brandProfileId: brandId, refType: "SALES_ORDER", refId, type: "IN", isDeleted: false },
     });
     const paid = Number(paidAgg._sum.amount) || 0;
     const total = Number(so.totalAmount) || 0;
-    const status = paid <= 0 ? "UNPAID" : paid + 0.0001 >= total ? "PAID" : "PARTIAL";
+    
+    let status: any = "UNPAID";
+    if (paid + 0.0001 >= total) {
+      status = "PAID";
+    } else if (paid > 0) {
+      const hasDP = await prisma.payment.findFirst({
+        where: { brandProfileId: brandId, refType: "SALES_ORDER", refId, type: "IN", isDP: true, isDeleted: false }
+      });
+      status = hasDP ? "DP" : "PARTIAL";
+    }
+
     await prisma.salesOrder.update({ where: { id: refId }, data: { paidAmount: paid, paymentStatus: status } });
     return;
   }
@@ -52,11 +62,21 @@ async function recalcPaymentStatusForRef(brandId: number, refType: "SALES_ORDER"
     if (!inv) return;
     const paidAgg = await prisma.payment.aggregate({
       _sum: { amount: true },
-      where: { brandProfileId: brandId, refType: "INVOICE", refId, type: "IN" },
+      where: { brandProfileId: brandId, refType: "INVOICE", refId, type: "IN", isDeleted: false },
     });
     const paid = Number(paidAgg._sum.amount) || 0;
     const total = Number(inv.total) || 0;
-    const status = paid <= 0 ? "UNPAID" : paid + 0.0001 >= total ? "PAID" : "PARTIAL";
+    
+    let status: any = "UNPAID";
+    if (paid + 0.0001 >= total) {
+      status = "PAID";
+    } else if (paid > 0) {
+      const hasDP = await prisma.payment.findFirst({
+        where: { brandProfileId: brandId, refType: "INVOICE", refId, type: "IN", isDP: true, isDeleted: false }
+      });
+      status = hasDP ? "DP" : "PARTIAL";
+    }
+
     await prisma.invoice.update({ where: { id: refId }, data: { paidAmount: paid, paymentStatus: status } });
     return;
   }
@@ -65,18 +85,28 @@ async function recalcPaymentStatusForRef(brandId: number, refType: "SALES_ORDER"
     if (!pd) return;
     const paidAgg = await prisma.payment.aggregate({
       _sum: { amount: true },
-      where: { brandProfileId: brandId, refType: "PURCHASE", refId, type: "OUT" },
+      where: { brandProfileId: brandId, refType: "PURCHASE", refId, type: "OUT", isDeleted: false },
     });
     const paid = Number(paidAgg._sum.amount) || 0;
     const total = Number(pd.total) || 0;
-    const status = paid <= 0 ? "UNPAID" : paid + 0.0001 >= total ? "PAID" : "PARTIAL";
+    
+    let status: any = "UNPAID";
+    if (paid + 0.0001 >= total) {
+      status = "PAID";
+    } else if (paid > 0) {
+      const hasDP = await prisma.payment.findFirst({
+        where: { brandProfileId: brandId, refType: "PURCHASE", refId, type: "OUT", isDP: true, isDeleted: false }
+      });
+      status = hasDP ? "DP" : "PARTIAL";
+    }
+
     await prisma.purchaseDirect.update({ where: { id: refId }, data: { paidAmount: paid, paymentStatus: status } });
     return;
   }
 }
 
-export async function GET(req: NextRequest) {
-  try {
+export const GET = createApiHandler({
+  handler: async (req, _, { activeBrand, user }) => {
     const search = req.nextUrl.searchParams;
     const page = Math.max(1, parseInt(search.get("page") || "1"));
     const pageSize = Math.min(100, Math.max(1, parseInt(search.get("pageSize") || "20")));
@@ -88,18 +118,28 @@ export async function GET(req: NextRequest) {
     const dateTo = search.get("dateTo");
     const brandIdStr = search.get("brandId");
 
+    const allowedBrandIds = await resolveAllowedBrandIds(
+      user.userId,
+      user.roles || [],
+      []
+    );
+
     let brandId: number | null = null;
     if (brandIdStr) {
       const parsed = Number(brandIdStr);
       if (Number.isFinite(parsed) && parsed > 0) brandId = parsed;
     }
-    if (!brandId) {
-      const brand = await getActiveBrandProfile();
-      if (brand?.id) brandId = brand.id;
+
+    const where: any = { isDeleted: false };
+    if (brandId != null) {
+      if (allowedBrandIds.length && !allowedBrandIds.includes(brandId)) {
+        return NextResponse.json({ success: false, message: "Forbidden: brand scope" }, { status: 403 });
+      }
+      where.brandProfileId = brandId;
+    } else {
+      where.brandProfileId = activeBrand.id;
     }
 
-    const where: any = {};
-    if (brandId) where.brandProfileId = brandId;
     if (type === "IN" || type === "OUT") where.type = type;
     if (["CASH","BCA","BRI","OTHER"].includes(method)) where.method = method;
     if (["SALES_ORDER","INVOICE","PURCHASE","EXPENSE"].includes(refType)) where.refType = refType;
@@ -123,91 +163,65 @@ export async function GET(req: NextRequest) {
     const byMethod = await prisma.payment.groupBy({ by: ["method", "type"], where, _sum: { amount: true } }).catch(() => [] as any[]);
 
     return NextResponse.json({ success: true, data: rows, total, page, pageSize, sumIn: inAgg._sum.amount || 0, sumOut: outAgg._sum.amount || 0, byMethod });
-  } catch (e: any) {
-    return NextResponse.json({ success: false, message: e?.message || "Gagal memuat payments" }, { status: 500 });
   }
-}
+});
 
-export async function POST(req: NextRequest) {
-  try {
-    const body = (await req.json()) as CreatePaymentBody;
-    const auth = await getAuth();
-    const brand = await getActiveBrandProfile();
-    if (!brand?.id) return NextResponse.json({ success: false, message: "Brand aktif tidak ditemukan" }, { status: 400 });
-    const brandId = brand.id;
-    const allowedBrandIds = await resolveAllowedBrandIds(auth?.userId ?? null, (auth?.roles as string[]) ?? [], []);
-    if (!allowedBrandIds.includes(brandId)) return NextResponse.json({ success: false, message: "Forbidden: brand scope" }, { status: 403 });
-
+export const POST = createApiHandler({
+  actionName: "PAYMENT_CREATE",
+  entityType: "payment",
+  handler: async (req, body: CreatePaymentBody, { activeBrand, user }) => {
+    const brandId = activeBrand.id;
     const paidAt = body.paidAt ? new Date(body.paidAt) : new Date();
     const amount = Number(body.amount) || 0;
     if (!(amount > 0)) return NextResponse.json({ success: false, message: "Jumlah pembayaran harus > 0" }, { status: 400 });
 
-    // Validasi referensi berdasarkan refType dan brand
+    // Validasi referensi
     if (body.refType === "SALES_ORDER") {
-      const so = await prisma.salesOrder.findFirst({ where: { id: body.refId, brandProfileId: brandId } });
-      if (!so) return NextResponse.json({ success: false, message: "Referensi Sales Order tidak ditemukan atau beda brand" }, { status: 400 });
+      const so = await prisma.salesOrder.findFirst({ where: { id: body.refId, brandProfileId: brandId, isDeleted: false } });
+      if (!so) return NextResponse.json({ success: false, message: "Referensi Sales Order tidak ditemukan" }, { status: 400 });
     } else if (body.refType === "INVOICE") {
-      const inv = await prisma.invoice.findFirst({ where: { id: body.refId, brandProfileId: brandId } });
-      if (!inv) return NextResponse.json({ success: false, message: "Referensi Invoice tidak ditemukan atau beda brand" }, { status: 400 });
+      const inv = await prisma.invoice.findFirst({ where: { id: body.refId, brandProfileId: brandId, isDeleted: false } });
+      if (!inv) return NextResponse.json({ success: false, message: "Referensi Invoice tidak ditemukan" }, { status: 400 });
     } else if (body.refType === "PURCHASE") {
-      const pd = await prisma.purchaseDirect.findFirst({ where: { id: body.refId, brandProfileId: brandId } });
-      if (!pd) return NextResponse.json({ success: false, message: "Referensi Purchase tidak ditemukan atau beda brand" }, { status: 400 });
+      const pd = await prisma.purchaseDirect.findFirst({ where: { id: body.refId, brandProfileId: brandId, isDeleted: false } });
+      if (!pd) return NextResponse.json({ success: false, message: "Referensi Purchase tidak ditemukan" }, { status: 400 });
     } else if (body.refType === "EXPENSE") {
-      const ex = await prisma.expense.findFirst({ where: { id: body.refId, brandProfileId: brandId } });
-      if (!ex) return NextResponse.json({ success: false, message: "Referensi Expense tidak ditemukan atau beda brand" }, { status: 400 });
+      const ex = await prisma.expense.findFirst({ where: { id: body.refId, brandProfileId: brandId, isDeleted: false } });
+      if (!ex) return NextResponse.json({ success: false, message: "Referensi Expense tidak ditemukan" }, { status: 400 });
     }
 
-    // Validasi overpayment (hindari pembayaran melebihi sisa tagihan)
+    // Overpayment validation
     const EPS = 0.0001;
     if (body.type === "IN" && body.refType === "INVOICE") {
-      // Gunakan snapshot invoice sebelum transaksi (di bawah) untuk konsistensi
       const inv = await prisma.invoice.findFirst({ where: { id: body.refId, brandProfileId: brandId }, select: { paidAmount: true, total: true, invoiceNumber: true } });
-      if (!inv) return NextResponse.json({ success: false, message: "Invoice tidak ditemukan" }, { status: 400 });
-      const paid = Number(inv.paidAmount || 0);
-      const total = Number(inv.total || 0);
-      const remaining = total - paid;
-      if (amount > remaining + EPS) {
-        return NextResponse.json({ success: false, message: `Pembayaran melebihi sisa tagihan invoice ${inv.invoiceNumber || ""}. Sisa: ${Math.max(0, remaining).toFixed(2)}` }, { status: 400 });
+      if (inv && amount > (Number(inv.total) - Number(inv.paidAmount)) + EPS) {
+        return NextResponse.json({ success: false, message: `Pembayaran melebihi sisa tagihan invoice ${inv.invoiceNumber}. Sisa: ${Math.max(0, inv.total - inv.paidAmount).toFixed(2)}` }, { status: 400 });
       }
     }
     if (body.type === "IN" && body.refType === "SALES_ORDER") {
       const so = await prisma.salesOrder.findFirst({ where: { id: body.refId, brandProfileId: brandId }, select: { paidAmount: true, totalAmount: true, orderNumber: true } });
-      if (!so) return NextResponse.json({ success: false, message: "Sales Order tidak ditemukan" }, { status: 400 });
-      const paid = Number(so.paidAmount || 0);
-      const total = Number(so.totalAmount || 0);
-      const remaining = total - paid;
-      if (amount > remaining + EPS) {
-        return NextResponse.json({ success: false, message: `Pembayaran melebihi sisa tagihan SO ${so.orderNumber || ""}. Sisa: ${Math.max(0, remaining).toFixed(2)}` }, { status: 400 });
+      if (so && amount > (Number(so.totalAmount) - Number(so.paidAmount)) + EPS) {
+        return NextResponse.json({ success: false, message: `Pembayaran melebihi sisa tagihan SO ${so.orderNumber}. Sisa: ${Math.max(0, so.totalAmount - so.paidAmount).toFixed(2)}` }, { status: 400 });
       }
     }
     if (body.type === "OUT" && body.refType === "PURCHASE") {
       const pd = await prisma.purchaseDirect.findFirst({ where: { id: body.refId, brandProfileId: brandId }, select: { paidAmount: true, total: true, purchaseNumber: true } });
-      if (!pd) return NextResponse.json({ success: false, message: "Purchase tidak ditemukan" }, { status: 400 });
-      const paid = Number(pd.paidAmount || 0);
-      const total = Number(pd.total || 0);
-      const remaining = total - paid;
-      if (amount > remaining + EPS) {
-        return NextResponse.json({ success: false, message: `Pembayaran melebihi sisa tagihan pembelian ${pd.purchaseNumber || ""}. Sisa: ${Math.max(0, remaining).toFixed(2)}` }, { status: 400 });
+      if (pd && amount > (Number(pd.total) - Number(pd.paidAmount)) + EPS) {
+        return NextResponse.json({ success: false, message: `Pembayaran melebihi sisa tagihan pembelian ${pd.purchaseNumber}. Sisa: ${Math.max(0, pd.total - pd.paidAmount).toFixed(2)}` }, { status: 400 });
       }
     }
 
-    // Snapshot sebelum perubahan untuk mendeteksi transisi status (khusus INVOICE)
+    // Snapshot before status transition logs
     let prevInvoiceStatus: string | null = null;
-    let prevInvoicePaidAmount: number | null = null;
-    let prevInvoiceTotal: number | null = null;
     if (body.refType === "INVOICE") {
-      try {
-        const prev = await prisma.invoice.findUnique({ where: { id: body.refId }, select: { paymentStatus: true, paidAmount: true, total: true } });
-        prevInvoiceStatus = (prev?.paymentStatus as any) ?? null;
-        prevInvoicePaidAmount = Number(prev?.paidAmount ?? 0);
-        prevInvoiceTotal = Number(prev?.total ?? 0);
-      } catch {}
+      const prev = await prisma.invoice.findUnique({ where: { id: body.refId }, select: { paymentStatus: true } });
+      prevInvoiceStatus = prev?.paymentStatus ?? null;
     }
 
     const created = await prisma.$transaction(async (db) => {
       const payment = await db.payment.create({
         data: {
-          brandProfileId: brandId!,
+          brandProfileId: brandId,
           type: body.type as any,
           method: (body.method || "CASH") as any,
           amount,
@@ -215,99 +229,49 @@ export async function POST(req: NextRequest) {
           refType: body.refType as any,
           refId: body.refId,
           notes: body.notes || null,
-          createdById: auth?.userId || null,
+          isDP: body.isDP || false,
+          createdById: user.userId,
         },
       });
 
-      const number = await generateReceiptNumber(brandId!);
-      const receipt = await db.receipt.create({ data: { brandProfileId: brandId!, paymentId: payment.id, receiptNumber: number } });
+      const number = await generateReceiptNumber(brandId);
+      const receipt = await db.receipt.create({ data: { brandProfileId: brandId, paymentId: payment.id, receiptNumber: number } });
 
-      // Link to Expense if refType EXPENSE
       if (body.refType === "EXPENSE") {
-        try { await db.expense.update({ where: { id: body.refId }, data: { paymentId: payment.id } }); } catch {}
+        await db.expense.update({ where: { id: body.refId }, data: { paymentId: payment.id } });
       }
 
-      // Recalc payment status for related refs (SO/INVOICE/PURCHASE)
       if (body.refType !== "EXPENSE") {
-        await recalcPaymentStatusForRef(brandId!, body.refType, body.refId);
+        await recalcPaymentStatusForRef(brandId, body.refType, body.refId);
       }
 
       return { payment, receipt };
     });
-    // Log important transaction
-    try {
-      await logActivity(req, {
-        userId: auth?.userId || null,
-        action: "PAYMENT_CREATE",
-        entity: "payment",
-        entityId: created.payment.id,
-        metadata: {
-          brandProfileId: brandId,
-          type: body.type,
-          method: body.method,
-          amount,
-          paidAt,
-          refType: body.refType,
-          refId: body.refId,
-          receiptNumber: created.receipt.receiptNumber,
-        },
-      });
-    } catch {}
 
-    // Jika pembayaran terkait INVOICE, catat event saat transisi ke PAID/PARTIAL
+    // Post-transaction logs for status transition
     if (body.refType === "INVOICE") {
-      try {
-        const nowInv = await prisma.invoice.findUnique({ where: { id: body.refId }, select: { paymentStatus: true, paidAmount: true, total: true, invoiceNumber: true } });
-        const nowStatus = String(nowInv?.paymentStatus || "").toUpperCase();
-        const wasPaid = String(prevInvoiceStatus || "").toUpperCase() === "PAID";
-        const becamePaid = nowStatus === "PAID" && !wasPaid;
-        if (becamePaid) {
-          await logActivity(req, {
-            userId: auth?.userId || null,
-            action: "INVOICE_PAID",
-            entity: "invoice",
-            entityId: body.refId,
-            metadata: {
-              brandProfileId: brandId,
-              invoiceNumber: nowInv?.invoiceNumber || null,
-              previousStatus: prevInvoiceStatus || null,
-              previousPaidAmount: prevInvoicePaidAmount ?? null,
-              amountAdded: amount,
-              paidAmount: Number(nowInv?.paidAmount || 0),
-              total: Number(nowInv?.total || 0),
-              method: body.method,
-              receiptNumber: created.receipt.receiptNumber,
-              paidAt,
-            },
-          });
-        }
-        const wasPartial = String(prevInvoiceStatus || "").toUpperCase() === "PARTIAL";
-        const becamePartial = nowStatus === "PARTIAL" && !wasPartial;
-        if (becamePartial) {
-          await logActivity(req, {
-            userId: auth?.userId || null,
-            action: "INVOICE_PARTIAL",
-            entity: "invoice",
-            entityId: body.refId,
-            metadata: {
-              brandProfileId: brandId,
-              invoiceNumber: nowInv?.invoiceNumber || null,
-              previousStatus: prevInvoiceStatus || null,
-              previousPaidAmount: prevInvoicePaidAmount ?? null,
-              amountAdded: amount,
-              paidAmount: Number(nowInv?.paidAmount || 0),
-              total: Number(nowInv?.total || 0),
-              method: body.method,
-              receiptNumber: created.receipt.receiptNumber,
-              paidAt,
-            },
-          });
-        }
-      } catch {}
+      const nowInv = await prisma.invoice.findUnique({ where: { id: body.refId }, select: { paymentStatus: true, invoiceNumber: true, paidAmount: true, total: true } });
+      const nowStatus = nowInv?.paymentStatus;
+      if (nowStatus === "PAID" && prevInvoiceStatus !== "PAID") {
+        await logActivity(req, {
+          userId: user.userId,
+          action: "INVOICE_PAID",
+          entity: "invoice",
+          entityId: body.refId,
+          metadata: { brandProfileId: brandId, invoiceNumber: nowInv?.invoiceNumber, amount, method: body.method, receiptNumber: created.receipt.receiptNumber }
+        });
+      } else if (nowStatus === "PARTIAL" && prevInvoiceStatus !== "PARTIAL") {
+        await logActivity(req, {
+          userId: user.userId,
+          action: "INVOICE_PARTIAL",
+          entity: "invoice",
+          entityId: body.refId,
+          metadata: { brandProfileId: brandId, invoiceNumber: nowInv?.invoiceNumber, amount, method: body.method, receiptNumber: created.receipt.receiptNumber }
+        });
+      }
     }
 
     return NextResponse.json({ success: true, data: created });
-  } catch (e: any) {
-    return NextResponse.json({ success: false, message: e?.message || "Gagal membuat pembayaran" }, { status: 500 });
   }
-}
+});
+

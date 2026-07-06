@@ -5,7 +5,7 @@ import { sendNotificationToRole, sendNotificationToUser } from "@/lib/notificati
 
 export async function POST(req: NextRequest) {
   try {
-    const { name, email, password } = await req.json();
+    const { name, email, username, password } = await req.json();
     if (!email || !password) {
       return NextResponse.json(
         { success: false, message: "Email dan password wajib." },
@@ -13,10 +13,18 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const exists = await prisma.user.findUnique({ where: { email } });
+    const exists = await prisma.user.findFirst({
+      where: {
+        OR: [
+          { email },
+          { username: username || undefined },
+        ],
+      },
+    });
     if (exists) {
+      const isEmail = exists.email === email;
       return NextResponse.json(
-        { success: false, message: "Email sudah terdaftar." },
+        { success: false, message: isEmail ? "Email sudah terdaftar." : "Username sudah digunakan." },
         { status: 409 }
       );
     }
@@ -29,6 +37,7 @@ export async function POST(req: NextRequest) {
     const created = await prisma.user.create({
       data: {
         email,
+        username: username || null,
         name: name ?? null,
         passwordHash,
         isActive: isFirstUser ? true : false,

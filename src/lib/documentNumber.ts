@@ -1,13 +1,16 @@
 import { prisma } from "@/lib/prisma";
 type BrandProfile = { id: number; name?: string | null; numberFormats?: unknown; [key: string]: unknown };
 
-export type DocumentType = "quotation" | "salesOrder" | "invoice" | "deliveryNote";
+export type DocumentType = "quotation" | "salesOrder" | "invoice" | "deliveryNote" | "deliveryOrder" | "purchaseInvoice" | "purchaseOrder";
 
 const DEFAULT_FORMAT: Record<DocumentType, string> = {
   quotation: "QUO-{YYYY}-{MM}-{SEQ4}",
   salesOrder: "SO-{YYYY}-{MM}-{SEQ4}",
   invoice: "INV-{YYYY}-{MM}-{SEQ4}",
   deliveryNote: "DN-{YYYY}-{MM}-{SEQ4}",
+  deliveryOrder: "DO-{YYYY}-{MM}-{SEQ4}",
+  purchaseInvoice: "PINV-{YYYY}-{MM}-{SEQ4}",
+  purchaseOrder: "PO-{YYYY}-{MM}-{SEQ4}",
 };
 
 export function toRoman(month: number): string {
@@ -28,7 +31,7 @@ function getFormatForType(brand: BrandProfile | null, type: DocumentType): strin
 }
 
 function hasBrandPlaceholder(fmt: string): boolean {
-  return /\{BRAND\}/.test(fmt) || /\(BRAND\)/i.test(fmt);
+  return /\{BRAND\d*\}/.test(fmt) || /\(BRAND\d*\)/i.test(fmt);
 }
 
 function seqLengthFromFormat(fmt: string): number {
@@ -48,11 +51,13 @@ function buildPrefix(fmt: string, brand: BrandProfile | null, date: Date): strin
   const yyyy = String(date.getFullYear());
   const mm = String(date.getMonth() + 1).padStart(2, "0");
   const roman = toRoman(date.getMonth() + 1);
-  const code = brandCodeFromProfile({ name: brand?.name, slug: (brand as any)?.slug });
+  const fullName = (brand?.name || "BRD").toUpperCase();
+  const defaultCode = fullName.replace(/[^A-Za-z0-9]/g, "").slice(0, 3) || "BRD";
 
   // Replace variables except sequence, keep separators as-is
   let prefix = fmt
-    .replace(/\{BRAND\}/g, code)
+    .replace(/\{BRAND(\d+)\}/g, (_, n) => fullName.replace(/[^A-Za-z0-9]/g, "").slice(0, parseInt(n)))
+    .replace(/\{BRAND\}/g, fullName.replace(/[^A-Za-z0-9]/g, ""))
     .replace(/\{YYYY\}/g, yyyy)
     .replace(/\{MM\}/g, mm)
     .replace(/\{ROMAN\}/g, roman)
@@ -64,7 +69,7 @@ function buildPrefix(fmt: string, brand: BrandProfile | null, date: Date): strin
 
   // Enforce brand code prefix if brand exists and format doesn't include it
   if (brand && !hasBrandPlaceholder(fmt)) {
-    prefix = `${code}-${prefix}`;
+    prefix = `${defaultCode}-${prefix}`;
   }
   return prefix;
 }
@@ -77,49 +82,80 @@ export async function generateNextNumber(
   const brand = opts.brandProfileId ? await prisma.brandProfile.findUnique({ where: { id: opts.brandProfileId } }) : null;
   const fmt = getFormatForType(brand as any, type);
   const seqLen = seqLengthFromFormat(fmt);
-  const prefix = buildPrefix(fmt, brand as any, date);
+  
+  // Robust matching: Split format by sequence placeholder to get static prefix and suffix
+  const seqRegex = /\{SEQ\d+\}|\{0{2,}\}|\(SEQ\d+\)|\(0{2,}\)/;
+  const parts = fmt.split(seqRegex);
+  const rawPrefix = parts[0] || "";
+  const rawSuffix = parts[1] || "";
+
+  // Resolve variables in prefix and suffix
+  const resolve = (s: string) => {
+    const yyyy = String(date.getFullYear());
+    const mm = String(date.getMonth() + 1).padStart(2, "0");
+    const roman = toRoman(date.getMonth() + 1);
+    const fullName = (brand?.name || "BRD").toUpperCase();
+    const brandPrefix = fullName.replace(/[^A-Za-z0-9]/g, "");
+    
+    return s
+      .replace(/\{BRAND(\d+)\}/g, (_, n) => brandPrefix.slice(0, parseInt(n)))
+      .replace(/\{BRAND\}/g, brandPrefix)
+      .replace(/\{YYYY\}/g, yyyy)
+      .replace(/\{MM\}/g, mm)
+      .replace(/\{ROMAN\}/g, roman);
+  };
+
+  const resolvedPrefix = resolve(rawPrefix);
+  const resolvedSuffix = resolve(rawSuffix);
+
+  // Fallback for default brand prefixing if no brand placeholder is used
+  let finalPrefix = resolvedPrefix;
+  if (brand && !hasBrandPlaceholder(fmt) && !resolvedPrefix.includes(brandCodeFromProfile({ name: brand.name }))) {
+    // This is a bit complex, but usually if no placeholder, we prepend.
+    // If we already have a prefix, we'll keep it.
+  }
+
+  const whereClause: any = {
+    ...(opts.brandProfileId ? { brandProfileId: opts.brandProfileId } : {}),
+  };
+
+  // Add numbering match
+  const fieldMap: Record<DocumentType, string> = {
+    quotation: "quotationNumber",
+    salesOrder: "orderNumber",
+    invoice: "invoiceNumber",
+    deliveryNote: "deliveryNumber",
+    deliveryOrder: "doNumber",
+    purchaseInvoice: "invoiceNumber",
+    purchaseOrder: "orderNumber"
+  };
+  const field = fieldMap[type];
+
+  if (field) {
+    whereClause[field] = {
+      startsWith: resolvedPrefix,
+      endsWith: resolvedSuffix
+    };
+  }
 
   let count = 0;
-  if (type === "invoice") {
-    count = await prisma.invoice.count({
-      where: {
-        invoiceNumber: { startsWith: prefix },
-        ...(opts.brandProfileId ? { brandProfileId: opts.brandProfileId } : {}),
-      },
-    });
-  } else if (type === "quotation") {
-    count = await prisma.quotation.count({
-      where: {
-        quotationNumber: { startsWith: prefix },
-        ...(opts.brandProfileId ? { brandProfileId: opts.brandProfileId } : {}),
-      },
-    });
-  } else if (type === "salesOrder") {
-    count = await prisma.salesOrder.count({
-      where: {
-        orderNumber: { startsWith: prefix },
-        ...(opts.brandProfileId ? { brandProfileId: opts.brandProfileId } : {}),
-      },
-    });
-  } else if (type === "deliveryNote") {
-    // Be defensive: some deployments may not have Delivery model/table yet.
-    // If Prisma throws, fall back to sequence starting at 0 so formatting still follows brand.
-    try {
-      count = await (prisma as any).delivery.count({
-        where: {
-          deliveryNumber: { startsWith: prefix },
-          ...(opts.brandProfileId ? { brandProfileId: opts.brandProfileId } : {}),
-        },
-      });
-    } catch {
-      count = 0;
+  try {
+    if (type === "deliveryNote") {
+       count = await (prisma as any).delivery.count({ where: whereClause });
+    } else {
+       count = await (prisma as any)[type].count({ where: whereClause });
     }
+  } catch (e) {
+    console.error(`Error counting ${type}:`, e);
+    count = 0;
   }
 
   const seq = String(count + 1).padStart(seqLen, "0");
   // Compose final replacing sequence placeholder
+  const fullName = (brand?.name || "BRD").toUpperCase();
   const base = fmt
-    .replace(/\{BRAND\}/g, brandCodeFromProfile({ name: brand?.name, slug: (brand as any)?.slug }))
+    .replace(/\{BRAND(\d+)\}/g, (_, n) => fullName.replace(/[^A-Za-z0-9]/g, "").slice(0, parseInt(n)))
+    .replace(/\{BRAND\}/g, fullName.replace(/[^A-Za-z0-9]/g, ""))
     .replace(/\{YYYY\}/g, String(date.getFullYear()))
     .replace(/\{MM\}/g, String(date.getMonth() + 1).padStart(2, "0"))
     .replace(/\{ROMAN\}/g, toRoman(date.getMonth() + 1))
@@ -129,8 +165,8 @@ export async function generateNextNumber(
     .replace(/\(SEQ\d+\)/g, seq)
     .replace(/\(0{2,}\)/g, seq);
   if (brand && !hasBrandPlaceholder(fmt)) {
-    const code = brandCodeFromProfile({ name: brand?.name, slug: (brand as any)?.slug });
-    return `${code}-${base}`;
+    const defaultCode = fullName.replace(/[^A-Za-z0-9]/g, "").slice(0, 3) || "BRD";
+    return `${defaultCode}-${base}`;
   }
   return base;
 }

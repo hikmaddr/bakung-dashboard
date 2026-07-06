@@ -415,6 +415,7 @@ const drawItemsTable = async (
 const drawTotalsAndNotes = (
   page: PDFPage,
   theme: InvoiceTemplateTheme,
+  summaryLines: Array<{ label: string; amount: number }>,
   total: number,
   notes: string | null | undefined,
   thankYouMessage: string,
@@ -432,88 +433,141 @@ const drawTotalsAndNotes = (
   const gap = Math.max(18, Math.floor(24 * s));
   const leftWidth = contentWidth - rightWidth - gap;
   const rightX = margin + leftWidth + gap;
-  const startYLocal = startY;
-
-  // total card
-  const totalCardHeight = Math.max(64, Math.floor(90 * s));
-  page.drawRectangle({ x: rightX, y: startYLocal - totalCardHeight, width: rightWidth, height: totalCardHeight, color: toRgb(theme.totalBackground) });
-  drawRoundedRect(page, rightX, startYLocal - totalCardHeight, rightWidth, totalCardHeight, 10, { color: toRgb(theme.totalBackground), borderColor: toRgb(theme.tableBorderColor), borderWidth: 1, opacity: 1 });
 
   const paddingX = Math.max(12, Math.floor(18 * s));
-  const availableWidth = rightWidth - paddingX * 2;
-  const totalText = `Rp ${total.toLocaleString("id-ID")}`;
-  const labelSize = Math.max(8, Math.floor(9 * s));
-  const messageSize = Math.max(7, Math.floor(8 * s));
-  const labelToAmountGap = Math.max(8, Math.floor(10 * s));
-  const amountToMessageGap = thankYouMessage ? Math.max(8, Math.floor(12 * s)) : 0;
+  const paddingY = Math.max(16, Math.floor(20 * s));
+  const summarySize = Math.max(8, Math.floor(9 * s));
+  const summarySpacing = Math.max(6, Math.floor(8 * s));
+  const labelSize = Math.max(9, Math.floor(10 * s));
+  const labelToAmountGap = Math.max(6, Math.floor(10 * s));
   let amountSize = Math.max(16, Math.floor(20 * s));
-  let amountWidth = bold.widthOfTextAtSize(totalText, amountSize);
-  if (amountWidth > availableWidth) {
-    const scale2 = availableWidth / amountWidth;
-    amountSize = Math.max(14, Math.floor(amountSize * scale2));
-    amountWidth = bold.widthOfTextAtSize(totalText, amountSize);
-  }
-  const messageHeight = thankYouMessage ? messageSize : 0;
-  const contentHeight = labelSize + labelToAmountGap + amountSize + (thankYouMessage ? amountToMessageGap + messageHeight : 0);
-  const verticalOffset = (totalCardHeight - contentHeight) / 2;
-  const cardTop = startYLocal;
-  const labelY = cardTop - verticalOffset - labelSize;
-  const amountY = labelY - labelToAmountGap - amountSize;
-  const messageY = amountY - amountToMessageGap - messageSize;
+  const messageSize = Math.max(7, Math.floor(8 * s));
+  const messageGap = thankYouMessage ? Math.max(8, Math.floor(12 * s)) : 0;
+  const preTotalGap = summaryLines.length ? Math.max(12, Math.floor(16 * s)) : Math.max(10, Math.floor(14 * s));
+
+  // 1. Draw summary lines ABOVE the box
+  let summaryCursor = startY;
+  const labelColor = toRGB(toRgb255(theme.mutedText));
+  const bodyColor = toRGB(toRgb255(theme.headerTextColor));
+  const highlightColor = toRGB(toRgb255(theme.headerTextColor));
+
+  summaryLines.forEach((line) => {
+    summaryCursor -= summarySize;
+    const valueText = `Rp ${line.amount.toLocaleString("id-ID")}`;
+    page.drawText(line.label, {
+      x: rightX + paddingX,
+      y: summaryCursor,
+      font,
+      size: summarySize,
+      color: labelColor,
+    });
+    const valueWidth = bold.widthOfTextAtSize(valueText, summarySize);
+    page.drawText(valueText, {
+      x: rightX + rightWidth - paddingX - valueWidth,
+      y: summaryCursor,
+      font: bold,
+      size: summarySize,
+      color: highlightColor,
+    });
+    summaryCursor -= summarySpacing;
+  });
+  
+  if (summaryLines.length) summaryCursor -= preTotalGap;
+  else summaryCursor -= Math.max(8, Math.floor(10 * s));
+
+  // 2. Draw total card
+  const totalCardHeight = paddingY * 2 + labelSize + labelToAmountGap + amountSize + (thankYouMessage ? messageGap + messageSize : 0);
+  const cardTop = summaryCursor;
+  const cardBottom = cardTop - totalCardHeight;
+
+  page.drawRectangle({ x: rightX, y: cardBottom, width: rightWidth, height: totalCardHeight, color: toRgb(theme.totalBackground) });
+  drawRoundedRect(page, rightX, cardBottom, rightWidth, totalCardHeight, 10, {
+    color: toRgb(theme.totalBackground),
+    borderColor: toRgb(theme.tableBorderColor),
+    borderWidth: 1,
+    opacity: 1,
+  });
+
+  let cursor = cardTop - paddingY - labelSize;
   const totalLabel = "TOTAL DUE";
   const labelWidth = bold.widthOfTextAtSize(totalLabel, labelSize);
   const effectiveTextColor = isLightHex(theme.totalBackground) ? theme.headerTextColor : theme.totalTextColor;
-  page.drawText(totalLabel, { x: rightX + rightWidth - paddingX - labelWidth, y: labelY, size: labelSize, font: bold, color: toRgb(effectiveTextColor) });
-  page.drawText(totalText, { x: rightX + rightWidth - paddingX - amountWidth, y: amountY, size: amountSize, font: bold, color: toRgb(effectiveTextColor) });
+
+  page.drawText(totalLabel, {
+    x: rightX + rightWidth - paddingX - labelWidth,
+    y: cursor,
+    font: bold,
+    size: labelSize,
+    color: toRgb(effectiveTextColor),
+  });
+
+  cursor -= labelToAmountGap + amountSize;
+  const totalText = `Rp ${total.toLocaleString("id-ID")}`;
+  let amountWidth = bold.widthOfTextAtSize(totalText, amountSize);
+  const availableWidth = rightWidth - paddingX * 2;
+  if (amountWidth > availableWidth) {
+    const scale = availableWidth / amountWidth;
+    amountSize = Math.max(14, Math.floor(amountSize * scale));
+    amountWidth = bold.widthOfTextAtSize(totalText, amountSize);
+  }
+  page.drawText(totalText, {
+    x: rightX + rightWidth - paddingX - amountWidth,
+    y: cursor,
+    font: bold,
+    size: amountSize,
+    color: toRgb(effectiveTextColor),
+  });
+
   if (thankYouMessage) {
+    cursor -= messageGap + messageSize;
     const msgWidth = font.widthOfTextAtSize(thankYouMessage, messageSize);
-    page.drawText(thankYouMessage, { x: rightX + rightWidth - paddingX - msgWidth, y: messageY, size: messageSize, font, color: toRgb(effectiveTextColor) });
+    page.drawText(thankYouMessage, {
+      x: rightX + rightWidth - paddingX - msgWidth,
+      y: cursor,
+      font,
+      size: messageSize,
+      color: toRgb(effectiveTextColor),
+    });
   }
 
-  // left column: NOTES -> PAYMENT INFO -> TERMS & CONDITIONS
-  const colTitleColor = toRGB(toRgb255(theme.mutedText));
-  const textColorBody = toRGB(toRgb255(theme.headerTextColor));
-  const bodySize = Math.max(8, Math.floor(9 * s));
-  const titleSize = Math.max(9, Math.floor(10 * s));
+  // Left column content
   const leftX = margin;
-  let py = labelY;
-  const sectionSpacing = Math.max(16, Math.floor(20 * s)); // Increased spacing between sections
-  
-  // Notes
-  page.drawText("NOTES", { x: leftX, y: py, font: bold, size: titleSize, color: colTitleColor });
+  let py = cardTop - paddingY;
+  const sectionSpacing = Math.max(16, Math.floor(20 * s));
+
+  page.drawText("NOTES", { x: leftX, y: py, font: bold, size: labelSize + 1, color: labelColor });
   py -= Math.max(14, Math.floor(16 * s));
   if (notes && String(notes).trim().length > 0) {
-    const wrappedNotes = splitTextToSize(String(notes), leftWidth, font, bodySize);
-    for (const w of wrappedNotes.slice(0, 12)) { 
-      page.drawText(w, { x: leftX, y: py, font, size: bodySize, color: textColorBody }); 
-      py -= bodySize + Math.max(4, Math.floor(5 * s)); 
+    const wrappedNotes = splitTextToSize(String(notes), leftWidth, font, summarySize);
+    for (const w of wrappedNotes.slice(0, 12)) {
+      page.drawText(w, { x: leftX, y: py, font, size: summarySize, color: bodyColor });
+      py -= summarySize + Math.max(4, Math.floor(5 * s));
     }
   }
-  py -= sectionSpacing; // Increased spacing before next section
-  
-  // Payment Info
-  page.drawText("PAYMENT INFO", { x: leftX, y: py, font: bold, size: titleSize, color: colTitleColor });
+  py -= sectionSpacing;
+
+  page.drawText("PAYMENT INFO", { x: leftX, y: py, font: bold, size: labelSize + 1, color: labelColor });
   py -= Math.max(14, Math.floor(16 * s));
   for (const line of paymentLines.slice(0, 6)) {
-    const wrapped = splitTextToSize(line, leftWidth, font, bodySize);
-    for (const w of wrapped) { 
-      page.drawText(w, { x: leftX, y: py, font, size: bodySize, color: textColorBody }); 
-      py -= bodySize + Math.max(4, Math.floor(5 * s)); 
+    const wrapped = splitTextToSize(line, leftWidth, font, summarySize);
+    for (const w of wrapped) {
+      page.drawText(w, { x: leftX, y: py, font, size: summarySize, color: bodyColor });
+      py -= summarySize + Math.max(4, Math.floor(5 * s));
     }
   }
-  py -= sectionSpacing; // Increased spacing before next section
-  
-  // Terms & Conditions
-  page.drawText("TERMS & CONDITIONS", { x: leftX, y: py, font: bold, size: titleSize, color: colTitleColor });
+  py -= sectionSpacing;
+
+  page.drawText("TERMS & CONDITIONS", { x: leftX, y: py, font: bold, size: labelSize + 1, color: labelColor });
   py -= Math.max(14, Math.floor(16 * s));
   for (const line of termsLines.slice(0, 10)) {
-    const wrapped = splitTextToSize(line, leftWidth, font, bodySize);
-    for (const w of wrapped) { 
-      page.drawText(w, { x: leftX, y: py, font, size: bodySize, color: textColorBody }); 
-      py -= bodySize + Math.max(4, Math.floor(5 * s)); 
+    const wrapped = splitTextToSize(line, leftWidth, font, summarySize);
+    for (const w of wrapped) {
+      page.drawText(w, { x: leftX, y: py, font, size: summarySize, color: bodyColor });
+      py -= summarySize + Math.max(4, Math.floor(5 * s));
     }
   }
-  return Math.min(py, startYLocal - Math.floor(90 * s));
+
+  return Math.min(py, cardBottom - Math.max(24, Math.floor(32 * s)));
 };
 
 // ==== Signature (identik dengan Quotation) ====
@@ -648,8 +702,20 @@ export async function GET(
     } catch {}
     const templateDefaults = (brand?.templateDefaults ?? {}) as Record<string, string>;
     const theme = resolveTheme(brand as any, templateDefaults?.invoice);
-    let actor = { name: ((auth as any)?.user?.name as string) || brand?.name || "Sales", email: brand?.email || null, phone: brand?.phone || null } as { name: string; email?: string|null; phone?: string|null };
-    if (auth?.userId) {
+    // 1. Get Template Defaults safely
+    const defaults = typeof brand.templateDefaults === "string"
+      ? JSON.parse(brand.templateDefaults)
+      : brand.templateDefaults || {};
+
+    // 2. Initialize actor with Fallback to Brand info
+    let actor = {
+      name: (defaults.signatureName as string) || brand.name || "Sales",
+      email: (defaults.signatureEmail as string) || brand.email || null,
+      phone: (defaults.signaturePhone as string) || brand.phone || null,
+    } as { name: string; email?: string | null; phone?: string | null };
+
+    // 3. Fallback to logged-in user profile ONLY if signatureName is not set in brand defaults
+    if (!defaults.signatureName && auth?.userId) {
       try {
         const user = await prisma.user.findUnique({ where: { id: auth.userId }, select: { name:true, firstName:true, lastName:true, email:true, phone:true, company:true } });
         if (user) {
@@ -742,10 +808,19 @@ export async function GET(
     const paymentLines = resolvePaymentLines(brand as any);
     const termsLines = thankYouAndTerms.terms?.length ? thankYouAndTerms.terms : (brand?.termsConditions ? String(brand.termsConditions).split("\n") : DEFAULT_TERMS);
     const notesText = typeof order.notes === "string" ? order.notes : "";
+    // Calculate summary lines for Sales Order
+    const summaryLines: Array<{ label: string; amount: number }> = [];
+    const subtotal = Number(order.subtotal || tableResult.total);
+    summaryLines.push({ label: "Subtotal", amount: subtotal });
+    if (order.lineDiscount > 0) summaryLines.push({ label: "Line Discount", amount: -order.lineDiscount });
+    if (order.extraDiscount > 0) summaryLines.push({ label: "Extra Discount", amount: -order.extraDiscount });
+    if (order.taxAmount > 0) summaryLines.push({ label: "Tax", amount: order.taxAmount });
+
     let footerAnchor = drawTotalsAndNotes(
       page,
       theme,
-      tableResult.total,
+      summaryLines,
+      Number(order.totalAmount || tableResult.total),
       notesText,
       thankYouAndTerms.message,
       paymentLines,

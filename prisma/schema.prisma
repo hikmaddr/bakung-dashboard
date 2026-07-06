@@ -24,6 +24,59 @@ enum StockMutationType {
   ADJUST
 }
 
+enum QuotationStatus {
+  Draft
+  Sent
+  Viewed
+  Approved
+  Rejected
+  Expired
+  Converted
+}
+
+enum SalesOrderStatus {
+  Draft
+  Confirmed
+  Processing
+  Shipping
+  Delivered
+  Completed
+  Canceled
+}
+
+enum InvoiceStatus {
+  Draft
+  Issued
+  Paid
+  Void
+  Canceled
+}
+
+enum PaymentStatus {
+  UNPAID
+  DP
+  PARTIAL
+  PAID
+  VOID
+}
+
+enum PurchaseStatus {
+  Draft
+  PendingApproval
+  Ordered
+  WaitingSupplier
+  SupplierApproved
+  DPPaid
+  Production
+  QCProcess
+  ReadyShipment
+  Shipped
+  Received
+  Delivered
+  Completed
+  Canceled
+}
+
 model Customer {
   id          Int          @id @default(autoincrement())
   pic         String
@@ -43,7 +96,31 @@ model Customer {
 
   @@index([brandProfileId])
   @@index([isDeleted])
+  @@index([createdAt])
   @@map("customer")
+}
+
+model Supplier {
+  id              Int              @id @default(autoincrement())
+  name            String
+  pic             String?
+  email           String?
+  phone           String?
+  address         String?
+  brandProfileId  Int?
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+  deletedAt       DateTime?
+  isDeleted       Boolean          @default(false)
+  
+  brand           BrandProfile?    @relation(fields: [brandProfileId], references: [id])
+  purchaseOrders  PurchaseOrder[]
+  purchases       PurchaseDirect[]
+  salesOrderItems SalesOrderItem[]
+  
+  @@index([brandProfileId])
+  @@index([isDeleted])
+  @@map("supplier")
 }
 
 model Quotation {
@@ -60,14 +137,30 @@ model Quotation {
   deletedAt       DateTime?
   isDeleted       Boolean         @default(false)
   projectFileUrl  String?
-  status          String
+  status          QuotationStatus @default(Draft)
   totalAmount     Float           @default(0)
   shareUrl        String?
+  sentVia         String?
+  
+  // Negotiation tracking
+  isNegotiated    Boolean         @default(false)
+  originalAmount  Float?
+  negotiatedAmount Float?
+  marginChange    Float?
+  negotiationNotes String?
+  viewedAt        DateTime?
+  
+  // Client documents on approval
+  clientPoUrl     String?
+  clientSoUrl     String?
+  clientOtherFiles Json?          @default("[]")
+  
   customer        Customer        @relation(fields: [customerId], references: [id])
   brand           BrandProfile?   @relation(fields: [brandProfileId], references: [id])
   items           QuotationItem[]
   salesOrders     SalesOrder[]
   invoices        Invoice[]
+  revisions       QuotationRevision[]
 
   @@index([customerId])
   @@index([brandProfileId])
@@ -89,6 +182,13 @@ model QuotationItem {
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
   subtotal    Float     @default(0)
+  
+  // Internal cost fields (Hidden from client)
+  supplierCost        Float?    @default(0)
+  titipanCostAdjustment Float?  @default(0)
+  hiddenMargin        Float?    @default(0)
+  taxAdjustment       Float?    @default(0)
+  
   quotation   Quotation @relation(fields: [quotationId], references: [id])
 
   @@index([quotationId])
@@ -99,14 +199,14 @@ model SalesOrder {
   id            Int              @id @default(autoincrement())
   orderNumber   String           @unique(map: "SalesOrder_orderNumber_key")
   date          DateTime
-  status        String
+  status        SalesOrderStatus @default(Draft)
   notes         String?
   quotationId   Int?
   customerId    Int
   brandProfileId Int?
   totalAmount   Float            @default(0)
   paidAmount    Float            @default(0)
-  paymentStatus String           @default("UNPAID")
+  paymentStatus PaymentStatus    @default(UNPAID)
   createdAt     DateTime         @default(now())
   updatedAt     DateTime         @updatedAt
   deletedAt     DateTime?
@@ -123,7 +223,13 @@ model SalesOrder {
   paymentsIn    PaymentIn[]
   // Back-relation to purchases
   purchases     PurchaseDirect[]
+  purchaseOrders PurchaseOrder[]
+  deliveryOrders DeliveryOrder[]
+  invoices       Invoice[]
   shareUrl      String?
+  
+  // Build by Order Logic
+  isNonInventory Boolean @default(false)
 
   @@index([customerId])
   @@index([quotationId])
@@ -148,9 +254,19 @@ model SalesOrderItem {
   createdAt    DateTime   @default(now())
   updatedAt    DateTime   @updatedAt
   discount     Float      @default(0)
+  
+  // Internal cost fields
+  supplierCost        Float?    @default(0)
+  titipanCostAdjustment Float?  @default(0)
+  hiddenMargin        Float?    @default(0)
+  taxAdjustment       Float?    @default(0)
+  supplierId          Int?
+  
   salesOrder   SalesOrder @relation(fields: [salesOrderId], references: [id])
+  supplier     Supplier?  @relation(fields: [supplierId], references: [id])
 
   @@index([salesOrderId])
+  @@index([supplierId])
   @@map("salesorderitem")
 }
 
@@ -159,11 +275,12 @@ model Invoice {
   invoiceNumber      String        @unique
   issueDate          DateTime
   dueDate            DateTime
-  status             String        @default("Draft")
+  status             InvoiceStatus @default(Draft)
   notes              String?
   terms              String?
   customerId         Int
   quotationId        Int?
+  salesOrderId       Int?
   brandProfileId     Int?
   subtotal           Float         @default(0)
   lineDiscount       Float         @default(0)
@@ -175,7 +292,7 @@ model Invoice {
   downPayment        Float         @default(0)
   total              Float         @default(0)
   paidAmount         Float         @default(0)
-  paymentStatus      String        @default("UNPAID")
+  paymentStatus      PaymentStatus @default(UNPAID)
   createdAt          DateTime      @default(now())
   updatedAt          DateTime      @updatedAt
   deletedAt          DateTime?
@@ -183,6 +300,7 @@ model Invoice {
   shareUrl           String?
   customer           Customer      @relation(fields: [customerId], references: [id])
   quotation          Quotation?    @relation(fields: [quotationId], references: [id])
+  salesOrder         SalesOrder?   @relation(fields: [salesOrderId], references: [id])
   brand              BrandProfile? @relation(fields: [brandProfileId], references: [id])
   items              InvoiceItem[]
   paymentsIn         PaymentIn[]
@@ -191,6 +309,7 @@ model Invoice {
   @@index([quotationId])
   @@index([brandProfileId])
   @@index([issueDate])
+  @@index([dueDate])
   @@index([status])
   @@index([paymentStatus])
   @@index([isDeleted])
@@ -229,9 +348,12 @@ model ProductCategory {
   parent      ProductCategory?  @relation("CategoryToParent", fields: [parentId], references: [id])
   children    ProductCategory[] @relation("CategoryToParent")
   brand       BrandProfile?     @relation(fields: [brandProfileId], references: [id])
+  deletedAt   DateTime?
+  isDeleted   Boolean           @default(false)
 
   @@index([parentId])
   @@index([brandProfileId])
+  @@index([isDeleted])
   @@map("productcategory")
 }
 
@@ -257,10 +379,12 @@ model Product {
   stockMutations StockMutation[]
   purchaseItems  PurchaseDirectItem[]
   purchaseInvoiceItems PurchaseInvoiceItem[]
+  purchaseOrderItems PurchaseOrderItem[]
 
   @@index([categoryId])
   @@index([brandProfileId])
   @@index([isDeleted])
+  @@index([qty])
   @@map("product")
 }
 
@@ -307,11 +431,15 @@ model BrandProfile {
   payments        Payment[]
   receipts        Receipt[]
   expenses        Expense[]
+  suppliers       Supplier[]
   notifications   Notification[]
   // New relations for additional finance models
   purchaseInvoices PurchaseInvoice[]
   paymentsIn      PaymentIn[]
   paymentsOut     PaymentOut[]
+  // Purchase Order relations
+  purchaseOrders  PurchaseOrder[]
+  deliveryOrders  DeliveryOrder[]
   // Opposite relations for User default brand & brand scopes
   defaultUsers    User[]           @relation("UserDefaultBrand")
   userBrandScopes UserBrandScope[]
@@ -346,11 +474,12 @@ model PurchaseDirect {
   id              Int       @id @default(autoincrement())
   purchaseNumber  String    @unique
   date            DateTime
-  supplierName    String
+  supplierId      Int?
+  supplierName    String?
   marketplaceOrderId String?
   notes           String?
   attachments     Json      @default("[]")
-  status          String    @default("Draft") // Draft | Received | Canceled
+  status          PurchaseStatus @default(Draft) // Draft | Received | Canceled
   receivedAt      DateTime?
   // Biaya dan total
   subtotal        Float     @default(0)
@@ -359,7 +488,7 @@ model PurchaseDirect {
   tax             Float     @default(0)
   total           Float     @default(0)
   paidAmount      Float     @default(0)
-  paymentStatus   String    @default("UNPAID")
+  paymentStatus   PaymentStatus @default(UNPAID)
   proofUrl        String?
   salesOrderId    Int?
   brandProfileId  Int?
@@ -373,11 +502,13 @@ model PurchaseDirect {
   brand           BrandProfile? @relation(fields: [brandProfileId], references: [id])
   salesOrder      SalesOrder?   @relation(fields: [salesOrderId], references: [id])
   createdBy       User?         @relation(fields: [createdByUserId], references: [id])
+  supplier        Supplier?     @relation(fields: [supplierId], references: [id])
   purchaseInvoices PurchaseInvoice[]
 
   @@index([brandProfileId])
   @@index([salesOrderId])
   @@index([createdByUserId])
+  @@index([supplierId])
   @@index([date])
   @@index([status])
   @@index([paymentStatus])
@@ -437,13 +568,18 @@ model PurchaseInvoice {
 
   brand            BrandProfile?            @relation(fields: [brandProfileId], references: [id])
   purchase         PurchaseDirect?          @relation(fields: [purchaseDirectId], references: [id])
+  purchaseOrder    PurchaseOrder?           @relation(fields: [purchaseOrderId], references: [id])
+  purchaseOrderId  Int?
   items            PurchaseInvoiceItem[]
   payments         PaymentOut[]
+  deletedAt        DateTime?
+  isDeleted        Boolean                  @default(false)
 
   @@index([brandProfileId])
   @@index([purchaseDirectId])
   @@index([date])
   @@index([status])
+  @@index([isDeleted])
   @@unique([brandProfileId, invoiceNumber])
   @@map("purchaseinvoice")
 }
@@ -485,10 +621,13 @@ model StockMutation {
   product         Product           @relation(fields: [productId], references: [id])
   brand           BrandProfile?     @relation(fields: [brandProfileId], references: [id])
   createdBy       User?             @relation(fields: [createdByUserId], references: [id])
+  deletedAt       DateTime?
+  isDeleted       Boolean           @default(false)
 
   @@index([productId])
   @@index([brandProfileId])
   @@index([createdByUserId])
+  @@index([isDeleted])
   @@map("stockmutation")
 }
 
@@ -533,10 +672,13 @@ model Payment {
   createdBy      User?          @relation(fields: [createdById], references: [id])
   receipt        Receipt?
   expense        Expense?
+  deletedAt      DateTime?
+  isDeleted      Boolean        @default(false)
 
   @@index([brandProfileId])
   @@index([refType, refId])
   @@index([createdById])
+  @@index([isDeleted])
   @@map("payment")
 }
 
@@ -551,8 +693,11 @@ model Receipt {
 
   brand          BrandProfile?  @relation(fields: [brandProfileId], references: [id])
   payment        Payment        @relation(fields: [paymentId], references: [id])
+  deletedAt      DateTime?
+  isDeleted      Boolean        @default(false)
 
   @@index([brandProfileId])
+  @@index([isDeleted])
   @@unique([brandProfileId, receiptNumber])
   @@map("receipt")
 }
@@ -577,6 +722,7 @@ model PaymentIn {
   amount         Float           @default(0)
   paidAt         DateTime
   status         PaymentInStatus @default(Posted)
+  isDP           Boolean         @default(false)
   notes          String?
   createdById    Int?
   createdAt      DateTime        @default(now())
@@ -590,6 +736,8 @@ model PaymentIn {
   createdBy      User?           @relation(fields: [createdById], references: [id])
   invoice        Invoice?        @relation(fields: [invoiceId], references: [id])
   salesOrder     SalesOrder?     @relation(fields: [salesOrderId], references: [id])
+  deletedAt      DateTime?
+  isDeleted      Boolean         @default(false)
 
   @@index([brandProfileId])
   @@index([invoiceId])
@@ -597,6 +745,7 @@ model PaymentIn {
   @@index([createdById])
   @@index([paidAt])
   @@index([status])
+  @@index([isDeleted])
   @@map("paymentin")
 }
 
@@ -607,6 +756,7 @@ model PaymentOut {
   amount             Float            @default(0)
   paidAt             DateTime
   status             PaymentOutStatus @default(Posted)
+  isDP               Boolean          @default(false)
   notes              String?
   createdById        Int?
   createdAt          DateTime         @default(now())
@@ -621,12 +771,15 @@ model PaymentOut {
   purchaseInvoice    PurchaseInvoice? @relation(fields: [purchaseInvoiceId], references: [id])
   // Back relation to Expense (owned by Expense.paymentOutId)
   expense            Expense?
+  deletedAt          DateTime?
+  isDeleted          Boolean          @default(false)
 
   @@index([brandProfileId])
   @@index([purchaseInvoiceId])
   @@index([createdById])
   @@index([paidAt])
   @@index([status])
+  @@index([isDeleted])
   @@map("paymentout")
 }
 
@@ -647,11 +800,14 @@ model Expense {
   brand          BrandProfile?  @relation(fields: [brandProfileId], references: [id])
   payment        Payment?       @relation(fields: [paymentId], references: [id])
   paymentOut     PaymentOut?    @relation(fields: [paymentOutId], references: [id])
+  deletedAt      DateTime?
+  isDeleted      Boolean        @default(false)
 
   @@index([brandProfileId])
   @@index([paymentId])
   @@index([paymentOutId])
   @@index([paidAt])
+  @@index([isDeleted])
   @@map("expense")
 }
 
@@ -662,6 +818,7 @@ model Expense {
 model User {
   id           Int           @id @default(autoincrement())
   email        String        @unique
+  username     String?       @unique
   name         String?
   firstName    String?
   lastName     String?
@@ -852,4 +1009,127 @@ model ShortLink {
   @@index([brandProfileId])
   @@index([entity, entityId])
   @@map("shortlink")
+}
+
+// =============================
+// Purchase Order Models
+// =============================
+
+model PurchaseOrder {
+  id               Int                     @id @default(autoincrement())
+  orderNumber      String                  @unique
+  date             DateTime
+  status           PurchaseStatus          @default(Draft)
+  notes            String?
+  attachments      Json                    @default("[]")
+  supplierId       Int?
+  supplierName     String?
+  brandProfileId   Int?
+  subtotal         Float                   @default(0)
+  lineDiscount     Float                   @default(0)
+  extraDiscount    Float                   @default(0)
+  taxMode          String                  @default("none")
+  taxAmount        Float                   @default(0)
+  totalAmount      Float                   @default(0)
+  salesOrderId     Int?
+  createdByUserId  String?
+  createdAt        DateTime                @default(now())
+  updatedAt        DateTime                @updatedAt
+  deletedAt        DateTime?
+  isDeleted        Boolean                 @default(false)
+
+  brand            BrandProfile?           @relation(fields: [brandProfileId], references: [id])
+  salesOrder       SalesOrder?             @relation(fields: [salesOrderId], references: [id])
+  supplier         Supplier?               @relation(fields: [supplierId], references: [id])
+  items            PurchaseOrderItem[]
+  purchaseInvoices PurchaseInvoice[]
+
+  @@index([brandProfileId])
+  @@index([supplierId])
+  @@index([date])
+  @@index([status])
+  @@index([isDeleted])
+  @@map("purchaseorder")
+}
+
+model PurchaseOrderItem {
+  id              Int             @id @default(autoincrement())
+  purchaseOrderId Int
+  productId       Int?
+  product         String
+  description     String?
+  quantity        Int
+  unit            String          @default("pcs")
+  price           Float           @default(0)
+  discount        Float           @default(0)
+  subtotal        Float           @default(0)
+  imageUrl        String?
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+
+  purchaseOrder   PurchaseOrder   @relation(fields: [purchaseOrderId], references: [id])
+  productDetail   Product?        @relation(fields: [productId], references: [id])
+
+  @@index([purchaseOrderId])
+  @@index([productId])
+  @@map("purchaseorderitem")
+}
+
+model QuotationRevision {
+  id              Int       @id @default(autoincrement())
+  quotationId     Int
+  revisedAt       DateTime  @default(now())
+  amount          Float
+  margin          Float?
+  notes           String?
+  metadata        Json      @default("{}")
+  
+  quotation       Quotation @relation(fields: [quotationId], references: [id])
+  
+  @@index([quotationId])
+  @@map("quotationrevision")
+}
+
+model DeliveryOrder {
+  id              Int       @id @default(autoincrement())
+  doNumber        String    @unique
+  date            DateTime
+  status          String    @default("Draft") // Draft, Shipped, Delivered
+  salesOrderId    Int?
+  brandProfileId  Int?
+  
+  // Expedition info
+  expeditionName  String?
+  driverName      String?
+  vehicleNumber   String?
+  receiverPIC     String?
+  proofOfDeliveryUrl String?
+  notes           String?
+  
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+  deletedAt       DateTime?
+  isDeleted       Boolean   @default(false)
+  
+  salesOrder      SalesOrder?   @relation(fields: [salesOrderId], references: [id])
+  brand           BrandProfile? @relation(fields: [brandProfileId], references: [id])
+  items           DeliveryOrderItem[]
+  
+  @@index([salesOrderId])
+  @@index([brandProfileId])
+  @@map("deliveryorder")
+}
+
+model DeliveryOrderItem {
+  id              Int       @id @default(autoincrement())
+  deliveryOrderId Int
+  product         String
+  description     String?
+  quantity        Int
+  unit            String    @default("pcs")
+  
+  deliveryOrder   DeliveryOrder @relation(fields: [deliveryOrderId], references: [id])
+  
+  @@index([deliveryOrderId])
+  @@map("deliveryorderitem")
 }

@@ -3,8 +3,8 @@
     "version": "2.0.2",
     "private": true,
     "scripts": {
-        "dev": "next dev -p 3000",
-        "dev:clean": "node -e \"require('fs').rmSync('.next',{recursive:true,force:true});\" && next dev -p 3000",
+        "dev": "next dev -p 3000 --webpack",
+        "dev:clean": "node -e \"require('fs').rmSync('.next',{recursive:true,force:true});\" && next dev -p 3000 --webpack",
         "build": "next build --webpack",
         "postbuild": "next telemetry disable",
         "build:prod": "npx prisma migrate deploy && next build",
@@ -16,7 +16,9 @@
         "deploy:win": "powershell -ExecutionPolicy Bypass -File ./scripts/deploy-windows.ps1",
         "deploy:ubuntu": "bash ./scripts/deploy-ubuntu.sh",
         "seed:dummy-notifications": "node scripts/seedDummyNotifications.js",
-        "fix:share-urls": "node scripts/normalize-share-urls.js"
+        "fix:share-urls": "node scripts/normalize-share-urls.js",
+        "postinstall": "prisma generate",
+        "vercel-build": "prisma db push --skip-generate && next build --webpack"
     },
     "dependencies": {
         "@fullcalendar/core": "^6.1.15",

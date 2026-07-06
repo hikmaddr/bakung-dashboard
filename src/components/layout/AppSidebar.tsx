@@ -4,6 +4,7 @@ import Link from "next/link";
 import Image from "next/image";
 import { usePathname } from "next/navigation";
 import { useSidebar } from "@/context/SidebarContext";
+import { useSessionStore } from "@/store/useSessionStore";
 import {
   GridIcon,
   UserCircleIcon,
@@ -40,6 +41,10 @@ type NavItem = {
 };
 
 type ModuleKey = "sales" | "purchase" | "inventory";
+
+// Stable empty array to avoid creating a new reference on every render
+// when the user has no roles. Required by useSyncExternalStore (Zustand).
+const EMPTY_ROLES: string[] = [];
 
 const defaultModulesTop: Record<ModuleKey, boolean> = {
   sales: true,
@@ -181,202 +186,79 @@ const staticNavItems: NavItem[] = [
   },
 ];
 
+import { useGlobal } from "@/context/AppContext";
+
+// Static selectors to ensure reference stability for getServerSnapshot
+const selectActiveBrand = (s: any) => s.activeBrand;
+const selectBrands = (s: any) => s.brands;
+const selectInvoiceOpenCount = (s: any) => s.metrics?.invoiceOpen ?? 0;
+const selectUserRoles = (s: any) => s.user?.roles ?? EMPTY_ROLES;
+
 const AppSidebar: React.FC = () => {
   const { isExpanded, isMobileOpen, isHovered, setIsHovered, openMap, toggleGroup, setGroupOpen, setOnlyOpen } = useSidebar();
+  const { user: globalUser, activeBrandId: globalActiveBrandId } = useGlobal();
   const pathname = usePathname();
   const autoOpenedForPathRef = useRef<string | null>(null);
   const touchedOnPathRef = useRef<Record<string, Set<string>>>({});
 
-  const [modulesEnabled, setModulesEnabled] = useState<Record<string, boolean>>(defaultModulesAll);
-  const [userRoles, setUserRoles] = useState<string[]>([]);
-  const [invoiceOpenCount, setInvoiceOpenCount] = useState<number | null>(null);
-  const [brandInfo, setBrandInfo] = useState<{
-    name: string;
-    logo: string;
-    primaryColor: string;
-    secondaryColor: string;
-  } | null>(null);
-  const [noBrandAccess, setNoBrandAccess] = useState<boolean>(false);
+  const activeBrand = useSessionStore(selectActiveBrand);
+  const brands = useSessionStore(selectBrands);
+  const invoiceOpenCount = useSessionStore(selectInvoiceOpenCount);
+  const userRoles = useSessionStore(selectUserRoles);
 
-  const fetchActiveBrandModules = useCallback(async () => {
-    try {
-      // 1) Try the dedicated active-brand endpoint first
-      let activeProfile: any | null = null;
-      try {
-        const activeRes = await fetch("/api/brand-profiles/active", { cache: "no-store" });
-        if (activeRes.ok) {
-          activeProfile = await activeRes.json();
-        } else {
-          // Log status/text for debugging but do not throw – we will fallback
-          const text = await activeRes.text().catch(() => "");
-          console.warn("[AppSidebar] /api/brand-profiles/active non-OK:", activeRes.status, text);
-        }
-      } catch (e) {
-        console.warn("[AppSidebar] /api/brand-profiles/active request error", e);
-      }
+  // Derive enabled modules from the active brand profile
+  const modulesEnabled = useMemo(() => {
+    if (!activeBrand) return defaultModulesAll;
 
-      // 2) If not found, fallback to the list endpoint and pick the active (or first)
-      if (!activeProfile) {
-        try {
-          const res = await fetch("/api/brand-profiles", { cache: "no-store" });
-          let profiles: any[] = [];
-          if (res.ok) {
-            const data = await res.json();
-            if (Array.isArray(data)) profiles = data;
-            else if (Array.isArray(data?.profiles)) profiles = data.profiles;
-            else if (Array.isArray(data?.data)) profiles = data.data;
-            else if (data) profiles = [data];
-          } else {
-            const text = await res.text().catch(() => "");
-            console.warn("[AppSidebar] /api/brand-profiles non-OK:", res.status, text);
-          }
-          activeProfile = profiles.find((p) => p?.isActive) ?? profiles[0] ?? null;
-        } catch (e) {
-          console.warn("[AppSidebar] /api/brand-profiles request error", e);
-        }
-      }
+    const raw: Record<string, boolean> =
+      activeBrand?.modules && typeof activeBrand.modules === "object"
+        ? (activeBrand.modules as Record<string, boolean>)
+        : {};
 
-      if (activeProfile) {
-        const raw: Record<string, boolean> =
-          activeProfile?.modules && typeof activeProfile.modules === "object"
-            ? (activeProfile.modules as Record<string, boolean>)
-            : {};
+    // derive top-level first
+    const top: Record<ModuleKey, boolean> = {
+      sales: Boolean(raw.sales ?? defaultModulesTop.sales),
+      purchase: Boolean(raw.purchase ?? defaultModulesTop.purchase),
+      inventory: Boolean(raw.inventory ?? defaultModulesTop.inventory),
+    };
 
-        // derive top-level first
-        const top: Record<ModuleKey, boolean> = {
-          sales: Boolean(raw.sales ?? defaultModulesTop.sales),
-          purchase: Boolean(raw.purchase ?? defaultModulesTop.purchase),
-          inventory: Boolean(raw.inventory ?? defaultModulesTop.inventory),
-        };
+    const merged: Record<string, boolean> = { ...raw, ...top };
+    // ensure feature keys present; default follow top-level state
+    (Object.keys(FEATURES_BY_MODULE) as ModuleKey[]).forEach((mk) => {
+      FEATURES_BY_MODULE[mk].forEach(({ key }) => {
+        if (merged[key] === undefined) merged[key] = top[mk];
+      });
+    });
 
-        const merged: Record<string, boolean> = { ...raw, ...top };
-        // ensure feature keys present; default follow top-level state
-        (Object.keys(FEATURES_BY_MODULE) as ModuleKey[]).forEach((mk) => {
-          FEATURES_BY_MODULE[mk].forEach(({ key }) => {
-            if (merged[key] === undefined) merged[key] = top[mk];
-          });
-        });
-
-        // Scope-based gating: Creative Service hides SO, PO, Receipts, Delivery, Inventory
-        const scope = String(activeProfile?.businessScope || "").toUpperCase();
-        if (scope === "CREATIVE") {
-          merged["sales.order"] = false;
-          merged["purchase.order"] = false;
-          merged["purchase"] = false;
-          merged["purchase.invoice"] = false;
-          merged["sales.receipt"] = false;
-          merged["purchase.receipt"] = false;
-          merged["purchase.receiving"] = false;
-          merged["sales.delivery"] = false;
-          // Hide entire inventory module
-          merged["inventory"] = false;
-          // Ensure inventory features follow
-          merged["inventory.products"] = false;
-          merged["inventory.stock"] = false;
-        }
-
-        setModulesEnabled(merged);
-
-        // Simpan info brand untuk logo/nama di sidebar
-        const normalizedBrand = {
-          name: activeProfile?.name ?? "",
-          logo: activeProfile?.logo ?? activeProfile?.logoUrl ?? "",
-          primaryColor: activeProfile?.primaryColor ?? "#0EA5E9",
-          secondaryColor: activeProfile?.secondaryColor ?? "#ECFEFF",
-        };
-        setBrandInfo(normalizedBrand);
-      } else {
-        // No brand info available – use defaults so the menu remains usable
-        setModulesEnabled(defaultModulesAll);
-        setBrandInfo(null);
-      }
-    } catch (error) {
-      console.error("[AppSidebar] Failed to load brand modules:", error);
-      setModulesEnabled(defaultModulesAll);
-      setBrandInfo(null);
+    // Scope-based gating: Creative Service hides SO, PO, Receipts, Delivery, Inventory
+    const scope = String(activeBrand?.businessScope || "").toUpperCase();
+    if (scope === "CREATIVE") {
+      merged["sales.order"] = false;
+      merged["purchase.order"] = false;
+      merged["purchase"] = false;
+      merged["purchase.invoice"] = false;
+      merged["sales.receipt"] = false;
+      merged["purchase.receipt"] = false;
+      merged["purchase.receiving"] = false;
+      merged["sales.delivery"] = false;
+      merged["inventory"] = false;
+      merged["inventory.products"] = false;
+      merged["inventory.stock"] = false;
     }
-  }, []);
+    return merged;
+  }, [activeBrand]);
 
-  const checkBrandAccess = useCallback(async () => {
-    try {
-      const r = await fetch("/api/brand-profiles", { cache: "no-store" });
-      let profiles: any[] = [];
-      if (r.ok) {
-        const data = await r.json();
-        if (Array.isArray(data)) profiles = data;
-        else if (Array.isArray(data?.profiles)) profiles = data.profiles;
-        else if (Array.isArray(data?.data)) profiles = data.data;
-        else if (data) profiles = [data];
-      }
-      setNoBrandAccess(!profiles || profiles.length === 0);
-    } catch (e) {
-      setNoBrandAccess(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    fetchActiveBrandModules();
-    // Load current user roles to gate menu
-    (async () => {
-      try {
-        const r = await fetch("/api/profile", { cache: "no-store" });
-        const j = await r.json();
-        if (j?.success && Array.isArray(j?.data?.roles)) setUserRoles(j.data.roles);
-      } catch (e) {
-        // ignore
-      }
-    })();
-
-    // Periksa apakah user memiliki brand yang diassign (API sudah terfilter oleh guard)
-    checkBrandAccess();
-
-    // Load count of open (unpaid) sales invoices for badge — adaptive by brand list
-    const refreshInvoiceOpen = async () => {
-      try {
-        // Prefer active-brand endpoint (fast, scoped)
-        const r = await fetch("/api/reporting/piutang", { cache: "no-store" });
-        if (r.ok) {
-          const j = await r.json();
-          const c = j?.metrics?.invoiceOpen;
-          if (typeof c === "number") {
-            setInvoiceOpenCount(c);
-            return;
-          }
-        }
-      } catch {}
-
-      // Fallback: aggregate across allowed brand list via rekap API, counting only INV rows
-      try {
-        const rr = await fetch("/api/reports/rekap", { cache: "no-store" });
-        if (rr.ok) {
-          const jj = await rr.json();
-          const rows = Array.isArray(jj?.ar?.rows) ? jj.ar.rows : [];
-          const invCount = rows.filter((r: any) => r?.type === "INV").length;
-          setInvoiceOpenCount(invCount);
-        }
-      } catch {}
+  const brandInfo = useMemo(() => {
+    if (!activeBrand) return null;
+    return {
+      name: activeBrand.name ?? "",
+      logo: activeBrand.logo ?? activeBrand.logoUrl ?? "",
+      primaryColor: activeBrand.primaryColor ?? "#0EA5E9",
+      secondaryColor: activeBrand.secondaryColor ?? "#ECFEFF",
     };
-    refreshInvoiceOpen();
+  }, [activeBrand]);
 
-    const handleModulesUpdated = () => {
-      fetchActiveBrandModules();
-      // Brand switched → refresh invoice badge count for active brand
-      (async () => { try { await refreshInvoiceOpen(); } catch {} })();
-    };
-
-    window.addEventListener("brand-modules:updated", handleModulesUpdated);
-    const handleBrandListUpdated = () => {
-      // Daftar brand berubah: refresh modul aktif, akses brand, dan badge invoice
-      fetchActiveBrandModules();
-      checkBrandAccess();
-      (async () => { try { await refreshInvoiceOpen(); } catch {} })();
-    };
-    window.addEventListener("brand-list:updated", handleBrandListUpdated);
-    return () => {
-      window.removeEventListener("brand-modules:updated", handleModulesUpdated);
-      window.removeEventListener("brand-list:updated", handleBrandListUpdated);
-    };
-  }, [fetchActiveBrandModules, checkBrandAccess]);
+  const noBrandAccess = useMemo(() => !brands || brands.length === 0, [brands]);
 
   // Dropdown open state disediakan oleh SidebarContext melalui openMap
 
@@ -424,7 +306,7 @@ const AppSidebar: React.FC = () => {
       }))
   ), [modulesEnabled]);
 
-  const rolesLower = userRoles.map((r) => String(r).toLowerCase());
+  const rolesLower = userRoles.map((r: any) => String(r).toLowerCase());
   const isOwner = rolesLower.includes("owner");
   const isAdmin = rolesLower.includes("admin");
   const isFinance = rolesLower.includes("finance");
@@ -508,7 +390,7 @@ const AppSidebar: React.FC = () => {
 
   return (
     <aside
-      className={`fixed top-16 lg:top-0 flex flex-col px-5 left-0 bg-white dark:bg-gray-900 dark:border-gray-800 text-gray-900 h-screen transition-all duration-300 ease-in-out z-[10000] border-r border-gray-200 pointer-events-auto
+      className={`fixed top-16 flex flex-col px-5 left-0 bg-white dark:bg-gray-900 dark:border-gray-800 text-gray-900 h-[calc(100vh-4rem)] transition-all duration-300 ease-in-out z-[10000] border-r border-gray-200 pointer-events-auto
         ${
           isExpanded || isMobileOpen
             ? "w-[290px]"

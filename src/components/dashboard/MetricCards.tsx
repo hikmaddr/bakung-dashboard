@@ -48,6 +48,8 @@ interface MetricCardsProps {
 }
 
 const iconMap: Record<string, any> = {
+  netMargin: TrendingUp,
+  totalCost: Receipt,
   customers: Users,
   quotations: FileText,
   salesOrders: ShoppingBag,
@@ -59,6 +61,8 @@ const iconMap: Record<string, any> = {
 };
 
 const colorMap: Record<string, { gradient: string; text: string; iconBg: string }> = {
+  netMargin: { gradient: "from-emerald-500/10 to-green-500/10", text: "text-emerald-600", iconBg: "bg-emerald-500/10" },
+  totalCost: { gradient: "from-slate-500/10 to-gray-500/10", text: "text-slate-600", iconBg: "bg-slate-500/10" },
   customers: { gradient: "from-blue-500/10 to-indigo-500/10", text: "text-blue-600", iconBg: "bg-blue-500/10" },
   quotations: { gradient: "from-amber-500/10 to-orange-500/10", text: "text-amber-600", iconBg: "bg-amber-500/10" },
   salesOrders: { gradient: "from-emerald-500/10 to-teal-500/10", text: "text-emerald-600", iconBg: "bg-emerald-500/10" },
@@ -117,6 +121,8 @@ export const MetricCards: React.FC<MetricCardsProps> = ({ cards, rangeDays }) =>
             ? `/penjualan/order-penjualan?status=Approved`
             : card.key === "purchaseUnreceived"
             ? `/pembelian/pembelian-langsung?status=Draft`
+            : card.key === "netMargin" || card.key === "totalCost"
+            ? `/reporting`
             : "/";
 
         return (

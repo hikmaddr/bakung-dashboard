@@ -1,11 +1,10 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { getActiveBrandProfile } from "@/lib/brand";
+import { createApiHandler } from "@/lib/api-handler";
+import { resolveAllowedBrandIds } from "@/lib/brand";
 
-export const runtime = "nodejs";
-
-export async function GET(req: NextRequest) {
-  try {
+export const GET = createApiHandler({
+  handler: async (req, _, { activeBrand, user }) => {
     const search = req.nextUrl.searchParams;
     const page = Math.max(1, parseInt(search.get("page") || "1"));
     const pageSize = Math.min(100, Math.max(1, parseInt(search.get("pageSize") || "20")));
@@ -17,19 +16,28 @@ export async function GET(req: NextRequest) {
     const dateTo = (search.get("dateTo") || "").trim();
     const includeProduct = (search.get("includeProduct") || "").toLowerCase() === "true";
 
-    // Resolve brand scope: explicit brandId, else active brand
+    const allowedBrandIds = await resolveAllowedBrandIds(
+      user.userId,
+      user.roles || [],
+      []
+    );
+
     let brandId: number | null = null;
     if (brandIdParam) {
       const parsed = Number(brandIdParam);
       if (Number.isFinite(parsed) && parsed > 0) brandId = parsed;
     }
-    if (!brandId) {
-      const active = await getActiveBrandProfile();
-      if (active?.id) brandId = active.id;
-    }
 
     const where: any = {};
-    if (brandId) where.brandProfileId = brandId;
+    if (brandId != null) {
+      if (allowedBrandIds.length && !allowedBrandIds.includes(brandId)) {
+        return NextResponse.json({ success: false, message: "Forbidden: brand scope" }, { status: 403 });
+      }
+      where.brandProfileId = brandId;
+    } else {
+      where.brandProfileId = activeBrand.id;
+    }
+
     if (typeParam === "IN" || typeParam === "OUT" || typeParam === "ADJUST") where.type = typeParam as any;
     if (productIdParam) {
       const parsed = Number(productIdParam);
@@ -41,13 +49,11 @@ export async function GET(req: NextRequest) {
       if (dateTo) (where.createdAt as any).lte = new Date(dateTo);
     }
 
-    // If productName filter is provided, we need to filter via relation
     const include: any = {};
     if (includeProduct || productName) {
       include.product = { select: { id: true, name: true, sku: true } };
     }
 
-    // Build name filter by joining product
     const nameFilter = productName
       ? {
           product: {
@@ -73,8 +79,7 @@ export async function GET(req: NextRequest) {
     const totalOut = Number(totalOutAgg?._sum?.qty || 0);
 
     return NextResponse.json({ success: true, data: rows, page, pageSize, count, totalIn, totalOut });
-  } catch (e: any) {
-    return NextResponse.json({ success: false, message: e?.message || "Gagal memuat mutasi stok" }, { status: 500 });
   }
-}
+});
+
 

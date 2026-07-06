@@ -1,8 +1,8 @@
 "use client";
 import Link from "next/link";
 import { Suspense, useEffect, useMemo, useState, useRef, useCallback } from "react";
-import { useSearchParams } from "next/navigation";
-import { PlusCircle, Download, ChevronDown, Eye, Edit, Send, Trash2, Receipt, RotateCcw } from "lucide-react";
+import { useSearchParams, useRouter } from "next/navigation";
+import { PlusCircle, Download, ChevronDown, Eye, Edit, Send, Trash2, Receipt, RotateCcw, Search } from "lucide-react";
 import toast from "react-hot-toast";
 import Skeleton from "@/components/ui/skeleton";
 import PageBreadcrumb from "@/components/common/PageBreadCrumb";
@@ -28,46 +28,28 @@ type InvoiceRow = {
   deletedAt?: string | null;
 };
 
-const getStatusColor = (status: string) => {
-  switch (status) {
-    case "Paid":
-      return "bg-green-100 text-green-700 dark:bg-green-900/25 dark:text-green-300";
-    case "DP":
-      return "bg-blue-100 text-blue-700 dark:bg-blue-900/25 dark:text-blue-300";
-    case "Unpaid":
-      return "bg-yellow-100 text-yellow-800 dark:bg-yellow-900/20 dark:text-yellow-300";
-    case "Sent":
-      return "bg-blue-100 text-blue-700 dark:bg-blue-900/25 dark:text-blue-300";
-    case "Overdue":
-      return "bg-red-100 text-red-700 dark:bg-red-900/25 dark:text-red-300";
-    case "Cancelled":
-      return "bg-gray-200 text-gray-700 dark:bg-white/10 dark:text-gray-300";
-    default:
-      return "bg-yellow-100 text-yellow-800 dark:bg-yellow-900/20 dark:text-yellow-300"; // Draft
-  }
-};
-
 // Normalisasi status dokumen ke salah satu nilai DocStatus
 const normalizeDocStatus = (raw: string): DocStatus => {
   const v = String(raw || "").trim().toLowerCase();
-  if (!v) return "Draft";
-  if (v.startsWith("sent")) return "Sent";
-  if (v === "final") return "Final";
+  if (v === "sent") return "Sent";
   if (v === "approved") return "Approved";
   if (v === "declined") return "Declined";
-  if (v === "cancelled" || v === "canceled") return "Canceled";
-  if (v === "draft") return "Draft";
+  if (v === "canceled" || v === "cancelled") return "Canceled";
+  if (v === "final") return "Final";
   return "Draft";
 };
 
 function InvoicePageInner() {
   const searchParams = useSearchParams();
+  const router = useRouter();
   const [showDropdown, setShowDropdown] = useState(false);
   const [rows, setRows] = useState<InvoiceRow[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [page, setPage] = useState(1);
-  const [limit, setLimit] = useState(10);
+  const page = Number(searchParams?.get("page") || "1");
+  const limit = Number(searchParams?.get("limit") || "10");
+  const [total, setTotal] = useState(0);
+  const [totalPages, setTotalPages] = useState(1);
   const [searchTerm, setSearchTerm] = useState("");
   const [tab, setTab] = useState<"list" | "payment" | "deleted">((searchParams?.get('tab') as any) === 'payment' ? 'payment' : ((searchParams?.get('tab') as any) === 'deleted' ? 'deleted' : 'list'));
   const [deleteModalOpen, setDeleteModalOpen] = useState(false);
@@ -92,7 +74,9 @@ function InvoicePageInner() {
       if (range) qs.set("range", range);
       if (status) qs.set("status", status);
       if (tab === 'deleted') qs.set("includeDeleted", "1");
-      const url = qs.toString() ? `/api/invoices?${qs.toString()}` : "/api/invoices";
+      qs.set("page", page.toString());
+      qs.set("limit", limit.toString());
+      const url = `/api/invoices?${qs.toString()}`;
       const res = await fetch(url, { cache: "no-store" });
       const json = await res.json();
       if (!res.ok || json?.success === false) throw new Error(json?.message || "Gagal mengambil data");
@@ -110,7 +94,10 @@ function InvoicePageInner() {
         deletedAt: r.deletedAt,
       }));
       setRows(mapped);
-      setPage(1);
+      if (json.pagination) {
+        setTotal(json.pagination.total);
+        setTotalPages(json.pagination.totalPages);
+      }
     } catch (e: any) {
       setError(e?.message || "Gagal mengambil data");
     } finally {
@@ -149,16 +136,14 @@ function InvoicePageInner() {
   const filteredDP = useMemo(() => filteredAll.filter(r => !r.deletedAt && (Number(r.downPayment || 0) > 0 || r.status === 'DP')), [filteredAll]);
   const filteredDeleted = useMemo(() => filteredAll.filter(r => !!r.deletedAt), [filteredAll]);
   const activeData = useMemo(() => (tab === "list" ? filteredList : (tab === 'payment' ? filteredDP : filteredDeleted)), [tab, filteredList, filteredDP, filteredDeleted]);
-  const { totalPages, paged } = useMemo(() => {
-    const total = Math.max(1, Math.ceil(activeData.length / limit));
-    const start = (page - 1) * limit;
-    const slice = activeData.slice(start, start + limit);
-    return { totalPages: total, paged: slice } as const;
-  }, [activeData, limit, page]);
+  
+  // Since we use server-side pagination, activeData is already paged
+  const paged = activeData;
 
-  const markAsSent = useCallback(async (id: number, via?: 'wa' | 'email' | 'pdf') => {
+
+  const markAsSent = useCallback(async (id: number) => {
     try {
-      const statusValue = via === 'wa' ? 'Sent via WhatsApp' : via === 'email' ? 'Sent via Email' : via === 'pdf' ? 'Sent via PDF' : 'Sent';
+      const statusValue = 'Sent';
       const res = await fetch(`/api/invoices/${id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ status: statusValue }) });
       if (!res.ok) throw new Error();
       setRows((prev) => prev.map((r) => (r.id === id ? { ...r, status: statusValue } : r)));
@@ -247,27 +232,70 @@ function InvoicePageInner() {
       <PageBreadcrumb pageTitle="Invoice Penjualan" />
 
       {/* Kontainer utama */}
-      <div className="rounded-2xl border border-gray-200 bg-white p-6 min-h-[70vh] overflow-visible flex flex-col gap-4 dark:border-gray-800 dark:bg-gray-900">
+      <div className="rounded-2xl border border-gray-200 bg-white shadow-sm dark:border-gray-800 dark:bg-gray-900">
+        <div className="flex flex-col gap-4 border-b border-gray-100 px-6 py-5 lg:flex-row lg:items-center lg:justify-between dark:border-gray-800">
+          <div>
+            <h2 className="text-xl font-semibold text-gray-800 dark:text-white">Monitoring Invoice</h2>
+            <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
+              Tracking status pembayaran vendor dan keterhubungan dengan PO maupun GR.
+            </p>
+          </div>
+          <div className="flex flex-wrap items-center gap-3">
+            <button
+              className="flex items-center gap-2 rounded-full border border-gray-200 px-4 py-2 text-sm font-medium text-gray-600 transition hover:border-gray-300 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-white/5"
+              onClick={() => setShowDropdown(!showDropdown)}
+            >
+              <Download className="h-4 w-4" />
+              Export & Bagikan
+              <ChevronDown className="h-4 w-4" />
+            </button>
+            <Link
+              href="/penjualan/invoice-penjualan/add"
+              className="flex items-center gap-2 rounded-full bg-blue-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-blue-700"
+            >
+              <PlusCircle className="h-4 w-4" />
+              Buat Invoice Baru
+            </Link>
+          </div>
+        </div>
         {/* Tabs with underline */}
         <div>
           <div className="flex gap-6 border-b dark:border-gray-800">
             <button
               className={`relative -mb-px px-1 py-3 text-sm font-medium ${tab==='list' ? 'text-blue-600 dark:text-blue-400' : 'text-gray-600 hover:text-gray-800 dark:text-gray-300 dark:hover:text-gray-100'}`}
-              onClick={() => { setTab('list'); setPage(1); }}
+              onClick={() => {
+                const params = new URLSearchParams(searchParams?.toString());
+                params.set("tab", "list");
+                params.set("page", "1");
+                router.push(`?${params.toString()}`);
+                setTab("list");
+              }}
             >
               List Invoice
               {tab==='list' && <span className="absolute left-0 right-0 -bottom-[1px] h-0.5 bg-blue-600 dark:bg-blue-400" />}
             </button>
             <button
               className={`relative -mb-px px-1 py-3 text-sm font-medium ${tab==='payment' ? 'text-blue-600 dark:text-blue-400' : 'text-gray-600 hover:text-gray-800 dark:text-gray-300 dark:hover:text-gray-100'}`}
-              onClick={() => { setTab('payment'); setPage(1); }}
+              onClick={() => {
+                const params = new URLSearchParams(searchParams?.toString());
+                params.set("tab", "payment");
+                params.set("page", "1");
+                router.push(`?${params.toString()}`);
+                setTab("payment");
+              }}
             >
               Invoice Pembayaran
               {tab==='payment' && <span className="absolute left-0 right-0 -bottom-[1px] h-0.5 bg-blue-600 dark:bg-blue-400" />}
             </button>
             <button
               className={`relative -mb-px px-1 py-3 text-sm font-medium ${tab==='deleted' ? 'text-blue-600 dark:text-blue-400' : 'text-gray-600 hover:text-gray-800 dark:text-gray-300 dark:hover:text-gray-100'}`}
-              onClick={() => { setTab('deleted'); setPage(1); }}
+              onClick={() => {
+                const params = new URLSearchParams(searchParams?.toString());
+                params.set("tab", "deleted");
+                params.set("page", "1");
+                router.push(`?${params.toString()}`);
+                setTab("deleted");
+              }}
             >
               Terhapus
               {tab==='deleted' && <span className="absolute left-0 right-0 -bottom-[1px] h-0.5 bg-blue-600 dark:bg-blue-400" />}
@@ -275,87 +303,29 @@ function InvoicePageInner() {
           </div>
         </div>
         {/* Toolbar */}
-        <div className="mb-2 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <input
-            type="text"
-            placeholder="Cari pelanggan / nomor invoice..."
-            value={searchTerm}
-            onChange={(e) => { setSearchTerm(e.target.value); setPage(1); }}
-            className="h-11 w-full sm:w-64 rounded-lg border border-gray-300 bg-transparent px-4 py-2.5 text-sm text-gray-800 placeholder:text-gray-400 focus:ring-3 focus:outline-hidden dark:border-gray-700 dark:text-gray-200 dark:placeholder:text-gray-500"
-          />
-          <div className="flex items-center gap-3">
-            {activeFiltersLabel ? (
-              <span className="rounded-full bg-gray-100 px-3 py-1 text-xs font-semibold text-gray-600 dark:bg-white/10 dark:text-gray-300">
-                Aktif: {activeFiltersLabel}
-              </span>
-            ) : null}
-            {/* Dropdown Unduh dipindah ke toolbar */}
-            <div className="relative">
-              <button onClick={() => setShowDropdown(!showDropdown)} className="border px-4 py-2 rounded-md flex items-center gap-2 hover:bg-gray-50 dark:border-gray-700 dark:hover:bg-white/5">
-                <Download size={18} />
-                Unduh & Bagikan
-                <ChevronDown size={16} />
-              </button>
-              {showDropdown && (
-                <div className="absolute right-0 mt-2 w-52 bg-white shadow-lg rounded-md border z-10 dark:bg-gray-900 dark:border-gray-800">
-                  <ul className="py-2 text-sm text-gray-700 dark:text-gray-200">
-                    <li
-                      className="px-4 py-2 hover:bg-gray-100 cursor-pointer dark:hover:bg-white/5"
-                      onClick={() => toast("Fitur unduh semua dokumen belum tersedia")}
-                    >
-                      Unduh Semua Dokumen
-                    </li>
-                    <li
-                      className="px-4 py-2 hover:bg-gray-100 cursor-pointer dark:hover:bg-white/5"
-                      onClick={() => {
-                      const rows = activeData.map((r) => ({
-                        invoiceNumber: r.invoiceNumber,
-                        customer: `${r.customer?.pic || ''} ${r.customer?.company ? '- ' + r.customer.company : ''}`.trim(),
-                        issueDate: r.issueDate,
-                        dueDate: r.dueDate,
-                        total: r.total,
-                        status: r.status,
-                      }));
-                        if (rows.length === 0) { toast.error('Tidak ada data untuk diekspor'); return; }
-                        downloadCSV(rows, 'invoices.csv');
-                        setShowDropdown(false);
-                      }}
-                    >
-                      Ekspor data CSV
-                    </li>
-                    <li
-                      className="px-4 py-2 hover:bg-gray-100 cursor-pointer dark:hover:bg-white/5"
-                      onClick={async () => {
-                      const rows = activeData.map((r) => ({
-                        invoiceNumber: r.invoiceNumber,
-                        customer: `${r.customer?.pic || ''} ${r.customer?.company ? '- ' + r.customer.company : ''}`.trim(),
-                        issueDate: r.issueDate,
-                        dueDate: r.dueDate,
-                        total: r.total,
-                        status: r.status,
-                      }));
-                        if (rows.length === 0) { toast.error('Tidak ada data untuk diekspor'); return; }
-                        await downloadXLSX(rows, 'invoices.xlsx', 'Invoices');
-                        setShowDropdown(false);
-                      }}
-                    >
-                      Ekspor data XLSX
-                    </li>
-                  </ul>
-                </div>
-              )}
+        <div className="space-y-4 px-6 py-5">
+          <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+            <div className="flex flex-1 items-center gap-3">
+              <div className="relative flex-1">
+                <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
+                <input
+                  type="text"
+                  placeholder="Cari pelanggan / nomor invoice..."
+                  value={searchTerm}
+                  onChange={(e) => { setSearchTerm(e.target.value); }}
+                  className="h-11 w-full rounded-xl border border-gray-200 bg-gray-50 pl-9 pr-3 text-sm text-gray-700 outline-none transition focus:border-blue-300 focus:bg-white focus:ring-2 focus:ring-blue-100 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200 dark:placeholder:text-gray-500 dark:focus:border-blue-500"
+                />
+              </div>
             </div>
-            <Link href="/penjualan/invoice-penjualan/add" className="flex items-center rounded-full bg-blue-600 px-4 py-2 text-white shadow-sm transition hover:bg-blue-700">
-              <PlusCircle className="mr-2 h-4 w-4" />
-              Buat Invoice Baru
-            </Link>
+            <div className="flex items-center gap-2 rounded-full border border-dashed border-gray-200 px-3 py-2 text-xs text-gray-500 dark:border-gray-700 dark:text-gray-400">
+              <Receipt className="h-3.5 w-3.5" />
+              {activeData.length} invoice aktif
+            </div>
           </div>
-        </div>
 
-        {/* Tabel */}
-        <div className="overflow-x-auto overflow-y-visible rounded-lg border bg-white shadow-sm min-h-[50vh] flex-1 dark:bg-gray-900 dark:border-gray-800">
+          <div className="overflow-hidden rounded-2xl border border-gray-100 dark:border-gray-800">
           {loading ? (
-            <div className="p-6">
+            <>
               {/* Toolbar skeleton */}
               <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                 <Skeleton className="h-11 w-full sm:w-64 rounded-lg" />
@@ -391,7 +361,7 @@ function InvoicePageInner() {
                   ))}
                 </tbody>
               </table>
-            </div>
+            </>
           ) : error ? (
             <div className="p-6 text-center text-red-600">{error}</div>
           ) : activeData.length === 0 ? (
@@ -544,17 +514,24 @@ function InvoicePageInner() {
               </tbody>
             </table>
           )}
+          </div>
         </div>
 
         {/* Pagination (komponen template) */}
         <Pagination
           currentPage={page}
           totalPages={totalPages}
-          onPageChange={setPage}
+          onPageChange={(p) => {
+            const params = new URLSearchParams(searchParams?.toString());
+            params.set("page", p.toString());
+            router.push(`?${params.toString()}`);
+          }}
           limit={limit}
-          onLimitChange={(value) => {
-            setLimit(value);
-            setPage(1);
+          onLimitChange={(l) => {
+            const params = new URLSearchParams(searchParams?.toString());
+            params.set("limit", l.toString());
+            params.set("page", "1");
+            router.push(`?${params.toString()}`);
           }}
         />
       </div>
@@ -599,7 +576,7 @@ function InvoicePageInner() {
                   } else {
                     window.open(`/penjualan/invoice-penjualan/${selectedRow.id}`, '_blank');
                   }
-                  await markAsSent(selectedRow.id, sendMethod);
+                  await markAsSent(selectedRow.id);
                 } finally { setSendModalOpen(false); }
               }} className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700">Kirim</button>
             </div>
@@ -637,13 +614,18 @@ function InvoicePageInner() {
               <button onClick={async ()=>{
                 try {
                   let payload:any = {};
+                  const totalAmt = Number(selectedPayRow.total);
                   if (payMode==='paid') {
-                    payload = { status: 'Paid', downPayment: selectedPayRow.total };
+                    payload = { status: 'Paid', paymentStatus: 'PAID', downPayment: totalAmt };
                   } else {
                     const add = Number((payAmount||'').replace(/[^0-9.-]/g,''))||0;
                     const current = Number(selectedPayRow.downPayment||0);
-                    const next = Math.min(Number(selectedPayRow.total), current + add);
-                    payload = { downPayment: next, status: next >= Number(selectedPayRow.total) ? 'Paid' : 'DP' };
+                    const next = Math.min(totalAmt, current + add);
+                    payload = { 
+                      downPayment: next, 
+                      status: next >= totalAmt ? 'Paid' : 'Sent',
+                      paymentStatus: next >= totalAmt ? 'PAID' : (next > 0 ? 'PARTIAL' : 'UNPAID')
+                    };
                   }
                   const res = await fetch(`/api/invoices/${selectedPayRow.id}`, { method:'PATCH', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload) });
                   if (!res.ok) throw new Error('Gagal menyimpan');

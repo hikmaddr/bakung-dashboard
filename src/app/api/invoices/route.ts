@@ -1,10 +1,10 @@
 import { NextResponse, type NextRequest } from "next/server";
 export const revalidate = 60;
 import { prisma } from "@/lib/prisma";
-import { getActiveBrandProfile, resolveAllowedBrandIds } from "@/lib/brand";
-import { getAuth } from "@/lib/auth";
-import { logActivity } from "@/lib/activity";
+import { InvoiceStatus } from "@prisma/client";
 import { sendNotificationToRole } from "@/lib/notification";
+import { invoiceSchema } from "@/lib/validations";
+import { createApiHandler } from "@/lib/api-handler";
 
 function genInvoiceNumberBase() {
   const now = new Date();
@@ -12,13 +12,13 @@ function genInvoiceNumberBase() {
   return `INV-${year}`;
 }
 
-export async function GET(req: NextRequest) {
-  try {
-    const active = await getActiveBrandProfile();
+export const GET = createApiHandler({
+  handler: async (req, _, { activeBrand }) => {
+    await ensureInvoiceDueNotifications(activeBrand.id);
     const sp = req.nextUrl.searchParams;
     const includeDeleted = sp.get("includeDeleted") === "1";
     const rangeRaw = (sp.get("range") || "").toLowerCase();
-    const statusRaw = sp.get("status") || ""; // comma-separated allowed
+    const statusRaw = sp.get("status") || "";
     const days = (() => {
       const m = rangeRaw.match(/^(\d+)d$/);
       return m ? Number(m[1]) : undefined;
@@ -30,27 +30,45 @@ export async function GET(req: NextRequest) {
       .map((s) => s.trim())
       .filter((s) => !!s);
 
-    const where: any = {};
-    if (active?.id) where.brandProfileId = active.id;
+    const where: any = { brandProfileId: activeBrand.id };
     if (start) where.issueDate = { gte: start, lt: now };
     if (statuses.length > 0) where.status = { in: statuses };
     if (!includeDeleted) where.deletedAt = null;
 
-    await ensureInvoiceDueNotifications(active?.id ?? null);
+    const page = Number(sp.get("page")) || 1;
+    const limit = Number(sp.get("limit")) || 50;
+    const skip = (page - 1) * limit;
 
-    const rows = await prisma.invoice.findMany({ orderBy: { createdAt: "desc" }, where, include: { customer: true, items: true, quotation: true } });
-    return NextResponse.json({ success: true, data: rows });
-  } catch (e) {
-    console.error("GET /api/invoices error:", e);
-    return NextResponse.json({ success: false, message: "Gagal mengambil invoice" }, { status: 500 });
+    const [rows, total] = await Promise.all([
+      prisma.invoice.findMany({
+        orderBy: { createdAt: "desc" },
+        where,
+        include: { customer: true, items: true, quotation: true },
+        skip,
+        take: limit,
+      }),
+      prisma.invoice.count({ where })
+    ]);
+
+    return NextResponse.json({ 
+      success: true, 
+      data: rows,
+      pagination: {
+        total,
+        page,
+        limit,
+        totalPages: Math.ceil(total / limit)
+      }
+    });
   }
-}
+});
 
-export async function POST(req: NextRequest) {
-  try {
-    const body = await req.json();
+export const POST = createApiHandler({
+  schema: invoiceSchema,
+  actionName: "INVOICE_CREATE",
+  entityType: "invoice",
+  handler: async (req, validatedData, { activeBrand }) => {
     const {
-      invoiceNumber,
       invoiceDate,
       dueDate,
       customerId,
@@ -63,11 +81,7 @@ export async function POST(req: NextRequest) {
       shippingCost = 0,
       taxMode = "none",
       downPayment = 0,
-    } = body;
-
-    if (!customerId || !Array.isArray(items) || items.length === 0) {
-      return NextResponse.json({ success: false, message: "Customer dan items wajib diisi" }, { status: 400 });
-    }
+    } = validatedData;
 
     // compute
     const subtotal = items.reduce((acc: number, it: any) => acc + Number(it.qty || 0) * Number(it.price || 0), 0);
@@ -94,7 +108,7 @@ export async function POST(req: NextRequest) {
     const total = Math.max(0, totalBeforeDP - Number(downPayment || 0));
 
     // generate number if not provided or duplicate
-    let number = String(invoiceNumber || "").trim();
+    let number = String(validatedData.invoiceNumber || "").trim();
     if (!number) {
       const base = genInvoiceNumberBase();
       const count = await prisma.invoice.count({ where: { invoiceNumber: { startsWith: base } } });
@@ -108,24 +122,17 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    // Guard brand berdasarkan izin
-    const auth = await getAuth();
-    const brand = await getActiveBrandProfile();
-    if (!brand?.id) return NextResponse.json({ success: false, message: "Brand aktif tidak ditemukan" }, { status: 400 });
-    const allowedBrandIds = await resolveAllowedBrandIds(auth?.userId ?? null, (auth?.roles as string[]) ?? [], []);
-    if (!allowedBrandIds.includes(brand.id)) return NextResponse.json({ success: false, message: "Forbidden: brand scope" }, { status: 403 });
-
     const inv = await prisma.invoice.create({
       data: {
         invoiceNumber: number,
         issueDate: new Date(invoiceDate || new Date()),
         dueDate: new Date(dueDate || new Date()),
-        status: "Draft",
+        status: InvoiceStatus.Draft,
         notes: notes ? String(notes).slice(0, 191) : null,
         terms: terms ? String(terms).slice(0, 191) : null,
         customerId: Number(customerId),
         quotationId: quotationId != null ? Number(quotationId) : undefined,
-        brandProfileId: brand.id,
+        brandProfileId: activeBrand.id,
         subtotal,
         lineDiscount,
         extraDiscountType,
@@ -150,24 +157,6 @@ export async function POST(req: NextRequest) {
       },
       include: { customer: true, items: true },
     });
-    // Catat aktivitas pembuatan invoice
-    try {
-      await logActivity(req, {
-        userId: auth?.userId || null,
-        action: "INVOICE_CREATE",
-        entity: "invoice",
-        entityId: inv.id,
-        metadata: {
-          brandProfileId: brand.id,
-          invoiceNumber: inv.invoiceNumber,
-          total: inv.total,
-          customerId: inv.customerId,
-          quotationId: inv.quotationId || null,
-          taxMode,
-          downPayment: Number(downPayment) || 0,
-        },
-      });
-    } catch {}
 
     try {
       await sendNotificationToRole(
@@ -175,29 +164,22 @@ export async function POST(req: NextRequest) {
         "Invoice baru dibuat",
         `Invoice ${inv.invoiceNumber} berhasil dibuat dengan total ${inv.total.toLocaleString()}.`,
         "info",
-        brand.id,
+        activeBrand.id,
         `/penjualan/invoice-penjualan/${inv.id}`,
       );
     } catch {}
 
     return NextResponse.json({ success: true, data: inv });
-  } catch (e: any) {
-    console.error("POST /api/invoices error:", e);
-    const message = e?.code === 'P2002'
-      ? 'Nomor invoice sudah digunakan'
-      : e?.code === 'P2021'
-      ? 'Tabel invoice/invoiceitem belum ada di database. Jalankan prisma migrate.'
-      : (e?.message || 'Gagal menyimpan invoice');
-    return NextResponse.json({ success: false, message }, { status: 500 });
   }
-}
+});
+
 async function ensureInvoiceDueNotifications(brandId: number | null) {
   const now = new Date();
   const threshold = new Date(now.getTime() + 24 * 60 * 60 * 1000);
   const where: any = {
     deletedAt: null,
     dueDate: { lte: threshold },
-    status: { notIn: ["Paid", "Void", "Cancelled"] },
+    status: { notIn: [InvoiceStatus.Paid, InvoiceStatus.Void, InvoiceStatus.Canceled] },
   };
   if (brandId != null) {
     where.brandProfileId = brandId;
@@ -208,15 +190,23 @@ async function ensureInvoiceDueNotifications(brandId: number | null) {
     select: { id: true, invoiceNumber: true, dueDate: true, brandProfileId: true },
   });
 
+  if (dueInvoices.length === 0) return;
+
+  const targetUrls = dueInvoices.map(inv => `/penjualan/invoice-penjualan/${inv.id}`);
+  
+  const existingNotifications = await prisma.notification.findMany({
+    where: {
+      targetUrl: { in: targetUrls },
+      title: "Invoice jatuh tempo",
+    },
+    select: { targetUrl: true }
+  });
+
+  const notifiedUrls = new Set(existingNotifications.map(n => n.targetUrl));
+
   for (const invoice of dueInvoices) {
     const targetUrl = `/penjualan/invoice-penjualan/${invoice.id}`;
-    const existing = await prisma.notification.findFirst({
-      where: {
-        targetUrl,
-        title: "Invoice jatuh tempo",
-      },
-    });
-    if (existing) continue;
+    if (notifiedUrls.has(targetUrl)) continue;
 
     const dueDate = invoice.dueDate ? new Date(invoice.dueDate) : null;
     const isOverdue = dueDate ? dueDate.getTime() < now.getTime() : false;

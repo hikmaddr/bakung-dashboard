@@ -42,6 +42,12 @@ async function main() {
     
     console.log('[prisma/seed] Seeding roles...');
     await runNodeScript('scripts/seed-roles.js', ['--email', ownerEmail]);
+
+    console.log('[prisma/seed] Generating dummy products...');
+    await runNodeScript('scripts/generate-products.js');
+
+    console.log('[prisma/seed] Generating dummy customers...');
+    await runNodeScript('scripts/generate-customers.js');
     
     console.log('[prisma/seed] Database seeding completed successfully!');
   } catch (error) {

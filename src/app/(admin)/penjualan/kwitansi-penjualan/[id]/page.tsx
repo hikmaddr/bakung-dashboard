@@ -255,6 +255,18 @@ export default function ReceiptDetailPage() {
     [actor?.email, actor?.phone]
   );
 
+  const signatureUrl = useMemo(() => {
+    try {
+      const defaults = typeof brand?.templateDefaults === "string" 
+        ? JSON.parse(brand.templateDefaults) 
+        : brand?.templateDefaults || {};
+      
+      return brand?.signatureImageUrl || defaults.signatureImageUrl || defaults.signatureUrl || null;
+    } catch (e) {
+      return brand?.signatureImageUrl || null;
+    }
+  }, [brand]);
+
   const customerHeading = useMemo(() => {
     if (!receipt?.customer) return "Customer";
     const parts = [receipt.customer.pic, receipt.customer.company]
@@ -293,7 +305,7 @@ export default function ReceiptDetailPage() {
       >
         <div className="space-y-10 px-10 py-10 text-sm leading-relaxed" style={{ color: theme.headerTextColor }}>
           <header className="flex flex-wrap items-start justify-between gap-6">
-            <div className="flex flex-1 items-start gap-3">
+            <div className="flex flex-1 items-center gap-3">
               <div className="flex flex-col items-start">
                 {brand?.logoUrl ? (
                   // eslint-disable-next-line @next/next/no-img-element
@@ -316,7 +328,7 @@ export default function ReceiptDetailPage() {
               </div>
               <div className="flex-1">
                 {brand?.showBrandName !== false && brand?.name && (
-                  <h2 className="text-2xl font-semibold leading-tight" style={{ color: theme.primaryColor }}>
+                  <h2 className="whitespace-nowrap text-2xl font-semibold leading-tight" style={{ color: theme.primaryColor }}>
                     {brand.name}
                   </h2>
                 )}
@@ -518,56 +530,56 @@ export default function ReceiptDetailPage() {
               </div>
             </div>
 
-            <div>
+            <div className="space-y-4">
+              <div className="mt-4 space-y-2 rounded-xl border px-5 py-4 text-sm text-slate-600" style={{ borderColor: `${theme.tableBorderColor}55` }}>
+                <div className="flex justify-between border-b border-slate-100 pb-2">
+                  <span>Subtotal</span>
+                  <span className="font-semibold text-slate-700">{formatCurrency(computedSubtotal)}</span>
+                </div>
+                {normalizeNumber(receipt?.lineDiscount) > 0 && (
+                  <div className="flex justify-between border-b border-slate-100 pb-2">
+                    <span>Line Discount</span>
+                    <span className="text-rose-500">- {formatCurrency(receipt?.lineDiscount)}</span>
+                  </div>
+                )}
+                {normalizeNumber(receipt?.taxAmount) > 0 && (
+                  <div className="flex justify-between border-b border-slate-100 pb-2">
+                    <span>Tax</span>
+                    <span className="text-slate-700">{formatCurrency(receipt?.taxAmount)}</span>
+                  </div>
+                )}
+                {normalizeNumber(receipt?.downPayment) > 0 && (
+                  <div className="flex justify-between border-b border-slate-100 pb-2">
+                    <span>Down Payment</span>
+                    <span className="text-rose-500">- {formatCurrency(receipt?.downPayment)}</span>
+                  </div>
+                )}
+              </div>
+
               <div
-                className="rounded-2xl p-6 text-right shadow-sm"
+                className="rounded-2xl p-8 text-right shadow-sm"
                 style={{ backgroundColor: theme.totalBackground, color: theme.totalTextColor }}
               >
                 <div className="text-xs font-semibold uppercase tracking-wide">Jumlah Diterima</div>
                 <div className="mt-3 text-3xl font-bold">{formatCurrency(receipt.total)}</div>
-                {thankYouAndTerms.message && <div className="mt-4 text-xs">{thankYouAndTerms.message}</div>}
-              </div>
-
-              <div className="mt-4 space-y-2 rounded-xl border px-5 py-4 text-sm text-slate-600" style={{ borderColor: `${theme.tableBorderColor}55` }}>
-                <div className="flex justify-between">
-                  <span>Subtotal</span>
-                  <span>{formatCurrency(computedSubtotal)}</span>
-                </div>
-                {normalizeNumber(receipt?.lineDiscount) > 0 && (
-                  <div className="flex justify-between">
-                    <span>Line Discount</span>
-                    <span>- {formatCurrency(receipt?.lineDiscount)}</span>
-                  </div>
-                )}
-                {normalizeNumber(receipt?.taxAmount) > 0 && (
-                  <div className="flex justify-between">
-                    <span>Tax</span>
-                    <span>{formatCurrency(receipt?.taxAmount)}</span>
-                  </div>
-                )}
-                {normalizeNumber(receipt?.downPayment) > 0 && (
-                  <div className="flex justify-between">
-                    <span>Down Payment</span>
-                    <span>- {formatCurrency(receipt?.downPayment)}</span>
-                  </div>
-                )}
-                <div className="flex justify-between border-t pt-3 font-semibold text-slate-900">
-                  <span>Total</span>
-                  <span>{formatCurrency(receipt.total)}</span>
-                </div>
+                {thankYouAndTerms.message && <div className="mt-4 text-xs opacity-90">{thankYouAndTerms.message}</div>}
               </div>
             </div>
           </section>
 
-          <section className="space-y-3">
-            <div className="text-xs font-semibold uppercase tracking-wide" style={{ color: theme.headerAccentColor }}>
-              Signature
-            </div>
-            <div className="rounded-xl border px-6 py-8 text-center" style={{ borderColor: `${theme.tableBorderColor}88` }}>
-              <div className="text-sm font-semibold" style={{ color: theme.headerTextColor }}>
-                {actorHeading || brand?.name || "Authorized"}
+          <section className="flex flex-col items-end pt-10">
+            <div className="text-center">
+              <div className="text-sm font-bold mb-4 text-right">Hormat Kami,</div>
+              <div className="flex justify-end mb-4 h-24">
+                {signatureUrl ? (
+                  <img src={signatureUrl} alt="Signature" className="h-full w-auto object-contain" />
+                ) : (
+                  <div className="w-48 border-b-2 border-slate-300 self-end"></div>
+                )}
               </div>
-              <div className="mt-6 text-xs text-slate-400">(Tanda tangan dan stempel jika diperlukan)</div>
+              <div className="text-sm font-bold text-right" style={{ color: theme.headerTextColor }}>
+                {actorHeading || brand?.name || "Authorized Signature"}
+              </div>
             </div>
           </section>
         </div>

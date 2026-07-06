@@ -56,23 +56,24 @@ export default function ClientAdminLayout({ children }: { children: React.ReactN
   return (
     <ThemeProvider>
       <FeedbackProvider>
-        <div className="min-h-screen xl:flex">
-          <AppSidebar />
-          <Backdrop />
-          <div className={`flex-1 flex flex-col transition-all duration-300 ease-in-out ${mainContentMargin}`}>
-            <IdleWatcher />
-            <AutoRefresh intervalMs={60_000} />
-            <BrandSelectOnLogin />
-            <AppHeader />
-            <Suspense fallback={null}>
-              <main className="p-4 md:p-6 max-w-[--breakpoint-2xl] mx-auto w-full">
-                <RoleGuard roles={["Owner", "Admin"]}>
-                  <RouteTransition>
-                    {children}
-                  </RouteTransition>
-                </RoleGuard>
-              </main>
-            </Suspense>
+        <div className="min-h-screen">
+          <AppHeader />
+          <div className="flex">
+            <AppSidebar />
+            <Backdrop />
+            <div className={`flex-1 flex flex-col pt-16 transition-all duration-300 ease-in-out ${mainContentMargin}`}>
+              <IdleWatcher />
+              <AutoRefresh intervalMs={60_000} />
+              <BrandSelectOnLogin />
+              <Suspense fallback={null}>
+                <main className="p-4 md:p-6 max-w-[--breakpoint-2xl] mx-auto w-full">
+                  <RoleGuard roles={["Owner", "Admin"]}>
+                    <RouteTransition>
+                      {children}
+                    </RouteTransition>
+                  </RoleGuard>
+                </main>
+              </Suspense>
             <Suspense fallback={null}>
               <Modal isOpen={welcomeOpen} onClose={() => setWelcomeOpen(false)}>
                 <div className="p-6">
@@ -100,6 +101,7 @@ export default function ClientAdminLayout({ children }: { children: React.ReactN
                 </div>
               </Modal>
             </Suspense>
+            </div>
           </div>
         </div>
       </FeedbackProvider>

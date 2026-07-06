@@ -279,7 +279,11 @@ const drawHeader = async (
   margin: number
 ): Promise<number> => {
   const { width } = page.getSize();
-  const topY = page.getHeight() - margin;
+  const pageHeight = page.getHeight();
+  // Accent bar dua-tone di tepi atas halaman (konsisten dengan dokumen lain)
+  page.drawRectangle({ x: 0, y: pageHeight - 6, width, height: 6, color: toRgb(theme.primaryColor) });
+  page.drawRectangle({ x: 0, y: pageHeight - 8.5, width, height: 2.5, color: toRgb(theme.secondaryColor) });
+  const topY = pageHeight - margin;
   const shouldShowName = brand.showBrandName ?? true;
   const shouldShowDescription = brand.showBrandDescription ?? true;
   const shouldShowEmail = brand.showBrandEmail ?? true;
@@ -398,8 +402,8 @@ const drawHeader = async (
 
   const metaLines = [
     { label: "Number", value: quotationNumber },
-    { label: "Date", value: date.toLocaleDateString("id-ID") },
-    validUntil ? { label: "Valid Until", value: validUntil.toLocaleDateString("id-ID") } : null,
+    { label: "Date", value: date.toLocaleDateString("id-ID", { day: "2-digit", month: "long", year: "numeric" }) },
+    validUntil ? { label: "Valid Until", value: validUntil.toLocaleDateString("id-ID", { day: "2-digit", month: "long", year: "numeric" }) } : null,
   ].filter(Boolean) as Array<{ label: string; value: string }>;
 
   let metaY = topY - 48;
@@ -806,7 +810,8 @@ const drawItemsTable = async (
 
     const embeddedImage = showImageColumn ? await embedItemImage(pdf, item.imageUrl) : null;
     if (embeddedImage) {
-      rowHeight = Math.max(rowHeight, Math.floor(40 * s));
+      // ✅ Perbesar tinggi baris jika ada gambar agar mockup terlihat jelas (PDF)
+      rowHeight = Math.max(rowHeight, Math.floor(82 * s));
     }
 
     if (y - rowHeight < margin + 120) {
@@ -831,8 +836,9 @@ const drawItemsTable = async (
       const colWidth = tableWidth * column.width;
       if (column.key === "image") {
         if (embeddedImage) {
-          const maxWidth = Math.max(Math.floor(14 * s), colWidth - 24);
-          const maxHeight = Math.max(Math.floor(14 * s), rowHeight - Math.floor(12 * s));
+          // ✅ Perbesar ukuran maksimum gambar di PDF
+          const maxWidth = colWidth - 12;
+          const maxHeight = rowHeight - Math.floor(10 * s);
           const scale = Math.min(maxWidth / embeddedImage.width, maxHeight / embeddedImage.height, 1);
           const imgWidth = embeddedImage.width * scale;
           const imgHeight = embeddedImage.height * scale;
@@ -942,7 +948,7 @@ const drawItemsTable = async (
       color: toRgb(theme.tableBorderColor),
     });
 
-    total += lineAmount;
+total += lineAmount;
     y -= rowHeight;
   }
 
@@ -952,96 +958,115 @@ const drawItemsTable = async (
 const drawTotalsAndNotes = (
   page: PDFPage,
   theme: InvoiceTemplateTheme,
+  summaryLines: Array<{ label: string; amount: number }>,
   total: number,
   notes: string | null | undefined,
   thankYouMessage: string,
   paymentLines: string[],
   termsLines: string[],
-
   font: PDFFont,
   bold: PDFFont,
   margin: number,
   startY: number,
-  scale?: number
+  s: number
 ) => {
-  const s = Math.max(0.6, Math.min(1, scale ?? 1));
-  const { width } = page.getSize();
-  const contentWidth = width - margin * 2;
-  const rightWidth = contentWidth * 0.32;
-  const leftWidth = contentWidth - rightWidth - Math.max(16, Math.floor(24 * s));
-  const rightX = margin + leftWidth + Math.max(16, Math.floor(24 * s));
-
-  const totalCardHeight = Math.max(64, Math.floor(90 * s));
-  // Total card with rounded corners
-  // Solid base fill to avoid any transparency issues
-  page.drawRectangle({
-    x: rightX,
-    y: startY - totalCardHeight,
-    width: rightWidth,
-    height: totalCardHeight,
-    color: toRgb(theme.totalBackground),
-  });
-  drawRoundedRect(
-    page,
-    rightX,
-    startY - totalCardHeight,
-    rightWidth,
-    totalCardHeight,
-    10,
-    { color: toRgb(theme.totalBackground), borderColor: toRgb(theme.tableBorderColor), borderWidth: 1, opacity: 1 }
-  );
+  const contentWidth = page.getSize().width - margin * 2;
+  const rightWidth = Math.max(180, Math.floor(contentWidth * 0.32));
+  const gap = Math.max(18, Math.floor(24 * s));
+  const leftWidth = contentWidth - rightWidth - gap;
+  const rightX = margin + leftWidth + gap;
 
   const paddingX = Math.max(12, Math.floor(18 * s));
-  const availableWidth = rightWidth - paddingX * 2;
-
-  const totalText = `Rp ${total.toLocaleString("id-ID")}`;
-  const labelSize = Math.max(8, Math.floor(9 * s));
-  const messageSize = Math.max(7, Math.floor(8 * s));
-  const labelToAmountGap = Math.max(8, Math.floor(10 * s));
-  const amountToMessageGap = thankYouMessage ? Math.max(8, Math.floor(12 * s)) : 0;
+  const paddingY = Math.max(16, Math.floor(20 * s));
+  const summarySize = Math.max(8, Math.floor(9 * s));
+  const summarySpacing = Math.max(6, Math.floor(8 * s));
+  const labelSize = Math.max(9, Math.floor(10 * s));
+  const labelToAmountGap = Math.max(6, Math.floor(10 * s));
   let amountSize = Math.max(16, Math.floor(20 * s));
+  const messageSize = Math.max(7, Math.floor(8 * s));
+  const messageGap = thankYouMessage ? Math.max(8, Math.floor(12 * s)) : 0;
+  const preTotalGap = summaryLines.length ? Math.max(12, Math.floor(16 * s)) : Math.max(10, Math.floor(14 * s));
+
+  // 1. Draw summary lines ABOVE the box
+  let summaryCursor = startY;
+  const labelColor = toRgb(theme.mutedText);
+  const highlightColor = toRgb(theme.headerTextColor);
+
+  summaryLines.forEach((line) => {
+    summaryCursor -= summarySize;
+    const valueText = `Rp ${line.amount.toLocaleString("id-ID")}`;
+    page.drawText(line.label, {
+      x: rightX + paddingX,
+      y: summaryCursor,
+      font,
+      size: summarySize,
+      color: labelColor,
+    });
+    const valueWidth = bold.widthOfTextAtSize(valueText, summarySize);
+    page.drawText(valueText, {
+      x: rightX + rightWidth - paddingX - valueWidth,
+      y: summaryCursor,
+      font: bold,
+      size: summarySize,
+      color: highlightColor,
+    });
+    summaryCursor -= summarySpacing;
+  });
+
+  if (summaryLines.length) summaryCursor -= preTotalGap;
+  else summaryCursor -= Math.max(8, Math.floor(10 * s));
+
+  // 2. Draw total card
+  const totalCardHeight = paddingY * 2 + labelSize + labelToAmountGap + amountSize + (thankYouMessage ? messageGap + messageSize : 0);
+  const cardTop = summaryCursor;
+  const cardBottom = cardTop - totalCardHeight;
+
+  page.drawRectangle({ x: rightX, y: cardBottom, width: rightWidth, height: totalCardHeight, color: toRgb(theme.totalBackground) });
+  drawRoundedRect(page, rightX, cardBottom, rightWidth, totalCardHeight, 10, {
+    color: toRgb(theme.totalBackground),
+    borderColor: toRgb(theme.tableBorderColor),
+    borderWidth: 1,
+    opacity: 1,
+  });
+
+  let cursor = cardTop - paddingY - labelSize;
+  const totalLabel = "TOTAL DUE";
+  const labelWidth = bold.widthOfTextAtSize(totalLabel, labelSize);
+  const effectiveTextColor = isLightHex(theme.totalBackground) ? theme.headerTextColor : theme.totalTextColor;
+
+  page.drawText(totalLabel, {
+    x: rightX + rightWidth - paddingX - labelWidth,
+    y: cursor,
+    font: bold,
+    size: labelSize,
+    color: toRgb(effectiveTextColor),
+  });
+
+  cursor -= labelToAmountGap + amountSize;
+  const totalText = `Rp ${total.toLocaleString("id-ID")}`;
   let amountWidth = bold.widthOfTextAtSize(totalText, amountSize);
+  const availableWidth = rightWidth - paddingX * 2;
   if (amountWidth > availableWidth) {
     const scale = availableWidth / amountWidth;
     amountSize = Math.max(14, Math.floor(amountSize * scale));
     amountWidth = bold.widthOfTextAtSize(totalText, amountSize);
   }
-
-  const messageHeight = thankYouMessage ? messageSize : 0;
-  const contentHeight =
-    labelSize + labelToAmountGap + amountSize + (thankYouMessage ? amountToMessageGap + messageHeight : 0);
-  const verticalOffset = (totalCardHeight - contentHeight) / 2;
-
-  const cardTop = startY;
-  const labelY = cardTop - verticalOffset - labelSize;
-  const amountY = labelY - labelToAmountGap - amountSize;
-  const messageY = amountY - amountToMessageGap - messageSize;
-
-  const totalLabel = "TOTAL DUE";
-  const labelWidth = bold.widthOfTextAtSize(totalLabel, labelSize);
-  const effectiveTextColor = isLightHex(theme.totalBackground) ? theme.headerTextColor : theme.totalTextColor;
-  page.drawText(totalLabel, {
-    x: rightX + rightWidth - paddingX - labelWidth,
-    y: labelY,
-    size: labelSize,
-    font: bold,
-    color: toRgb(effectiveTextColor),
-  });
   page.drawText(totalText, {
     x: rightX + rightWidth - paddingX - amountWidth,
-    y: amountY,
-    size: amountSize,
+    y: cursor,
     font: bold,
+    size: amountSize,
     color: toRgb(effectiveTextColor),
   });
 
   if (thankYouMessage) {
-    const messageWidth = font.widthOfTextAtSize(thankYouMessage, messageSize);
+    cursor -= messageGap + messageSize;
+    const msgWidth = font.widthOfTextAtSize(thankYouMessage, messageSize);
     page.drawText(thankYouMessage, {
-      x: rightX + rightWidth - paddingX - messageWidth,
-      y: messageY,
-      size: messageSize,
+      x: rightX + rightWidth - paddingX - msgWidth,
+      y: cursor,
       font,
+      size: messageSize,
       color: toRgb(effectiveTextColor),
     });
   }
@@ -1049,11 +1074,10 @@ const drawTotalsAndNotes = (
   const notesLines = (notes || "")
     .split(/\r?\n/)
     .map((line) => line.trim())
-    .filter(Boolean);
 
   page.drawText("NOTES", {
     x: margin,
-    y: startY - Math.max(14, Math.floor(18 * s)),
+    y: cardTop - Math.max(14, Math.floor(18 * s)),
     size: Math.max(8, Math.floor(10 * s)),
     font: bold,
     color: toRgb(theme.headerAccentColor),
@@ -1061,7 +1085,7 @@ const drawTotalsAndNotes = (
 
   // Notes box rounded to match UI
   const linesToRender = (notesLines.length ? notesLines : ["-"]).slice(0, 8);
-  const notesTop = startY - Math.max(24, Math.floor(32 * s)); // just below label
+  const notesTop = cardTop - Math.max(24, Math.floor(32 * s)); // just below label
   const boxPadding = Math.max(8, Math.floor(10 * s));
   const boxHeight = linesToRender.length * Math.max(11, Math.floor(13 * s)) + boxPadding * 2;
   const boxBottomY = notesTop - boxHeight;
@@ -1319,6 +1343,7 @@ export async function GET(
         customer: true,
         items: true,
         quotationNumber: true,
+        totalAmount: true,
         date: true,
         validUntil: true,
         projectDesc: true,
@@ -1377,13 +1402,15 @@ export async function GET(
     const templateDefaults = (brand.templateDefaults ?? {}) as Record<string, string>;
     const theme = resolveTheme(brand as BrandProfile, templateDefaults?.invoice);
 
-    // Gunakan profil user login untuk bagian FROM & Signature, fallback ke brand
+    // ✅ Prioritaskan profil signature dari brand settings
     let actor: { name: string; email?: string | null; phone?: string | null } = {
-      name: brand?.name ?? "Our Company",
-      email: brand?.email ?? null,
-      phone: brand?.phone ?? null,
+      name: templateDefaults.signatureName || brand?.name || "Our Company",
+      email: templateDefaults.signatureEmail || brand?.email || null,
+      phone: templateDefaults.signaturePhone || brand?.phone || null,
     };
-    if (authResult?.userId) {
+
+    // Jika signature name tidak ada di brand settings, baru fallback ke user login
+    if (!templateDefaults.signatureName && authResult?.userId) {
       try {
         const user = await prisma.user.findUnique({
           where: { id: authResult.userId },
@@ -1468,10 +1495,15 @@ export async function GET(
       finalY = page.getSize().height - margin - Math.floor(160 * s);
     }
 
+    // Calculate summary lines for Quotation
+    const summaryLines: Array<{ label: string; amount: number }> = [];
+    summaryLines.push({ label: "Subtotal", amount: Number(quotation.totalAmount || tableResult.total) });
+
     let footerAnchor = drawTotalsAndNotes(
       page,
       theme,
-      tableResult.total,
+      summaryLines,
+      Number(quotation.totalAmount || tableResult.total),
       quotationNotes,
       thankYouAndTerms.message,
       paymentLines,

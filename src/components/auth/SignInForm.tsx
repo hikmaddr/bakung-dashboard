@@ -8,7 +8,7 @@ import { useGlobal } from "@/context/AppContext";
 import { useSessionStore, type UserInfo } from "@/store/useSessionStore";
 
 const SignInForm: React.FC = () => {
-  const [email, setEmail] = useState("");
+  const [identifier, setIdentifier] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
@@ -24,7 +24,7 @@ const SignInForm: React.FC = () => {
       const res = await fetch("/api/auth/login", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email, password }),
+        body: JSON.stringify({ identifier, password }),
       });
       const json = await res.json();
       if (!res.ok || !json.success) throw new Error(json.message || "Login gagal");
@@ -113,12 +113,12 @@ const SignInForm: React.FC = () => {
 
             <form onSubmit={handleSubmit} className="space-y-5">
               <div>
-                <label className="mb-2.5 block font-medium text-black dark:text-white">Email</label>
+                <label className="mb-2.5 block font-medium text-black dark:text-white">Email atau Username</label>
                 <input
-                  type="email"
-                  placeholder="you@example.com"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
+                  type="text"
+                  placeholder="Masukkan email atau username"
+                  value={identifier}
+                  onChange={(e) => setIdentifier(e.target.value)}
                   className="w-full rounded-lg border-[1.5px] border-stroke bg-transparent py-3 px-4 text-black outline-none transition focus:border-primary active:border-primary disabled:cursor-default disabled:bg-whiter dark:border-form-strokedark dark:bg-form-input dark:text-white dark:focus:border-primary"
                   required
                 />

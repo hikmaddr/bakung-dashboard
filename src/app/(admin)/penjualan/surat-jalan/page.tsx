@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useMemo, useState } from "react";
 import { Download, ChevronDown, Eye, Edit, Trash2 } from "lucide-react";
+import { StatusBadge } from "@/components/ui/StatusBadge";
 import EmptyState from "@/components/EmptyState";
 import PageBreadcrumb from "@/components/common/PageBreadCrumb";
 import Pagination from "@/components/tables/Pagination";
@@ -45,7 +46,7 @@ export default function SuratJalanPage() {
               id: Number(d.sjNumber?.replace(/\D/g,'')) || d.ts,
               deliveryNumber: d.sjNumber || `DRAFT-${d.ts}`,
               date: d.sjDate || d.shipDate || (d.ts ? new Date(d.ts).toISOString().slice(0,10) : ''),
-              status: d.status || 'Draft',
+              status: d.status === 'Dikirim' ? 'Shipping' : d.status === 'Diterima' ? 'Delivered' : d.status === 'Dibatalkan' ? 'Canceled' : 'Draft',
               customer: d.recvName ? { pic: d.recvName, company: undefined } : undefined,
               refInvoice: d.refInvoice || '',
               recvName: d.recvName || '',
@@ -95,7 +96,10 @@ export default function SuratJalanPage() {
       const raw = localStorage.getItem('sjDrafts') || '[]';
       const drafts = JSON.parse(raw);
       const updated = Array.isArray(drafts) ? drafts.map((d:any)=> {
-        if ((d.sjNumber||'') === deliveryNumber) return { ...d, status:newStatus };
+        if ((d.sjNumber||'') === deliveryNumber) {
+          const mappedStatus = newStatus === 'Shipping' ? 'Dikirim' : newStatus === 'Delivered' ? 'Diterima' : newStatus === 'Canceled' ? 'Dibatalkan' : 'Draft';
+          return { ...d, status: mappedStatus };
+        }
         return d;
       }) : drafts;
       localStorage.setItem('sjDrafts', JSON.stringify(updated));
@@ -176,16 +180,7 @@ export default function SuratJalanPage() {
     } catch { toast.error('Gagal menghapus draft'); }
   };
 
-  const getStatusColor = (status: string) => {
-    switch (status) {
-      case 'Dikirim': return 'bg-blue-100 text-blue-700';
-      case 'Diterima': return 'bg-green-100 text-green-700';
-      case 'Dibatalkan': return 'bg-gray-200 text-gray-700';
-      case 'Draft':
-      default:
-        return 'bg-gray-100 text-gray-700';
-    }
-  };
+  // getStatusColor removed as we use StatusBadge
 
   function ShipStatusDropdown({ row, onRequestProof }: { row: DeliveryRow; onRequestProof: (r: DeliveryRow)=>void }){
     const [open, setOpen] = useState(false);
@@ -200,17 +195,19 @@ export default function SuratJalanPage() {
       document.addEventListener('touchstart', onDown as EventListener);
       return () => { document.removeEventListener('mousedown', onDown as EventListener); document.removeEventListener('touchstart', onDown as EventListener); };
     }, [row?.id]);
-    const options = row.status === 'Dikirim' ? ['Diterima'] : ['Draft','Dikirim','Diterima','Dibatalkan'];
+    const options = row.status === 'Shipping' ? ['Delivered'] : ['Draft','Shipping','Delivered','Canceled'];
     return (
       <div id={`status-dd-${row.deliveryNumber}`} className="relative inline-block">
-        <button onClick={()=>setOpen(v=>!v)} className={`px-3 py-1 rounded-full text-xs font-medium flex items-center gap-1 ${getStatusColor(row.status)}`}>
-          {row.status || 'Draft'}
-          <ChevronDown className="h-3 w-3" />
+        <button onClick={()=>setOpen(v=>!v)} className="flex items-center gap-1 focus:outline-none">
+          <StatusBadge status={row.status} />
+          <ChevronDown className="h-3 w-3 text-gray-400" />
         </button>
         {open && (
           <div className="absolute mt-1 w-36 rounded-lg border bg-white shadow-lg z-50">
             {options.map(opt => (
-              <button key={opt} onClick={()=>{ setRows(prev=>prev.map(x=>x.deliveryNumber===row.deliveryNumber?{...x,status:opt}:x)); persistStatus(row.deliveryNumber, opt); if (opt==='Diterima' && !row.attachment) { onRequestProof(row); } setOpen(false); }} className="block w-full px-3 py-2 text-left text-sm hover:bg-gray-100">{opt}</button>
+              <button key={opt} onClick={()=>{ setRows(prev=>prev.map(x=>x.deliveryNumber===row.deliveryNumber?{...x,status:opt}:x)); persistStatus(row.deliveryNumber, opt); if (opt==='Delivered' && !row.attachment) { onRequestProof(row); } setOpen(false); }} className="block w-full px-3 py-2 text-left text-sm hover:bg-gray-100">
+                <StatusBadge status={opt} />
+              </button>
             ))}
           </div>
         )}
@@ -318,8 +315,8 @@ export default function SuratJalanPage() {
                     <td className="px-4 py-3">{r.refInvoice || '-'}</td>
                     <td className="px-4 py-3">{fmtDate(r.date)}</td>
                     <td className="px-4 py-3">
-                      {r.status === 'Diterima' ? (
-                        <span className={`px-3 py-1 rounded-full text-xs font-medium ${getStatusColor(r.status)}`}>{r.status}</span>
+                      {r.status === 'Delivered' ? (
+                        <StatusBadge status={r.status} />
                       ) : (
                         <ShipStatusDropdown row={r} onRequestProof={(rr)=>{ setUploadTarget(rr); setUploadOpen(true); }} />
                       )}
@@ -327,7 +324,7 @@ export default function SuratJalanPage() {
                     <td className="px-4 py-3 text-right">
                       <div className="inline-flex items-center justify-end gap-2">
                         <button title="Lihat" onClick={()=>{ setPreviewRow(r); setPreviewOpen(true); }} className="p-2 rounded-full hover:bg-gray-100"><Eye className="h-4 w-4 text-gray-600" /></button>
-                        {r.status !== 'Dikirim' && r.status !== 'Diterima' && (
+                        {r.status !== 'Shipping' && r.status !== 'Delivered' && (
                           <>
                             <button title="Edit" onClick={()=>openWithRow(r)} className="p-2 rounded-full hover:bg-gray-100"><Edit className="h-4 w-4 text-gray-600" /></button>
                             <button title="Download PDF" onClick={()=>downloadPdf(r)} className="p-2 rounded-full hover:bg-gray-100"><Download className="h-4 w-4 text-emerald-600" /></button>

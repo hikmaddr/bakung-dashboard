@@ -5,6 +5,7 @@ import { Modal } from "../ui/modal";
 import Button from "../ui/button/Button";
 import Input from "../form/input/InputField";
 import Label from "../form/Label";
+import toast from "react-hot-toast";
 
 export default function UserAddressCard() {
   const { isOpen, openModal, closeModal } = useModal();
@@ -67,11 +68,13 @@ export default function UserAddressCard() {
       const json = await res.json();
       if (json.success) {
         setProfile(json.data);
+        toast.success("Alamat berhasil diperbarui!");
         closeModal();
       } else {
-        console.error('Failed to update address', json.message);
+        toast.error(json.message || "Gagal memperbarui alamat.");
       }
     } catch (e) {
+      toast.error("Terjadi kesalahan saat menyimpan.");
       console.error('Failed to update address', e);
     }
   };
@@ -118,6 +121,15 @@ export default function UserAddressCard() {
                 </p>
                 <p className="text-sm font-medium text-gray-800 dark:text-white/90">
                   {profile?.taxId || '-'}
+                </p>
+              </div>
+
+              <div className="lg:col-span-2">
+                <p className="mb-2 text-xs leading-normal text-gray-500 dark:text-gray-400">
+                  Street Address
+                </p>
+                <p className="text-sm font-medium text-gray-800 dark:text-white/90">
+                  {profile?.address || '-'}
                 </p>
               </div>
             </div>
@@ -189,7 +201,7 @@ export default function UserAddressCard() {
               <Button size="sm" variant="outline" onClick={closeModal}>
                 Close
               </Button>
-              <Button size="sm" onClick={handleSave}>
+              <Button size="sm" type="button" onClick={handleSave}>
                 Save Changes
               </Button>
             </div>

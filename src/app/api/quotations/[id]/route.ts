@@ -150,6 +150,36 @@ export async function PUT(
       typeof rawNotes === "string"
         ? rawNotes.trim()
         : "";
+    
+    // New negotiation & document fields
+    const isNegotiated = formData.get("isNegotiated") === "true";
+    const originalAmount = formData.get("originalAmount") ? Number(formData.get("originalAmount")) : null;
+    const negotiatedAmount = formData.get("negotiatedAmount") ? Number(formData.get("negotiatedAmount")) : null;
+    const marginChange = formData.get("marginChange") ? Number(formData.get("marginChange")) : null;
+    const negotiationNotes = formData.get("negotiationNotes") as string;
+
+    // ========== Upload Client Documents ==========
+    const clientPo = formData.get("clientPo") as File | null;
+    const clientSo = formData.get("clientSo") as File | null;
+    
+    let clientPoUrl: string | undefined = undefined;
+    let clientSoUrl: string | undefined = undefined;
+    
+    if (clientPo && clientPo.size > 0) {
+      clientPoUrl = await saveUpload(clientPo, `client-po-${id}`);
+    }
+    if (clientSo && clientSo.size > 0) {
+      clientSoUrl = await saveUpload(clientSo, `client-so-${id}`);
+    }
+
+    const clientOtherFiles: string[] = [];
+    // Handle multiple other files if any
+    for (const [key, value] of formData.entries()) {
+      if (key.startsWith("clientOtherFile_") && value instanceof File && value.size > 0) {
+        const url = await saveUpload(value, `client-other-${id}-${key}`);
+        clientOtherFiles.push(url);
+      }
+    }
 
     const _projectFilePreview = formData.get("projectFilePreview");
     const projectFilePreviewUrl =
@@ -192,14 +222,13 @@ export async function PUT(
       const unit = it.unit || "pcs";
       const description = it.description ?? "";
 
-      const itemImageFile = formData.get(`itemImage_${it.index}`) as File | null;
+      const imageKey = it.imageKey || `itemImage_${it.index}`;
+      const itemImageFile = formData.get(imageKey) as File | null;
       let imageUrl: string | null = it.imagePreview ?? it.imageUrl ?? null;
-      if (imageUrl === "") imageUrl = null;
+      if (imageUrl === "" || imageUrl === "null") imageUrl = null;
 
       if (itemImageFile && itemImageFile.size > 0) {
-        imageUrl = await saveUpload(itemImageFile, `item-${id}-${it.index}`);
-      } else if (it.imagePreview === "null" || it.imagePreview === "") {
-        imageUrl = null;
+        imageUrl = await saveUpload(itemImageFile, `item-${id}-${it.id || "new"}`);
       }
 
       const itemData = {
@@ -210,6 +239,10 @@ export async function PUT(
         price,
         subtotal,
         imageUrl,
+        supplierCost: it.supplierCost ? Number(it.supplierCost) : 0,
+        titipanCostAdjustment: it.titipanCostAdjustment ? Number(it.titipanCostAdjustment) : 0,
+        hiddenMargin: it.hiddenMargin ? Number(it.hiddenMargin) : 0,
+        taxAdjustment: it.taxAdjustment ? Number(it.taxAdjustment) : 0,
       };
 
       if (it.id) {
@@ -231,6 +264,10 @@ export async function PUT(
           price: item.price,
           subtotal: item.subtotal,
           imageUrl: item.imageUrl,
+          supplierCost: item.supplierCost,
+          titipanCostAdjustment: item.titipanCostAdjustment,
+          hiddenMargin: item.hiddenMargin,
+          taxAdjustment: item.taxAdjustment,
         } as any),
       })
     );
@@ -256,11 +293,19 @@ export async function PUT(
           projectDesc: projectDescription,
           projectFileUrl: projectFileUrl,
           notes: notes ? notes : null,
-          ...(isDraft ? { status: "Draft" } : {}),
+          status: (((formData.get("status") as string) || (isDraft ? "Draft" : undefined)) as any),
           totalAmount: incomingItems.reduce(
             (sum, item) => sum + item.quantity * item.price,
             0
           ),
+          isNegotiated,
+          originalAmount,
+          negotiatedAmount,
+          marginChange,
+          negotiationNotes,
+          clientPoUrl,
+          clientSoUrl,
+          clientOtherFiles,
           items: {
             create: itemCreates,
           },
@@ -268,6 +313,20 @@ export async function PUT(
         include: { customer: true, items: true },
       }),
     ];
+
+    // Create revision if negotiation info is provided
+    if (isNegotiated && negotiatedAmount !== null) {
+      transactionOperations.push(
+        prisma.quotationRevision.create({
+          data: {
+            quotationId: id,
+            amount: negotiatedAmount,
+            margin: marginChange,
+            notes: negotiationNotes,
+          }
+        })
+      );
+    }
 
     const transactionResult = await prisma.$transaction(transactionOperations);
     const updatedQuotation = transactionResult[transactionResult.length - 1];

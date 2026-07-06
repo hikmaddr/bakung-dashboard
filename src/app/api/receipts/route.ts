@@ -35,6 +35,9 @@ export async function GET(_req: NextRequest) {
             id: true,
             invoiceNumber: true,
             total: true,
+            status: true,
+            paymentStatus: true,
+            dueDate: true,
             customer: { select: { pic: true, company: true } },
           },
         })
@@ -53,6 +56,10 @@ export async function GET(_req: NextRequest) {
           date: r.payment!.paidAt.toISOString(),
           total: Number(inv?.total ?? r.payment!.amount ?? 0),
           customer: inv?.customer ? { pic: inv.customer.pic || null, company: inv.customer.company || null } : undefined,
+          // Extra status fields for StatusBadge
+          status: inv?.status || "Draft",
+          paymentStatus: inv?.paymentStatus || "UNPAID",
+          dueDate: inv?.dueDate ? inv.dueDate.toISOString() : null,
         };
       });
 

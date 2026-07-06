@@ -14,25 +14,37 @@ type GlobalState = {
 
 const GlobalContext = createContext<GlobalState | undefined>(undefined);
 
+// Static selectors for GlobalProvider
+const selectActiveBrandId = (s: any) => s.activeBrandId;
+const selectUser = (s: any) => s.user;
+const selectLoading = (s: any) => s.loading;
+const selectSetActiveBrandId = (s: any) => s.setActiveBrandId;
+const selectHydrate = (s: any) => s.hydrate;
+
 export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const activeBrandId = useSessionStore((s) => s.activeBrandId);
-  const user = useSessionStore((s) => s.user);
-  const loading = useSessionStore((s) => s.loading);
-  const setActiveBrandId = useSessionStore((s) => s.setActiveBrandId);
-  const hydrate = useSessionStore((s) => s.hydrate);
+  const activeBrandId = useSessionStore(selectActiveBrandId);
+  const user = useSessionStore(selectUser);
+  const loading = useSessionStore(selectLoading);
+  const setActiveBrandId = useSessionStore(selectSetActiveBrandId);
+  const hydrate = useSessionStore(selectHydrate);
 
   const didHydrate = useRef(false);
   useEffect(() => {
     if (didHydrate.current) return;
     didHydrate.current = true;
-    // Initial hydration from API
-    hydrate();
+    
+    // Controlled hydration sequence
+    const init = async () => {
+      await useSessionStore.persist.rehydrate();
+      await hydrate();
+    };
+    init();
   }, [hydrate]);
 
   const hasRole = useCallback(
     (role: string) => {
       const r = role.toLowerCase();
-      return Boolean(user?.roles?.some((x) => String(x).toLowerCase() === r));
+      return Boolean(user?.roles?.some((x: any) => String(x).toLowerCase() === r));
     },
     [user]
   );

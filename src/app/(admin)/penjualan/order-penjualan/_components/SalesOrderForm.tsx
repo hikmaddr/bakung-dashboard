@@ -1,4 +1,3 @@
-
 "use client";
 
 import React, {
@@ -9,14 +8,14 @@ import React, {
   useState,
 } from "react";
 import ReactDOM from "react-dom";
-import { ChevronDown, Loader2, PlusCircle, Trash2 } from "lucide-react";
+import { ChevronDown, Loader2, PlusCircle, Trash2, Eye, EyeOff } from "lucide-react";
 import { toast } from "react-hot-toast";
 import { fmtIDR } from "@/lib/format";
 import DatePicker from "react-datepicker";
 import "react-datepicker/dist/react-datepicker.css";
 import { useProductUnits } from "@/hooks/useProductUnits";
 
-type SalesOrderStatus = "Draft" | "Confirmed" | "Sent" | "Approved" | "Declined";
+type SalesOrderStatus = "Draft" | "Confirmed" | "Processing" | "Shipping" | "Delivered" | "Completed" | "Canceled";
 
 type TaxMode =
   | "none"
@@ -56,6 +55,12 @@ type QuotationSummary = {
   totalAmount: number;
 };
 
+type SupplierOption = {
+  id: number;
+  name: string;
+  pic?: string | null;
+};
+
 type QuotationDetail = {
   id: number;
   quotationNumber: string;
@@ -70,6 +75,11 @@ type QuotationDetail = {
     unit: string | null;
     price: number;
     imageUrl?: string | null;
+    supplierCost?: number;
+    titipanCostAdjustment?: number;
+    hiddenMargin?: number;
+    taxAdjustment?: number;
+    supplierId?: number | null;
   }[];
   customer?: {
     id: number;
@@ -91,6 +101,11 @@ export type SalesOrderFormItem = {
   discount: number;
   discountType: "amount" | "percent";
   imageUrl?: string | null;
+  supplierCost?: number;
+  titipanCostAdjustment?: number;
+  hiddenMargin?: number;
+  taxAdjustment?: number;
+  supplierId?: number | null;
 };
 
 export type SalesOrderFormInitialValues = {
@@ -102,7 +117,8 @@ export type SalesOrderFormInitialValues = {
   notes?: string | null;
   extraDiscount?: number | null;
   taxMode?: TaxMode | null;
-  items?: (SalesOrderFormItem & { discountType?: "amount" | "percent" })[];
+  isNonInventory?: boolean;
+  items?: SalesOrderFormItem[];
 };
 
 export type SalesOrderSavePayload = {
@@ -114,6 +130,7 @@ export type SalesOrderSavePayload = {
   notes?: string | null;
   extraDiscount: number;
   taxMode: TaxMode;
+  isNonInventory: boolean;
   items: {
     productId?: number | null;
     product: string;
@@ -123,6 +140,10 @@ export type SalesOrderSavePayload = {
     price: number;
     discount: number;
     imageUrl?: string | null;
+    supplierCost?: number;
+    titipanCostAdjustment?: number;
+    hiddenMargin?: number;
+    taxAdjustment?: number;
   }[];
 };
 
@@ -139,9 +160,11 @@ type SalesOrderFormProps = {
 const STATUS_OPTIONS: SalesOrderStatus[] = [
   "Draft",
   "Confirmed",
-  "Sent",
-  "Approved",
-  "Declined",
+  "Processing",
+  "Shipping",
+  "Delivered",
+  "Completed",
+  "Canceled",
 ];
 
 const TAX_OPTIONS: { value: TaxMode; label: string }[] = [
@@ -168,6 +191,11 @@ const createEmptyItem = (unit: string = "pcs"): SalesOrderFormItem => ({
   discount: 0,
   discountType: "amount",
   imageUrl: null,
+  supplierCost: 0,
+  titipanCostAdjustment: 0,
+  hiddenMargin: 0,
+  taxAdjustment: 0,
+  supplierId: null,
 });
 
 const normalizePhoneNumber = (raw: string): string => {
@@ -898,6 +926,10 @@ export const SalesOrderForm: React.FC<SalesOrderFormProps> = ({
     ensureItemsWithDefaults(initialValues?.items, defaultUnit)
   );
   const [notes, setNotes] = useState<string>(initialValues?.notes ?? "");
+  const [isNonInventory, setIsNonInventory] = useState<boolean>(
+    initialValues?.isNonInventory ?? false
+  );
+  const [showInternalCosts, setShowInternalCosts] = useState(false);
 
   useEffect(() => {
     if (!initialValues) return;
@@ -916,8 +948,9 @@ export const SalesOrderForm: React.FC<SalesOrderFormProps> = ({
    );
    setExtraDiscount(initialValues.extraDiscount ?? 0);
    setTaxMode(initialValues.taxMode ?? "none");
-   setItems(ensureItemsWithDefaults(initialValues.items, defaultUnit));
-   setNotes(initialValues.notes ?? "");
+    setItems(ensureItemsWithDefaults(initialValues.items, defaultUnit));
+    setNotes(initialValues.notes ?? "");
+    setIsNonInventory(initialValues.isNonInventory ?? false);
   }, [initialValues, defaultUnit]);
 
   // Determine lock setting from active brand profile
@@ -989,6 +1022,8 @@ export const SalesOrderForm: React.FC<SalesOrderFormProps> = ({
   const [quotations, setQuotations] = useState<QuotationSummary[]>([]);
   const [quotationsLoading, setQuotationsLoading] = useState(true);
   const [loadingQuotationDetail, setLoadingQuotationDetail] = useState(false);
+  const [suppliers, setSuppliers] = useState<SupplierOption[]>([]);
+  const [suppliersLoading, setSuppliersLoading] = useState(true);
 
   useEffect(() => {
     let alive = true;
@@ -1065,7 +1100,29 @@ export const SalesOrderForm: React.FC<SalesOrderFormProps> = ({
       alive = false;
     };
   }, []);
-
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      try {
+        const res = await fetch("/api/suppliers", { cache: "no-store" });
+        const json = await res.json();
+        const rows: unknown[] = Array.isArray(json?.data) ? json.data : [];
+        if (!alive) return;
+        setSuppliers(
+          rows.map((row: any) => ({
+            id: row.id,
+            name: row.name,
+            pic: row.pic,
+          }))
+        );
+      } catch {
+        if (alive) setSuppliers([]);
+      } finally {
+        if (alive) setSuppliersLoading(false);
+      }
+    })();
+    return () => { alive = false; };
+  }, []);
   useEffect(() => {
     let alive = true;
     (async () => {
@@ -1259,6 +1316,10 @@ export const SalesOrderForm: React.FC<SalesOrderFormProps> = ({
               discount: 0,
               discountType: "amount",
               imageUrl: item.imageUrl ?? null,
+              supplierCost: item.supplierCost ?? 0,
+              titipanCostAdjustment: item.titipanCostAdjustment ?? 0,
+              hiddenMargin: item.hiddenMargin ?? 0,
+              taxAdjustment: item.taxAdjustment ?? 0,
             }))
         : [createEmptyItem(defaultUnit)]
       );
@@ -1325,6 +1386,7 @@ export const SalesOrderForm: React.FC<SalesOrderFormProps> = ({
         notes: notes.trim() ? notes.trim() : null,
         extraDiscount: Math.max(0, Number(extraDiscount) || 0),
         taxMode,
+        isNonInventory,
         items: trimmedItems.map((item) => {
           const { quantity, price, discountAmount } = getLineCalculation(item);
           return {
@@ -1336,6 +1398,10 @@ export const SalesOrderForm: React.FC<SalesOrderFormProps> = ({
             price,
             discount: discountAmount,
             imageUrl: item.imageUrl ?? null,
+            supplierCost: Number(item.supplierCost) || 0,
+            titipanCostAdjustment: Number(item.titipanCostAdjustment) || 0,
+            hiddenMargin: Number(item.hiddenMargin) || 0,
+            taxAdjustment: Number(item.taxAdjustment) || 0,
           };
         }),
       };
@@ -1403,6 +1469,42 @@ export const SalesOrderForm: React.FC<SalesOrderFormProps> = ({
         </div>
       </div>
 
+      <div className="flex flex-wrap items-center gap-6 rounded-2xl bg-blue-50/50 border border-blue-100 p-4">
+        <label className="flex cursor-pointer items-center gap-3">
+          <div className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-blue-600 focus:ring-offset-2 ${isNonInventory ? 'bg-blue-600' : 'bg-gray-200'}`}>
+            <input
+              type="checkbox"
+              className="sr-only"
+              checked={isNonInventory}
+              onChange={(e) => setIsNonInventory(e.target.checked)}
+            />
+            <span
+              className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${
+                isNonInventory ? "translate-x-5" : "translate-x-0"
+              }`}
+            />
+          </div>
+          <span className="text-sm font-semibold text-blue-900">Non-Inventory Order (Build by Order)</span>
+        </label>
+        
+        <label className="flex cursor-pointer items-center gap-3">
+           <div className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-green-600 focus:ring-offset-2 ${showInternalCosts ? 'bg-green-600' : 'bg-gray-200'}`}>
+            <input
+              type="checkbox"
+              className="sr-only"
+              checked={showInternalCosts}
+              onChange={(e) => setShowInternalCosts(e.target.checked)}
+            />
+            <span
+              className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${
+                showInternalCosts ? "translate-x-5" : "translate-x-0"
+              }`}
+            />
+          </div>
+          <span className="text-sm font-semibold text-green-900">Show Internal Costing (Secret Margin)</span>
+        </label>
+      </div>
+
       <div className="rounded-2xl border border-dashed border-gray-300 bg-white p-4">
         <label className="mb-2 block text-sm font-medium">
           Hubungkan dengan Quotation (opsional)
@@ -1444,6 +1546,15 @@ export const SalesOrderForm: React.FC<SalesOrderFormProps> = ({
                 <th className="px-4 py-3 text-right w-32">Harga</th>
                 <th className="px-4 py-3 text-right w-32">Diskon</th>
                 <th className="px-4 py-3 text-right w-32">Subtotal</th>
+                {showInternalCosts && (
+                  <>
+                    <th className="px-4 py-3 text-left w-48 bg-green-50 text-green-700">Supplier</th>
+                    <th className="px-4 py-3 text-right w-28 bg-green-50 text-green-700">Supp. Cost</th>
+                    <th className="px-4 py-3 text-right w-28 bg-green-50 text-green-700">Titipan</th>
+                    <th className="px-4 py-3 text-right w-28 bg-green-50 text-green-700">Tax Adj</th>
+                    <th className="px-4 py-3 text-right w-32 bg-green-50 text-green-700">Margin</th>
+                  </>
+                )}
                 <th className="px-4 py-3 text-center w-12">Aksi</th>
               </tr>
             </thead>
@@ -1585,6 +1696,49 @@ export const SalesOrderForm: React.FC<SalesOrderFormProps> = ({
                     <td className="px-4 py-3 align-top text-right">
                       <div className="font-medium text-gray-700">{fmtIDR(lineSubtotal)}</div>
                     </td>
+                    {showInternalCosts && (
+                      <>
+                        <td className="px-4 py-3 align-top text-right bg-green-50/30">
+                          <select
+                            value={item.supplierId || ""}
+                            onChange={(e) => handleItemFieldChange(item.id, "supplierId", e.target.value ? Number(e.target.value) : null)}
+                            className="w-full rounded-lg border border-green-200 px-2 py-2 text-xs focus:ring-green-500 mb-2"
+                          >
+                            <option value="">Pilih Supplier</option>
+                            {suppliers.map(s => (
+                              <option key={s.id} value={s.id}>{s.name}</option>
+                            ))}
+                          </select>
+                          <input
+                            type="number"
+                            value={item.supplierCost}
+                            onChange={(e) => handleItemFieldChange(item.id, "supplierCost", Number(e.target.value))}
+                            className="w-24 rounded-lg border border-green-200 px-2 py-1 text-right text-xs focus:ring-green-500"
+                          />
+                        </td>
+                        <td className="px-4 py-3 align-top text-right bg-green-50/30">
+                          <input
+                            type="number"
+                            value={item.titipanCostAdjustment}
+                            onChange={(e) => handleItemFieldChange(item.id, "titipanCostAdjustment", Number(e.target.value))}
+                            className="w-24 rounded-lg border border-green-200 px-2 py-1 text-right text-xs focus:ring-green-500"
+                          />
+                        </td>
+                        <td className="px-4 py-3 align-top text-right bg-green-50/30">
+                          <input
+                            type="number"
+                            value={item.taxAdjustment}
+                            onChange={(e) => handleItemFieldChange(item.id, "taxAdjustment", Number(e.target.value))}
+                            className="w-24 rounded-lg border border-green-200 px-2 py-1 text-right text-xs focus:ring-green-500"
+                          />
+                        </td>
+                        <td className="px-4 py-3 align-top text-right bg-green-50/30">
+                          <div className="text-xs font-bold text-green-700">
+                            {fmtIDR(lineSubtotal - (Number(item.supplierCost || 0) + Number(item.titipanCostAdjustment || 0) + Number(item.taxAdjustment || 0)))}
+                          </div>
+                        </td>
+                      </>
+                    )}
                     <td className="px-2 py-3 align-center text-center">
                       <button
                         type="button"
@@ -1713,8 +1867,3 @@ export const SalesOrderForm: React.FC<SalesOrderFormProps> = ({
 };
 
 export default SalesOrderForm;
-
-
-
-
-

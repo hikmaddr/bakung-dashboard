@@ -31,6 +31,11 @@ function SuratJalanAddPageInner() {
   const [shipDate, setShipDate] = useState<string>(new Date().toISOString().slice(0,10));
   const [etaDate, setEtaDate] = useState<string>(new Date().toISOString().slice(0,10));
   const [note, setNote] = useState<string>("Barang sudah dicek sebelum dikirim");
+  
+  // Logistics info
+  const [driverName, setDriverName] = useState<string>("");
+  const [vehicleNumber, setVehicleNumber] = useState<string>("");
+  const [proofFile, setProofFile] = useState<File | null>(null);
 
   const [items, setItems] = useState<Item[]>([]);
   const totalQty = useMemo(()=>items.reduce((s,i)=>s+(i.qty||0),0),[items]);
@@ -144,6 +149,8 @@ function SuratJalanAddPageInner() {
         shipDate,
         etaDate,
         note,
+        driverName,
+        vehicleNumber,
       };
       const res = await fetch('/api/deliveries/pdf', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
       if (!res.ok) throw new Error('Gagal menghasilkan PDF');
@@ -272,8 +279,23 @@ function SuratJalanAddPageInner() {
             {/* Detail barang di sisi kiri dihapus sesuai permintaan */}
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div>
-                <label className="block text-sm font-medium mb-1">Dikirim oleh</label>
-                <input value={senderName} onChange={(e)=>setSenderName(e.target.value)} className="w-full border rounded px-3 py-2" />
+                <label className="block text-sm font-medium mb-1">Nama Supir / Kurir</label>
+                <input value={driverName} onChange={(e)=>setDriverName(e.target.value)} className="w-full border rounded px-3 py-2" placeholder="Nama pengemudi..." />
+              </div>
+              <div>
+                <label className="block text-sm font-medium mb-1">Nomor Kendaraan</label>
+                <input value={vehicleNumber} onChange={(e)=>setVehicleNumber(e.target.value)} className="w-full border rounded px-3 py-2" placeholder="B 1234 ABC..." />
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div>
+                <label className="block text-sm font-medium mb-1">Dikirim oleh (Internal PIC)</label>
+                <input value={senderName} onChange={(e)=>setSenderName(e.target.value)} className="w-full border rounded px-3 py-2" placeholder="Nama staff pengirim..." />
+              </div>
+              <div>
+                <label className="block text-sm font-medium mb-1">Proof of Delivery (POD)</label>
+                <input type="file" onChange={(e)=>setProofFile(e.target.files?.[0] || null)} className="w-full text-sm file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-xs file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100" />
               </div>
             </div>
 
@@ -359,8 +381,9 @@ function SuratJalanAddPageInner() {
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm mt-4">
                   <div>
-                    <div className="font-medium">Informasi Pengirim:</div>
+                    <div className="font-medium">Informasi Pengiriman:</div>
                     <div>Dikirim oleh : {senderName || '-'}</div>
+                    <div>Supir / Kurir : {driverName || '-'} ({vehicleNumber || '-'})</div>
                     <div>Ekspedisi : {expedition || '-'}</div>
                     <div>Tanggal Kirim : {shipDate || '-'}</div>
                     <div>Estimasi Tiba : {etaDate || '-'}</div>

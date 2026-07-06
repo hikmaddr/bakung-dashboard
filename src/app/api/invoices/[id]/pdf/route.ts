@@ -747,16 +747,23 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
     const templateDefaults = (brand.templateDefaults ?? {}) as Record<string, unknown>;
     const theme = resolveTheme(brand as any, (templateDefaults as any)?.invoice);
 
-    const auth = await getAuth();
+    // 1. Get Template Defaults safely
+    const defaults = typeof brand.templateDefaults === "string"
+      ? JSON.parse(brand.templateDefaults)
+      : brand.templateDefaults || {};
+
+    // 2. Initialize actor with Fallback to Brand info
     let actor = {
-      name: ((auth as any)?.user?.name as string) || brand.name || "Sales",
-      email: brand.email || null,
-      phone: brand.phone || null,
+      name: (defaults.signatureName as string) || brand.name || "Sales",
+      email: (defaults.signatureEmail as string) || brand.email || null,
+      phone: (defaults.signaturePhone as string) || brand.phone || null,
     } as { name: string; email?: string | null; phone?: string | null };
-    if (auth?.userId) {
+
+    // 3. Fallback to logged-in user profile ONLY if signatureName is not set in brand defaults
+    if (!defaults.signatureName && authTop?.userId) {
       try {
         const user = await prisma.user.findUnique({
-          where: { id: auth.userId },
+          where: { id: authTop.userId },
           select: { name: true, firstName: true, lastName: true, email: true, phone: true, company: true },
         });
         if (user) {

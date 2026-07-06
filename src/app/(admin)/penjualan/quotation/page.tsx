@@ -2,18 +2,18 @@
 
 import PageBreadcrumb from "@/components/common/PageBreadCrumb";
 import { useEffect, useMemo, useState } from "react";
+import Image from "next/image";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation"; 
 import toast from "react-hot-toast";
 import {
-  PlusCircle,
-  Eye,
   Download,
   Edit,
   Trash2,
   Paperclip,
+  Eye,
+  PlusCircle,
   X,
-  // ChevronDown dan Copy dihapus karena tidak lagi digunakan pada Tindakan
 } from "lucide-react";
 import LoadingSpinner from "@/components/common/LoadingSpinner";
 import Skeleton from "@/components/ui/skeleton";
@@ -35,13 +35,23 @@ type Quotation = {
   attachmentUrl?: string | null;
   hasInvoice?: boolean;
   hasSalesOrder?: boolean;
+  isNegotiated?: boolean;
+  originalAmount?: number;
+  negotiatedAmount?: number;
+  marginChange?: number;
+  negotiationNotes?: string;
+  clientPoUrl?: string | null;
+  clientSoUrl?: string | null;
+  clientOtherFiles?: string[];
+  items?: any[];
+  isConverted?: boolean;
 };
 
 // ================== EMPTY STATE ==================
 function EmptyState() {
   return (
     <div className="mt-20 flex flex-col items-center justify-center text-center text-gray-600 dark:text-gray-300">
-      <img src="/empty-state.svg" alt="Empty State" className="mb-4 w-64 opacity-90" />
+      <Image src="/empty-state.svg" alt="Empty State" width={256} height={256} className="mb-4 opacity-90" />
       <p className="text-lg font-medium">Belum ada data yang ditampilkan</p>
       <p className="mt-2 max-w-md text-sm">
         Buat quotation penawaran yang dapat Anda akses dari semua perangkat Anda.
@@ -57,6 +67,191 @@ function EmptyState() {
   );
 }
 
+// ================== ATTACHMENT MODAL ==================
+function AttachmentModal({
+  quotation,
+  onClose,
+  onPreview,
+}: {
+  quotation: Quotation;
+  onClose: () => void;
+  onPreview: (url: string) => void;
+}) {
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+      <div className="relative w-full max-w-lg overflow-hidden rounded-2xl bg-white shadow-2xl dark:bg-gray-900 animate-in fade-in zoom-in duration-200">
+        <div className="flex items-center justify-between border-b px-6 py-4 dark:border-gray-800">
+          <div className="flex items-center gap-2">
+            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-blue-50 text-blue-600 dark:bg-blue-900/30 dark:text-blue-400">
+              <Paperclip size={18} />
+            </div>
+            <h3 className="text-lg font-bold text-gray-900 dark:text-white">Lampiran & Riwayat</h3>
+          </div>
+          <button onClick={onClose} className="rounded-full p-2 text-gray-400 hover:bg-gray-100 hover:text-gray-600 dark:hover:bg-gray-800">
+            <X size={20} />
+          </button>
+        </div>
+
+        <div className="max-h-[70vh] overflow-y-auto p-6 space-y-6">
+          {/* Section 1: Price History (Detailed Table) */}
+          {quotation.isNegotiated && (
+            <div className="space-y-3">
+              <h4 className="text-xs font-bold uppercase tracking-wider text-gray-500">Detail Negosiasi Produk</h4>
+              <div className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
+                <table className="w-full text-[11px] text-left">
+                  <thead className="bg-slate-50 text-slate-500 font-bold uppercase tracking-tighter">
+                    <tr>
+                      <th className="px-3 py-2">Produk</th>
+                      <th className="px-2 py-2 text-center">Qty</th>
+                      <th className="px-3 py-2 text-right">Awal</th>
+                      <th className="px-3 py-2 text-right">Akhir</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {(quotation.items || []).map((item, idx) => (
+                      <tr key={item.id || idx}>
+                        <td className="px-3 py-2 font-medium text-slate-700">
+                          {item.product}
+                        </td>
+                        <td className="px-2 py-2 text-center text-slate-500">
+                          {item.quantity}
+                        </td>
+                        <td className="px-3 py-2 text-right text-slate-400 line-through">
+                          {Number(item.originalPrice || item.price).toLocaleString("id-ID")}
+                        </td>
+                        <td className="px-3 py-2 text-right font-bold text-blue-600">
+                          {Number(item.negotiatedPrice || item.price).toLocaleString("id-ID")}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                  <tfoot className="bg-blue-50/50 font-bold text-blue-700">
+                    <tr>
+                      <td colSpan={3} className="px-3 py-2 text-right uppercase tracking-tighter">Total Nego</td>
+                      <td className="px-3 py-2 text-right">
+                        {quotation.negotiatedAmount?.toLocaleString("id-ID", { style: "currency", currency: "IDR" })}
+                      </td>
+                    </tr>
+                  </tfoot>
+                </table>
+              </div>
+              {quotation.negotiationNotes && (
+                <div className="rounded-lg bg-slate-50 p-3 text-xs italic text-slate-500 border border-slate-100">
+                  "{quotation.negotiationNotes}"
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Section 2: Document Links (Only show if at least one document exists) */}
+          {(quotation.attachmentUrl || quotation.clientPoUrl || quotation.clientSoUrl || (quotation.clientOtherFiles && quotation.clientOtherFiles.length > 0)) && (
+            <div className="space-y-3">
+              <h4 className="text-xs font-bold uppercase tracking-wider text-gray-500">Dokumen Lampiran</h4>
+              <div className="grid gap-2">
+                {/* Project Main File */}
+                {quotation.attachmentUrl && (
+                  <button
+                    onClick={() => onPreview(quotation.attachmentUrl!)}
+                    className="flex items-center justify-between rounded-lg border border-gray-200 p-3 hover:bg-gray-50 dark:border-gray-800 dark:hover:bg-white/5"
+                  >
+                    <div className="flex items-center gap-3">
+                      <div className="rounded bg-blue-100 p-2 text-blue-600 dark:bg-blue-900/40">
+                        <Download size={14} />
+                      </div>
+                      <div className="text-left">
+                        <div className="text-sm font-semibold text-gray-900 dark:text-white">File Project / Penawaran</div>
+                        <div className="text-[10px] text-gray-400 uppercase">Dokumen Utama</div>
+                      </div>
+                    </div>
+                    <Eye size={16} className="text-gray-400" />
+                  </button>
+                )}
+
+                {/* PO File */}
+                {quotation.clientPoUrl && (
+                  <div className="space-y-1">
+                    <a
+                      href={quotation.clientPoUrl}
+                      target="_blank"
+                      className="flex items-center justify-between rounded-lg border border-gray-200 p-3 hover:bg-gray-50 dark:border-gray-800 dark:hover:bg-white/5"
+                    >
+                      <div className="flex items-center gap-3">
+                        <div className="rounded bg-green-100 p-2 text-green-600 dark:bg-green-900/40">
+                          <Download size={14} />
+                        </div>
+                        <div className="text-left">
+                          <div className="text-sm font-semibold text-gray-900 dark:text-white">Purchase Order (PO)</div>
+                          <div className="text-[10px] text-gray-400 uppercase">Dokumen Client</div>
+                        </div>
+                      </div>
+                      <Paperclip size={16} className="text-gray-400" />
+                    </a>
+                    <p className="px-1 text-[10px] text-gray-400 italic">Bukti pemesanan resmi dari pelanggan sebagai dasar penagihan.</p>
+                  </div>
+                )}
+
+                {/* SO File */}
+                {quotation.clientSoUrl && (
+                  <div className="space-y-1">
+                    <a
+                      href={quotation.clientSoUrl}
+                      target="_blank"
+                      className="flex items-center justify-between rounded-lg border border-gray-200 p-3 hover:bg-gray-50 dark:border-gray-800 dark:hover:bg-white/5"
+                    >
+                      <div className="flex items-center gap-3">
+                        <div className="rounded bg-amber-100 p-2 text-amber-600 dark:bg-amber-900/40">
+                          <Download size={14} />
+                        </div>
+                        <div className="text-left">
+                          <div className="text-sm font-semibold text-gray-900 dark:text-white">Sales Order (SO)</div>
+                          <div className="text-[10px] text-gray-400 uppercase">Dokumen Internal</div>
+                        </div>
+                      </div>
+                      <Paperclip size={16} className="text-gray-400" />
+                    </a>
+                    <p className="px-1 text-[10px] text-gray-400 italic">Dokumen konfirmasi pengerjaan untuk bagian operasional.</p>
+                  </div>
+                )}
+
+                {/* Other Files */}
+                {quotation.clientOtherFiles && quotation.clientOtherFiles.length > 0 && (
+                  <div className="space-y-2">
+                    {quotation.clientOtherFiles.map((url, idx) => (
+                      <div key={idx} className="space-y-1">
+                        <a
+                          href={url}
+                          target="_blank"
+                          className="flex items-center justify-between rounded-lg border border-gray-200 p-3 hover:bg-gray-50 dark:border-gray-800 dark:hover:bg-white/5"
+                        >
+                          <div className="flex items-center gap-3">
+                            <div className="rounded bg-gray-100 p-2 text-gray-600 dark:bg-gray-800">
+                              <Download size={14} />
+                            </div>
+                            <div className="text-left">
+                              <div className="text-sm font-semibold text-gray-900 dark:text-white">Lampiran Tambahan {idx + 1}</div>
+                              <div className="text-[10px] text-gray-400 uppercase">File Pendukung</div>
+                            </div>
+                          </div>
+                          <Paperclip size={16} className="text-gray-400" />
+                        </a>
+                        {idx === 0 && <p className="px-1 text-[10px] text-gray-400 italic">Foto lokasi, file desain final, atau lampiran teknis tambahan.</p>}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+        </div>
+        
+        <div className="border-t bg-gray-50 px-6 py-4 dark:border-gray-800 dark:bg-gray-900/50">
+          <Button onClick={onClose} className="w-full" variant="outline">Tutup</Button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ================== ROW ITEM (Diubah: Menggunakan Ikon Tindakan & Urutan Kolom Baru) ==================
 function RowItem({
   quotation,
@@ -64,12 +259,14 @@ function RowItem({
   setIsPreviewOpen,
   setPreviewUrl,
   setPreviewType,
+  onAttachmentClick,
 }: {
   quotation: Quotation;
   handleAction: (action: string, id: number) => void;
   setIsPreviewOpen: (open: boolean) => void;
   setPreviewUrl: (url: string) => void;
   setPreviewType: (type: "image" | "pdf") => void;
+  onAttachmentClick: (quotation: Quotation) => void;
 }) {
   const quoStatusLabel = getQuotationStatusLabel({
     status: quotation.status,
@@ -83,7 +280,7 @@ function RowItem({
 
       <td className="p-3 dark:text-gray-200">
         <span className="mr-2">{quotation.quotationNumber}</span>
-        {(quotation.hasInvoice || quotation.hasSalesOrder) ? (
+        {(quotation.hasInvoice || quotation.hasSalesOrder || quotation.isConverted) ? (
           <StatusBadge status="Converted" className="inline-flex !px-2 !py-0.5 !text-[10px] align-middle" />
         ) : null}
       </td>
@@ -104,33 +301,18 @@ function RowItem({
       </td>
 
       <td className="p-3 text-center dark:text-gray-300">
-        {quotation.attachmentUrl ? (
-          <button
-            onClick={() => {
-              const url = quotation.attachmentUrl!;
-              const isImage = /\.(jpg|jpeg|png)$/i.test(url);
-              const isPdf = /\.pdf$/i.test(url);
-              if (isImage) {
-                setPreviewType("image");
-                setPreviewUrl(url);
-                setIsPreviewOpen(true);
-              } else if (isPdf) {
-                setPreviewType("pdf");
-                setPreviewUrl(url);
-                setIsPreviewOpen(true);
-              } else {
-                // Fallback to open in new tab for unsupported types
-                window.open(url, "_blank");
-              }
-            }}
-            className="inline-flex items-center justify-center text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300"
-            title="Preview Lampiran"
-          >
-            <Paperclip className="h-4 w-4" />
-          </button>
-        ) : (
-          "-"
-        )}
+        <button
+          onClick={() => onAttachmentClick(quotation)}
+          className={`inline-flex items-center justify-center p-2 rounded-full transition-colors ${
+            quotation.attachmentUrl || quotation.clientPoUrl || quotation.clientSoUrl || (quotation.clientOtherFiles && quotation.clientOtherFiles.length > 0)
+              ? "text-blue-600 hover:bg-blue-50 dark:text-blue-400 dark:hover:bg-blue-900/30"
+              : "text-gray-300 cursor-not-allowed"
+          }`}
+          title="Lihat Lampiran & Riwayat"
+          disabled={!quotation.attachmentUrl && !quotation.clientPoUrl && !quotation.clientSoUrl && (!quotation.clientOtherFiles || quotation.clientOtherFiles.length === 0)}
+        >
+          <Paperclip className="h-4 w-4" />
+        </button>
       </td>
 
       <td className="p-3 text-right">
@@ -180,16 +362,17 @@ export default function QuotationPageWithTemplate() {
   const [quotations, setQuotations] = useState<Quotation[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState("");
-  const [page, setPage] = useState(1);
-  
-  // PERUBAHAN 1: Default limit diubah dari 5 menjadi 10
-  const [limit, setLimit] = useState(10); 
+  const page = Number(searchParams?.get("page") || "1");
+  const limit = Number(searchParams?.get("limit") || "10");
+  const [total, setTotal] = useState(0);
+  const [totalPages, setTotalPages] = useState(1);
   const [refreshKey, setRefreshKey] = useState(0);
   const [deleteTarget, setDeleteTarget] = useState<Quotation | null>(null);
   const [deleteLoading, setDeleteLoading] = useState(false);
   const [isPreviewOpen, setIsPreviewOpen] = useState(false);
   const [previewUrl, setPreviewUrl] = useState<string>("");
   const [previewType, setPreviewType] = useState<"image" | "pdf">("image");
+  const [selectedAttachmentQuotation, setSelectedAttachmentQuotation] = useState<Quotation | null>(null);
   const rangeParam = (searchParams?.get("range") || "").trim();
   const statusParam = (searchParams?.get("status") || "").trim();
   const activeFiltersLabel = useMemo(() => {
@@ -321,7 +504,9 @@ export default function QuotationPageWithTemplate() {
         const qs = new URLSearchParams();
         if (range) qs.set("range", range);
         if (status) qs.set("status", status);
-        const url = qs.toString() ? `/api/quotations?${qs.toString()}` : "/api/quotations";
+        qs.set("page", page.toString());
+        qs.set("limit", limit.toString());
+        const url = `/api/quotations?${qs.toString()}`;
         const res = await fetch(url, { cache: "no-store" });
         const data = await res.json();
         const list = Array.isArray(data)
@@ -346,7 +531,17 @@ export default function QuotationPageWithTemplate() {
           const name = picName.trim();
           const company = companyName.trim();
           const customerText = name && company ? `${name} - ${company}` : name || company || "Tidak diketahui";
-          const status = typeof item["status"] === "string" ? item["status"] : "Draft";
+          const statusRaw = typeof item["status"] === "string" ? item["status"] : "Draft";
+          const sentVia = typeof item["sentVia"] === "string" && item["sentVia"] ? item["sentVia"] : "";
+          const hasInvoice = typeof item["hasInvoice"] === "boolean" ? (item["hasInvoice"] as boolean) : false;
+          const hasSalesOrder = typeof item["hasSalesOrder"] === "boolean" ? (item["hasSalesOrder"] as boolean) : false;
+          const isConverted = hasInvoice || hasSalesOrder || statusRaw === "Converted";
+          
+          // Capitalize first letter of sentVia
+          const formattedSentVia = sentVia ? sentVia.charAt(0).toUpperCase() + sentVia.slice(1) : "";
+          let status = statusRaw === "Sent" && formattedSentVia ? `Sent via ${formattedSentVia}` : statusRaw;
+          if (isConverted) status = "Approved";
+          
           const dateValue = item["date"];
           const formattedDate =
             typeof dateValue === "string" && dateValue
@@ -364,9 +559,6 @@ export default function QuotationPageWithTemplate() {
               ? item["totalAmount"]
               : 0;
 
-          const hasInvoice = typeof item["hasInvoice"] === "boolean" ? (item["hasInvoice"] as boolean) : false;
-          const hasSalesOrder = typeof item["hasSalesOrder"] === "boolean" ? (item["hasSalesOrder"] as boolean) : false;
-
           return {
             id: Number(item["id"] ?? 0),
             quotationNumber: String(item["quotationNumber"] ?? ""),
@@ -379,9 +571,23 @@ export default function QuotationPageWithTemplate() {
               typeof item["projectFileUrl"] === "string" ? (item["projectFileUrl"] as string) : null,
             hasInvoice,
             hasSalesOrder,
+            isConverted,
+            isNegotiated: !!item["isNegotiated"],
+            originalAmount: Number(item["originalAmount"] || 0),
+            negotiatedAmount: Number(item["negotiatedAmount"] || 0),
+            marginChange: Number(item["marginChange"] || 0),
+            negotiationNotes: String(item["negotiationNotes"] || ""),
+            clientPoUrl: String(item["clientPoUrl"] || ""),
+            clientSoUrl: String(item["clientSoUrl"] || ""),
+            clientOtherFiles: Array.isArray(item["clientOtherFiles"]) ? item["clientOtherFiles"] : [],
+            items: Array.isArray(item["items"]) ? item["items"] : [],
           };
         });
         setQuotations(mapped);
+        if (data.pagination) {
+          setTotal(data.pagination.total);
+          setTotalPages(data.pagination.totalPages);
+        }
 
       } catch (err) {
         console.error("Gagal ambil quotation:", err);
@@ -418,8 +624,9 @@ export default function QuotationPageWithTemplate() {
     [quotations, searchTerm]
   );
 
-  const totalPages = Math.ceil(filtered.length / limit);
-  const paginated = filtered.slice((page - 1) * limit, page * limit);
+  // Since we use server-side pagination, quotations is already paged
+  const displayQuotations = searchTerm ? filtered : quotations;
+
 
   return (
     <FeatureGuard feature="sales.quotation">
@@ -435,7 +642,6 @@ export default function QuotationPageWithTemplate() {
             value={searchTerm}
             onChange={(e) => {
               setSearchTerm(e.target.value);
-              setPage(1);
             }}
             className="dark:bg-dark-900 shadow-theme-xs focus:border-brand-300 focus:ring-brand-500/10 dark:focus:border-brand-800 h-11 w-full sm:w-64 rounded-lg border border-gray-300 bg-transparent px-4 py-2.5 text-sm text-gray-800 placeholder:text-gray-400 focus:ring-3 focus:outline-hidden dark:border-gray-700 dark:bg-gray-900 dark:text-white/90 dark:placeholder:text-white/30"
           />
@@ -482,7 +688,7 @@ export default function QuotationPageWithTemplate() {
               </div>
             </div>
           </div>
-        ) : paginated.length === 0 ? (
+        ) : displayQuotations.length === 0 ? (
           <EmptyState />
         ) : (
           <>
@@ -506,7 +712,7 @@ export default function QuotationPageWithTemplate() {
                   </tr>
                 </thead>
                 <tbody>
-                  {paginated.map((q) => (
+                  {displayQuotations.map((q) => (
                     <RowItem
                       key={q.id}
                       quotation={q}
@@ -514,6 +720,7 @@ export default function QuotationPageWithTemplate() {
                       setIsPreviewOpen={setIsPreviewOpen}
                       setPreviewUrl={setPreviewUrl}
                       setPreviewType={setPreviewType}
+                      onAttachmentClick={(q) => setSelectedAttachmentQuotation(q)}
                     />
                   ))}
                 </tbody>
@@ -524,11 +731,17 @@ export default function QuotationPageWithTemplate() {
             <Pagination
               currentPage={page}
               totalPages={totalPages}
-              onPageChange={setPage}
+              onPageChange={(p) => {
+                const params = new URLSearchParams(searchParams?.toString());
+                params.set("page", p.toString());
+                router.push(`?${params.toString()}`);
+              }}
               limit={limit}
-              onLimitChange={(value) => {
-                setLimit(value);
-                setPage(1);
+              onLimitChange={(l) => {
+                const params = new URLSearchParams(searchParams?.toString());
+                params.set("limit", l.toString());
+                params.set("page", "1");
+                router.push(`?${params.toString()}`);
               }}
             />
           </>
@@ -574,6 +787,29 @@ export default function QuotationPageWithTemplate() {
           </div>
         </div>
       ) : null}
+
+      {/* Modal Lampiran Terpadu */}
+      {selectedAttachmentQuotation && (
+        <AttachmentModal
+          quotation={selectedAttachmentQuotation}
+          onClose={() => setSelectedAttachmentQuotation(null)}
+          onPreview={(url) => {
+            const isImage = /\.(jpg|jpeg|png)$/i.test(url);
+            const isPdf = /\.pdf$/i.test(url);
+            if (isImage) {
+              setPreviewType("image");
+              setPreviewUrl(url);
+              setIsPreviewOpen(true);
+            } else if (isPdf) {
+              setPreviewType("pdf");
+              setPreviewUrl(url);
+              setIsPreviewOpen(true);
+            } else {
+              window.open(url, "_blank");
+            }
+          }}
+        />
+      )}
 
       {/* Preview Modal */}
       {isPreviewOpen && (

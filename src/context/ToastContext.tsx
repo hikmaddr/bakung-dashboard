@@ -10,9 +10,12 @@ export const ToastProvider = ({ children }: { children: React.ReactNode }) => {
       {children}
       {/* ✅ HANYA ADA SATU TOASTER DI SINI (GLOBAL) */}
       <Toaster 
-          position="top-center" // Atau posisi lain yang Anda inginkan
+          position="top-center" 
           toastOptions={{
-              duration: 3000, // Notifikasi akan hilang setelah 3 detik
+              duration: 3000,
+          }}
+          containerStyle={{
+            zIndex: 100002,
           }}
       /> 
     </>

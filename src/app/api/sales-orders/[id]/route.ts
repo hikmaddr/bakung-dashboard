@@ -3,6 +3,8 @@ import { prisma } from "@/lib/prisma";
 import { getActiveBrandProfile, resolveAllowedBrandIds } from "@/lib/brand";
 import { getAuth } from "@/lib/auth";
 import { logActivity } from "@/lib/activity";
+import { generateNextNumber } from "@/lib/documentNumber";
+import { createPurchaseOrdersFromSalesOrder } from "@/services/salesService";
 export const runtime = "nodejs";
 
 type NormalizedItem = {
@@ -15,6 +17,10 @@ type NormalizedItem = {
   discount: number;
   imageUrl: string | null;
   subtotal: number;
+  supplierCost?: number;
+  titipanCostAdjustment?: number;
+  hiddenMargin?: number;
+  taxAdjustment?: number;
 };
 
 const parseTaxMode = (raw: unknown) => {
@@ -63,6 +69,10 @@ const normalizeItems = (rawItems: unknown[]): NormalizedItem[] =>
       discount,
       imageUrl: typeof item.imageUrl === "string" ? item.imageUrl : null,
       subtotal,
+      supplierCost: Number(item.supplierCost) || 0,
+      titipanCostAdjustment: Number(item.titipanCostAdjustment) || 0,
+      hiddenMargin: Number(item.hiddenMargin) || 0,
+      taxAdjustment: Number(item.taxAdjustment) || 0,
     };
   });
 
@@ -205,6 +215,7 @@ export async function PUT(
       quotationId,
       extraDiscount = 0,
       taxMode = "none",
+      isNonInventory,
     } = body ?? {};
 
     if (typeof items === "undefined") {
@@ -250,6 +261,9 @@ export async function PUT(
       if (typeof quotationId !== "undefined") {
         dataToUpdate.quotationId = parseOptionalNumber(quotationId);
       }
+      if (typeof isNonInventory !== "undefined") {
+        dataToUpdate.isNonInventory = !!isNonInventory;
+      }
 
       if (Object.keys(dataToUpdate).length === 0) {
         return NextResponse.json(
@@ -283,7 +297,8 @@ export async function PUT(
           };
 
           // Determine if we need to create OUT mutations (first time shipped)
-          if (!isShipLike(prevStatus) && isShipLike(newStatus)) {
+          // SKIP if isNonInventory is true
+          if (!isShipLike(prevStatus) && isShipLike(newStatus) && !updated.isNonInventory) {
             const existingOut = await tx.stockMutation.count({
               where: { refTable: "salesorder", refId: id, type: "OUT" },
             });
@@ -309,8 +324,53 @@ export async function PUT(
             }
           }
 
+          // Auto-generate Delivery Order if status becomes Confirmed or Processing
+          const isProcessingLike = (s: string) => {
+            const x = s.toLowerCase();
+            return x === "confirmed" || x === "processing";
+          };
+
+          if (!isProcessingLike(prevStatus) && isProcessingLike(newStatus)) {
+             const existingDO = await tx.deliveryOrder.findFirst({
+               where: { salesOrderId: id }
+             });
+             if (!existingDO) {
+                const doNumber = await generateNextNumber("deliveryOrder", { 
+                  brandProfileId: brand?.id || updated.brandProfileId, 
+                  date: new Date() 
+                });
+                await tx.deliveryOrder.create({
+                  data: {
+                    doNumber,
+                    date: new Date(),
+                    status: "Draft",
+                    salesOrderId: id,
+                    brandProfileId: brand?.id || updated.brandProfileId,
+                    items: {
+                      create: updated.items.map((it: any) => ({
+                        product: it.product,
+                        description: it.description,
+                        quantity: it.quantity,
+                        unit: it.unit,
+                      }))
+                    }
+                  }
+                });
+             }
+          }
+
+          // Auto-generate Purchase Orders if status becomes Confirmed or Processing
+          if (!isProcessingLike(prevStatus) && isProcessingLike(newStatus)) {
+            try {
+              await createPurchaseOrdersFromSalesOrder(id);
+            } catch (err) {
+              console.error("Failed to auto-generate POs:", err);
+            }
+          }
+
           // Rollback if previously shipped but now reverted (create IN reversals)
-          if (isShipLike(prevStatus) && !isShipLike(newStatus)) {
+          // SKIP if isNonInventory is true
+          if (isShipLike(prevStatus) && !isShipLike(newStatus) && !updated.isNonInventory) {
             const hadOut = await tx.stockMutation.count({
               where: { refTable: "salesorder", refId: id, type: "OUT" },
             });
@@ -448,6 +508,9 @@ export async function PUT(
     if (typeof quotationId !== "undefined") {
       updateData.quotationId = resolvedQuotationId;
     }
+    if (typeof isNonInventory !== "undefined") {
+      updateData.isNonInventory = !!isNonInventory;
+    }
 
     const [, updated] = await prisma.$transaction([
       prisma.salesOrderItem.deleteMany({ where: { salesOrderId: id } }),
@@ -465,6 +528,10 @@ export async function PUT(
               discount: item.discount,
               imageUrl: item.imageUrl,
               subtotal: item.subtotal,
+              supplierCost: item.supplierCost,
+              titipanCostAdjustment: item.titipanCostAdjustment,
+              hiddenMargin: item.hiddenMargin,
+              taxAdjustment: item.taxAdjustment,
             })),
           },
         },

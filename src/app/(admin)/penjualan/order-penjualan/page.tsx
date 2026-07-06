@@ -5,6 +5,7 @@ import LoadingSpinner from "@/components/common/LoadingSpinner";
 import Skeleton from "@/components/ui/skeleton";
 import Pagination from "@/components/tables/Pagination";
 import { useEffect, useState, useRef, useMemo } from "react"; 
+import Image from "next/image";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import toast from "react-hot-toast";
@@ -13,22 +14,23 @@ import {
   ChevronDown,
   Eye,
   Edit,
-  Copy,
   Trash2,
-  Paperclip,
   Download,
 } from "lucide-react";
-import { PDFDocument, rgb } from "pdf-lib";
 import { downloadCSV, downloadXLSX } from "@/lib/exporters";
 import FeatureGuard from "@/components/FeatureGuard";
 import { formatDownloadFileName } from "@/utils/downloadFilename";
 import { ModalConfirmation } from "@/components/ui/ModalConfirmation";
+import { StatusBadge, getInvoiceStatusLabel } from "@/components/ui/StatusBadge";
+import EmptyState from "@/components/EmptyState";
+import { Search } from "lucide-react";
 
 // ================== TYPES ==================
 interface SalesOrder {
   id: number;
   orderNumber: string;
-  status: string;
+  status: any;
+  paymentStatus: any;
   customer: {
     pic: string;
     company: string;
@@ -39,85 +41,6 @@ interface SalesOrder {
   quotationNumber?: string;
 }
 
-// Opsi Status
-const STATUS_OPTIONS = ["Approved", "Declined"] as const;
-
-const formatCurrency = (val: number) => {
-  return val.toLocaleString("id-ID", { style: "currency", currency: "IDR" });
-};
-
-// ================== HELPER: GET STATUS COLOR ==================
-const getStatusColor = (status: string) => {
-  switch (status) {
-    case "Confirmed":
-      return "bg-green-100 text-green-700 dark:bg-green-900/25 dark:text-green-300";
-    case "Sent":
-      return "bg-blue-100 text-blue-700 dark:bg-blue-900/25 dark:text-blue-300";
-    case "Approved":
-      return "bg-yellow-100 text-yellow-800 dark:bg-yellow-900/20 dark:text-yellow-300";
-    case "Declined":
-      return "bg-red-100 text-red-700 dark:bg-red-900/25 dark:text-red-300";
-    case "Draft":
-      return "bg-gray-100 text-gray-700 dark:bg-white/10 dark:text-gray-300";
-    default:
-      return "bg-gray-100 text-gray-700 dark:bg-white/10 dark:text-gray-300";
-  }
-};
-
-// ================== KOMPONEN STATUS DROPDOWN ==================
-function StatusDropdown({
-  order,
-  handleStatusChange,
-  options,
-  getStatusColor,
-}: {
-  order: SalesOrder;
-  handleStatusChange: (id: number, nextStatus: string) => void;
-  options: (typeof STATUS_OPTIONS[number])[];
-  getStatusColor: (status: string) => string;
-}) {
-    const [openStatus, setOpenStatus] = useState(false);
-    const statusRef = useRef<HTMLDivElement | null>(null);
-
-    useEffect(() => {
-        const handler = (e: MouseEvent) => {
-            if (statusRef.current && !statusRef.current.contains(e.target as Node)) {
-                setOpenStatus(false);
-            }
-        };
-        document.addEventListener("mousedown", handler);
-        return () => document.removeEventListener("mousedown", handler);
-    }, []);
-
-    return (
-      <div className="relative inline-block" ref={statusRef}>
-        <button
-          onClick={() => setOpenStatus((v) => !v)}
-          className={`px-3 py-1 rounded-full text-xs font-medium flex items-center gap-1 ${getStatusColor(order.status)}`}
-        >
-          {order.status}
-          <ChevronDown className="h-3 w-3" />
-        </button>
-
-        {openStatus && (
-          <div className="absolute mt-1 w-36 rounded-lg border bg-white shadow-lg z-50">
-            {options.map((opt) => (
-              <button
-                key={opt}
-                onClick={() => {
-                  handleStatusChange(order.id, opt);
-                  setOpenStatus(false);
-                }}
-                className="block w-full px-3 py-2 text-left text-sm hover:bg-gray-100"
-              >
-                {opt}
-              </button>
-            ))}
-          </div>
-        )}
-      </div>
-    );
-}
 
 // ================== PAGE ==================
 export default function SalesOrderListPage() {
@@ -127,8 +50,10 @@ export default function SalesOrderListPage() {
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState("");
 
-  const [page, setPage] = useState(1);
-  const [limit, setLimit] = useState(10);
+  const page = Number(searchParams?.get("page") || "1");
+  const limit = Number(searchParams?.get("limit") || "10");
+  const [total, setTotal] = useState(0);
+  const [totalPages, setTotalPages] = useState(1);
   const [refreshKey, setRefreshKey] = useState(0);
 
   const [sendModalOpen, setSendModalOpen] = useState(false);
@@ -153,11 +78,17 @@ export default function SalesOrderListPage() {
         const qs = new URLSearchParams();
         if (range) qs.set("range", range);
         if (status) qs.set("status", status);
-        const url = qs.toString() ? `/api/sales-orders?${qs.toString()}` : "/api/sales-orders";
+        qs.set("page", page.toString());
+        qs.set("limit", limit.toString());
+        const url = `/api/sales-orders?${qs.toString()}`;
         const res = await fetch(url, { cache: "no-store" });
         const data = await res.json();
         
         const ordersData = data.success ? data.data : data;
+        if (data.pagination) {
+          setTotal(data.pagination.total);
+          setTotalPages(data.pagination.totalPages);
+        }
 
         const mapped: SalesOrder[] = ordersData.map((item: any) => {
           const normalizedStatus = (() => {
@@ -206,6 +137,8 @@ export default function SalesOrderListPage() {
   const filtered = useMemo(
     () => {
       const lower = searchTerm.toLowerCase();
+      // Server-side filtering is preferred but for now we filter what's loaded
+      // Since we use pagination, we should probably add search to the API too
       return orders.filter(
         (o) =>
           o.orderNumber.toLowerCase().includes(lower) ||
@@ -218,8 +151,9 @@ export default function SalesOrderListPage() {
     [orders, searchTerm]
   );
 
-  const totalPages = Math.ceil(filtered.length / limit);
-  const paginatedOrders = filtered.slice((page - 1) * limit, page * limit);
+  // If we have server-side pagination, 'orders' IS the paginated list
+  const displayOrders = searchTerm ? filtered : orders;
+
 
 
   // 🟥 Delete
@@ -263,15 +197,8 @@ export default function SalesOrderListPage() {
       const orderToSend = orders.find(o => o.id === id);
       if (!orderToSend) return;
 
-      // 1. Ubah status di database
-      const statusValue =
-        method === "wa"
-          ? "Sent via WhatsApp"
-          : method === "email"
-          ? "Sent via Email"
-          : method === "pdf"
-          ? "Sent via PDF"
-          : "Sent";
+      // 1. Ubah status di database (Gunakan status yang valid sesuai Enum)
+      const statusValue = "Confirmed"; 
       const res = await fetch(`/api/sales-orders/${id}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
@@ -301,7 +228,7 @@ export default function SalesOrderListPage() {
           const link = data.shortUrl || data.url || data.webViewLink || data.webContentLink || (data.fileId ? `https://drive.google.com/file/d/${data.fileId}/view` : "");
           const phone = (orderToSend.customer?.phone || "").replace(/^0/, "62");
           const msg = encodeURIComponent(
-            `Hi ${orderToSend.customer?.pic || "Customer"},\nAnda telah menerima Sales Order ${orderToSend.orderNumber}.\nTotal: ${formatCurrency(orderToSend.totalAmount)}\n\nLink dokumen: ${link}`
+            `Hi ${orderToSend.customer?.pic || "Customer"},\nAnda telah menerima Sales Order ${orderToSend.orderNumber}.\nTotal: Rp ${orderToSend.totalAmount.toLocaleString("id-ID")}\n\nLink dokumen: ${link}`
           );
           const waUrl = phone ? `https://wa.me/${phone}?text=${msg}` : `https://wa.me/?text=${msg}`;
           if (win) win.location.href = waUrl; else window.location.href = waUrl;
@@ -309,7 +236,7 @@ export default function SalesOrderListPage() {
         } catch {
           const phone = (orderToSend.customer?.phone || "").replace(/^0/, "62");
           const msg = encodeURIComponent(
-            `Hi ${orderToSend.customer?.pic || "Customer"},\nSales Order ${orderToSend.orderNumber}.\nTotal: ${formatCurrency(orderToSend.totalAmount)}\n\nLink dokumen tidak tersedia. Silakan hubungi kami.`
+            `Hi ${orderToSend.customer?.pic || "Customer"},\nSales Order ${orderToSend.orderNumber}.\nTotal: Rp ${orderToSend.totalAmount.toLocaleString("id-ID")}\n\nLink dokumen tidak tersedia. Silakan hubungi kami.`
           );
           const waUrl = phone ? `https://wa.me/${phone}?text=${msg}` : `https://wa.me/?text=${msg}`;
           if (win) win.location.href = waUrl; else window.location.href = waUrl;
@@ -432,7 +359,6 @@ export default function SalesOrderListPage() {
   return (
     <FeatureGuard feature="sales.order">
     <div className="sales-scope p-6 min-h-screen">
-      {/* Breadcrumb yang diperbaiki */}
       <PageBreadcrumb
         pageTitle="Order Penjualan"
         items={[
@@ -441,42 +367,29 @@ export default function SalesOrderListPage() {
         ]}
       />
 
-      {/* Kontainer Card Box */}
-      <div className="rounded-2xl border border-gray-200 bg-white p-6 dark:border-gray-800 dark:bg-white/[0.03] min-h-[70vh] overflow-visible flex flex-col gap-4">
-
-        {/* Toolbar atas */}
-        <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <input
-            type="text"
-            placeholder="Cari pelanggan / nomor order..."
-            value={searchTerm}
-            onChange={(e) => {
-                setSearchTerm(e.target.value);
-                setPage(1); 
-            }}
-            className="dark:bg-dark-900 shadow-theme-xs focus:border-brand-300 focus:ring-brand-500/10 dark:focus:border-brand-800 h-11 w-full sm:w-64 rounded-lg border border-gray-300 bg-transparent px-4 py-2.5 text-sm text-gray-800 placeholder:text-gray-400 focus:ring-3 focus:outline-hidden dark:border-gray-700 dark:bg-gray-900 dark:text-white/90 dark:placeholder:text-white/30"
-          />
-
-          <div className="flex items-center gap-3">
-            {activeFiltersLabel ? (
-              <span className="rounded-full bg-gray-100 px-3 py-1 text-xs font-semibold text-gray-600 dark:bg-gray-800 dark:text-gray-300">
-                Aktif: {activeFiltersLabel}
-              </span>
-            ) : null}
+      <div className="rounded-2xl border border-gray-200 bg-white shadow-sm dark:border-gray-800 dark:bg-gray-900">
+        <div className="flex flex-col gap-4 border-b border-gray-100 px-6 py-5 lg:flex-row lg:items-center lg:justify-between dark:border-gray-800">
+          <div>
+            <h2 className="text-xl font-semibold text-gray-800 dark:text-white">Daftar Sales Order</h2>
+            <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
+              Kelola pesanan penjualan Anda, dari draft hingga pengiriman.
+            </p>
+          </div>
+          <div className="flex flex-wrap items-center gap-3">
             <div className="relative">
               <button
                 onClick={() => setShowExport((v) => !v)}
-                className="border px-4 py-2 rounded-md flex items-center gap-2 hover:bg-gray-50"
+                className="flex items-center gap-2 rounded-full border border-gray-200 px-4 py-2 text-sm font-medium text-gray-600 transition hover:border-gray-300 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-white/5"
               >
                 <Download className="h-4 w-4" />
                 Unduh & Bagikan
                 <ChevronDown className="h-4 w-4" />
               </button>
               {showExport && (
-                <div className="absolute right-0 mt-2 w-52 bg-white shadow-lg rounded-md border z-10">
-                  <ul className="py-2 text-sm text-gray-700">
+                <div className="absolute right-0 mt-2 w-52 bg-white shadow-lg rounded-xl border border-gray-100 z-50 dark:bg-gray-900 dark:border-gray-800">
+                  <ul className="py-2 text-sm text-gray-700 dark:text-gray-300">
                     <li
-                      className="px-4 py-2 hover:bg-gray-100 cursor-pointer"
+                      className="px-4 py-2 hover:bg-gray-100 cursor-pointer dark:hover:bg-white/5"
                       onClick={() => {
                         const rows = filtered.map((o) => ({
                           orderNumber: o.orderNumber,
@@ -496,7 +409,7 @@ export default function SalesOrderListPage() {
                       Ekspor data CSV
                     </li>
                     <li
-                      className="px-4 py-2 hover:bg-gray-100 cursor-pointer"
+                      className="px-4 py-2 hover:bg-gray-100 cursor-pointer dark:hover:bg-white/5"
                       onClick={async () => {
                         const rows = filtered.map((o) => ({
                           orderNumber: o.orderNumber,
@@ -529,37 +442,41 @@ export default function SalesOrderListPage() {
           </div>
         </div>
 
-        {/* Tabel Sales Order */}
-        {paginatedOrders.length === 0 && filtered.length > 0 ? (
-           <div className="py-20 text-center text-gray-600">
-                Data tidak ditemukan pada halaman ini.
-           </div>
-        ) : paginatedOrders.length === 0 ? (
-          // Jika kosong
-          <div className="mt-20 flex flex-col items-center justify-center text-center text-gray-600 dark:text-gray-300">
-             <img src="/empty-state.svg" alt="Empty State" className="mb-4 w-64 opacity-90" />
-             <p className="text-lg font-medium">Belum ada data yang ditampilkan</p>
-             <p className="mt-2 max-w-md text-sm">
-                 Buat sales order yang dapat Anda akses dari semua perangkat Anda.
-             </p>
-             <Link
-                 href="/penjualan/order-penjualan/add"
-                 className="mt-4 inline-flex items-center rounded-full bg-blue-600 px-4 py-2 text-white shadow-sm transition hover:bg-blue-700"
-             >
-                 <PlusCircle className="mr-2 h-4 w-4" />
-                 <span>Buat Sales Order Baru</span>
-             </Link>
+        <div className="space-y-4 px-6 py-5">
+          <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+            <div className="flex flex-1 items-center gap-3">
+              <div className="relative flex-1">
+                <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
+                <input
+                  type="text"
+                  placeholder="Cari pelanggan / nomor order..."
+                  value={searchTerm}
+                  onChange={(e) => {
+                    setSearchTerm(e.target.value);
+                  }}
+                  className="h-11 w-full rounded-xl border border-gray-200 bg-gray-50 pl-9 pr-3 text-sm text-gray-700 outline-none transition focus:border-blue-300 focus:bg-white focus:ring-2 focus:ring-blue-100 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200 dark:placeholder:text-gray-500 dark:focus:border-blue-500"
+                />
+              </div>
+            </div>
+            {activeFiltersLabel ? (
+              <span className="rounded-full bg-gray-100 px-3 py-1 text-xs font-semibold text-gray-600 dark:bg-gray-800 dark:text-gray-300">
+                Aktif: {activeFiltersLabel}
+              </span>
+            ) : null}
           </div>
-        ) : (
-          <>
-            <div className="overflow-x-auto overflow-y-visible rounded-lg border bg-white shadow-sm min-h-[50vh] flex-1 dark:border-gray-800 dark:bg-gray-900">
+
+          <div className="overflow-hidden rounded-2xl border border-gray-100 dark:border-gray-800">
+            {displayOrders.length === 0 ? (
+              <EmptyState
+                title="Belum ada data sales order"
+                description="Buat sales order untuk mulai mencatat pesanan dari pelanggan Anda."
+              />
+            ) : (
               <table className="w-full text-sm">
                 <thead className="bg-gray-50 text-gray-700 dark:bg-white/5 dark:text-white/80">
                   <tr>
-                    {/* TUKAR POSISI: Customer dulu, baru No. Order */}
                     <th className="px-4 py-3 text-left">Customer</th>
                     <th className="px-4 py-3 text-left">No. Order</th>
-                    
                     <th className="px-4 py-3 text-left">Tanggal</th>
                     <th className="px-4 py-3 text-right">Total</th>
                     <th className="px-4 py-3 text-left">Status</th>
@@ -567,13 +484,12 @@ export default function SalesOrderListPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {paginatedOrders.map((order) => (
+                  {displayOrders.map((order) => (
                     <tr
                       key={order.id}
                       className="border-t hover:bg-gray-50 transition dark:border-gray-800 dark:hover:bg-white/5"
                     >
-                      {/* TUKAR POSISI: Customer dulu, baru No. Order */}
-                      <td className="px-4 py-3">
+                      <td className="px-4 py-3 text-gray-800 dark:text-gray-200">
                         {order.customer.pic} - {order.customer.company}
                       </td>
                       <td className="px-4 py-3">
@@ -584,25 +500,15 @@ export default function SalesOrderListPage() {
                           </div>
                         )}
                       </td>
-                      
-                      <td className="px-4 py-3">
+                      <td className="px-4 py-3 text-gray-600 dark:text-gray-400">
                         {new Date(order.date).toLocaleDateString("id-ID")}
                       </td>
-                      <td className="px-4 py-3 text-right">
+                      <td className="px-4 py-3 text-right font-medium text-gray-900 dark:text-white">
                         Rp {order.totalAmount.toLocaleString("id-ID")}
                       </td>
-
-                      {/* Status Dropdown */}
                       <td className="px-4 py-3">
-                        <StatusDropdown 
-                            order={order} 
-                            handleStatusChange={handleStatusChange} 
-                            options={[...STATUS_OPTIONS]}
-                            getStatusColor={getStatusColor}
-                        />
+                        <StatusBadge status={getInvoiceStatusLabel({ status: order.status, paymentStatus: order.paymentStatus })} />
                       </td>
-
-                      {/* Tindakan */}
                       <td className="px-4 py-3 text-right">
                         <div className="inline-flex gap-2">
                           <Link
@@ -636,24 +542,28 @@ export default function SalesOrderListPage() {
                   ))}
                 </tbody>
               </table>
-            </div>
+            )}
+          </div>
+        </div>
 
-            {/* Pagination */}
             <Pagination
               currentPage={page}
               totalPages={totalPages}
-              onPageChange={setPage}
+              onPageChange={(p) => {
+                const params = new URLSearchParams(searchParams?.toString());
+                params.set("page", p.toString());
+                router.push(`?${params.toString()}`);
+              }}
               limit={limit}
-              onLimitChange={(value) => {
-                setLimit(value);
-                setPage(1);
+              onLimitChange={(l) => {
+                const params = new URLSearchParams(searchParams?.toString());
+                params.set("limit", l.toString());
+                params.set("page", "1");
+                router.push(`?${params.toString()}`);
               }}
             />
-          </>
-        )}
-      </div>
+          </div>
 
-      {/* Modal Kirim (Dipertahankan) */}
       {sendModalOpen && selectedOrder && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-xl shadow-2xl w-full max-w-2xl overflow-hidden dark:bg-gray-900 dark:text-white">

@@ -8,13 +8,19 @@ import { useSidebar } from "@/context/SidebarContext";
 import { useGlobal } from "@/context/AppContext";
 import Image from "next/image";
 import Link from "next/link";
-import React, { useEffect, useState } from "react";
+import { useSessionStore } from "@/store/useSessionStore";
+import React, { useState } from "react";
 
 const AppHeader: React.FC = () => {
   const [isApplicationMenuOpen, setApplicationMenuOpen] = useState(false);
   const { isMobileOpen, toggleSidebar, toggleMobileSidebar } = useSidebar();
-  const [activeBrand, setActiveBrand] = useState<{ name: string; logo: string | null } | null>(null);
   const { user, loading } = useGlobal();
+  const activeBrandFromStore = useSessionStore((s) => s.activeBrand);
+
+  const activeBrand = activeBrandFromStore ? {
+    name: String(activeBrandFromStore.name || "Brand"),
+    logo: activeBrandFromStore.logoUrl ?? activeBrandFromStore.logo ?? null,
+  } : null;
 
   const handleToggle = () => {
     if (window.innerWidth >= 1024) {
@@ -28,38 +34,8 @@ const AppHeader: React.FC = () => {
     setApplicationMenuOpen(!isApplicationMenuOpen);
   };
 
-  useEffect(() => {
-    let ignore = false;
-    const fetchActiveBrand = async () => {
-      try {
-        const res = await fetch("/api/brand-profiles/active", { cache: "no-store" });
-        if (!res.ok) return;
-        const data = await res.json();
-        if (!ignore) {
-          setActiveBrand({
-            name: String(data?.name || "Brand"),
-            logo: data?.logoUrl ?? data?.logo ?? null,
-          });
-        }
-      } catch {
-        if (!ignore) setActiveBrand((prev) => prev ?? null);
-      }
-    };
-
-    fetchActiveBrand();
-
-    const handleBrandUpdate = () => fetchActiveBrand();
-    window.addEventListener("brand-modules:updated", handleBrandUpdate);
-    window.addEventListener("brand-list:updated", handleBrandUpdate);
-    return () => {
-      ignore = true;
-      window.removeEventListener("brand-modules:updated", handleBrandUpdate);
-      window.removeEventListener("brand-list:updated", handleBrandUpdate);
-    };
-  }, []);
-
   return (
-    <header className={`sticky top-0 flex w-full h-16 items-center bg-white border-gray-200 dark:border-gray-800 dark:bg-gray-900 lg:border-b z-40 ${isMobileOpen ? 'pointer-events-none lg:pointer-events-auto' : ''}`}>
+    <header className={`fixed top-0 left-0 flex w-full h-16 items-center bg-white/85 backdrop-blur-xl supports-[backdrop-filter]:bg-white/75 border-b border-gray-200/70 dark:border-gray-800/70 dark:bg-gray-900/80 dark:supports-[backdrop-filter]:bg-gray-900/70 z-[10001] ${isMobileOpen ? 'pointer-events-none lg:pointer-events-auto' : ''}`}>
       <div className="flex flex-col items-center justify-between grow lg:flex-row lg:px-6">
         {/* Kiri: Sidebar toggle + Logo */}
         <div className="flex items-center justify-between w-full gap-2 px-3 h-16 sm:gap-4 lg:justify-normal lg:px-0">

@@ -20,8 +20,9 @@ import {
   ShieldCheck,
   Wallet2,
 } from "lucide-react";
+import { StatusBadge } from "@/components/ui/StatusBadge";
 
-type InvoiceStatus = "Belum Dibayar" | "Sebagian Terbayar" | "Lunas" | "Lewat Jatuh Tempo";
+type InvoiceStatus = "Draft" | "Sent" | "Partial" | "Paid" | "Overdue" | "Canceled";
 
 type PurchaseInvoice = {
   id: number;
@@ -45,7 +46,7 @@ const INVOICES: PurchaseInvoice[] = [
     issueDate: "2025-10-14",
     dueDate: "2025-10-24",
     poNumber: "PO-25007",
-    status: "Belum Dibayar",
+    status: "Sent",
     total: 18250000,
     paid: 0,
     notes: "Invoice baru diterima, perlu verifikasi QC.",
@@ -58,7 +59,7 @@ const INVOICES: PurchaseInvoice[] = [
     issueDate: "2025-10-11",
     dueDate: "2025-10-21",
     poNumber: "PO-25006",
-    status: "Sebagian Terbayar",
+    status: "Partial",
     total: 9450000,
     paid: 3780000,
     notes: "Sudah dibayar 40% sebagai DP.",
@@ -71,7 +72,7 @@ const INVOICES: PurchaseInvoice[] = [
     issueDate: "2025-10-07",
     dueDate: "2025-10-17",
     poNumber: "PO-25005",
-    status: "Lewat Jatuh Tempo",
+    status: "Overdue",
     total: 12800000,
     paid: 6400000,
     notes: "Supplier meminta follow-up pembayaran sebelum pengiriman batch kedua.",
@@ -84,7 +85,7 @@ const INVOICES: PurchaseInvoice[] = [
     issueDate: "2025-10-03",
     dueDate: "2025-10-13",
     poNumber: "PO-25004",
-    status: "Lunas",
+    status: "Paid",
     total: 22780000,
     paid: 22780000,
     linkedGR: ["GR-25002", "GR-25001"],
@@ -96,7 +97,7 @@ const INVOICES: PurchaseInvoice[] = [
     issueDate: "2025-09-30",
     dueDate: "2025-10-10",
     poNumber: "PO-25003",
-    status: "Lewat Jatuh Tempo",
+    status: "Overdue",
     total: 5150000,
     paid: 0,
     notes: "Menunggu kelengkapan dokumen pengiriman untuk proses bayar.",
@@ -106,17 +107,21 @@ const INVOICES: PurchaseInvoice[] = [
 
 const STATUS_OPTIONS: Array<{ label: string; value: InvoiceStatus | "Semua" }> = [
   { label: "Semua Status", value: "Semua" },
-  { label: "Belum Dibayar", value: "Belum Dibayar" },
-  { label: "Sebagian Terbayar", value: "Sebagian Terbayar" },
-  { label: "Lunas", value: "Lunas" },
-  { label: "Lewat Jatuh Tempo", value: "Lewat Jatuh Tempo" },
+  { label: "Draft", value: "Draft" },
+  { label: "Belum Dibayar", value: "Sent" },
+  { label: "Sebagian", value: "Partial" },
+  { label: "Lunas", value: "Paid" },
+  { label: "Lewat Tempo", value: "Overdue" },
+  { label: "Dibatalkan", value: "Canceled" },
 ];
 
 const statusTheme: Record<InvoiceStatus, string> = {
-  "Belum Dibayar": "bg-amber-100 text-amber-700",
-  "Sebagian Terbayar": "bg-sky-100 text-sky-700",
-  Lunas: "bg-emerald-100 text-emerald-700",
-  "Lewat Jatuh Tempo": "bg-rose-100 text-rose-600",
+  Draft: "bg-gray-100 text-gray-700",
+  Sent: "bg-amber-100 text-amber-700",
+  Partial: "bg-sky-100 text-sky-700",
+  Paid: "bg-emerald-100 text-emerald-700",
+  Overdue: "bg-rose-100 text-rose-600",
+  Canceled: "bg-neutral-100 text-neutral-600",
 };
 
 const currency = new Intl.NumberFormat("id-ID", {
@@ -153,20 +158,20 @@ export default function PurchaseInvoicePage() {
           ? true
           : paymentWindow === "7"
           ? isWithinNDays(new Date(invoice.dueDate), 7)
-          : new Date(invoice.dueDate) < new Date() && invoice.status !== "Lunas";
+          : new Date(invoice.dueDate) < new Date() && invoice.status !== "Paid";
       return matchStatus && matchSearch && matchPaymentWindow;
     });
   }, [search, statusFilter, paymentWindow]);
 
   const metrics = useMemo(() => {
     const outstanding = filteredInvoices
-      .filter((invoice) => invoice.status !== "Lunas")
+      .filter((invoice) => invoice.status !== "Paid")
       .reduce((acc, inv) => acc + inv.total - inv.paid, 0);
-    const overdueCount = filteredInvoices.filter((inv) => inv.status === "Lewat Jatuh Tempo").length;
+    const overdueCount = filteredInvoices.filter((inv) => inv.status === "Overdue").length;
     const dueSoon = filteredInvoices.filter(
-      (inv) => inv.status !== "Lunas" && isWithinNDays(new Date(inv.dueDate), 5)
+      (inv) => inv.status !== "Paid" && isWithinNDays(new Date(inv.dueDate), 5)
     ).length;
-    const paidThisMonth = INVOICES.filter((invoice) => invoice.status === "Lunas").reduce(
+    const paidThisMonth = INVOICES.filter((invoice) => invoice.status === "Paid").reduce(
       (acc, inv) => acc + inv.total,
       0
     );
@@ -311,18 +316,7 @@ export default function PurchaseInvoicePage() {
                         <div className="text-xs text-amber-600">Jatuh tempo {formatDate(invoice.dueDate)}</div>
                       </td>
                       <td className="px-4 py-3">
-                        <span className={`inline-flex items-center gap-1 rounded-full px-3 py-1 text-xs font-semibold ${statusTheme[invoice.status]}`}>
-                          {invoice.status === "Lunas" ? (
-                            <ShieldCheck className="h-3.5 w-3.5" />
-                          ) : invoice.status === "Sebagian Terbayar" ? (
-                            <Wallet2 className="h-3.5 w-3.5" />
-                          ) : invoice.status === "Belum Dibayar" ? (
-                            <NotepadText className="h-3.5 w-3.5" />
-                          ) : (
-                            <AlarmClock className="h-3.5 w-3.5" />
-                          )}
-                          {invoice.status}
-                        </span>
+                        <StatusBadge status={invoice.status} />
                       </td>
                       <td className="px-4 py-3 text-right font-medium text-gray-800">{currency.format(invoice.total)}</td>
                       <td className="px-4 py-3 text-right">
@@ -369,7 +363,7 @@ export default function PurchaseInvoicePage() {
         <div className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm md:col-span-1 xl:col-span-2">
           <h3 className="text-base font-semibold text-gray-800">Prioritas Pembayaran</h3>
           <div className="mt-4 space-y-4">
-            {INVOICES.filter((invoice) => invoice.status !== "Lunas")
+            {INVOICES.filter((invoice) => invoice.status !== "Paid")
               .slice(0, 4)
               .map((invoice) => (
                 <div key={invoice.id} className="flex items-start justify-between rounded-xl border border-gray-100 p-4">
@@ -435,10 +429,7 @@ export default function PurchaseInvoicePage() {
                   {formatDate(selectedInvoice.dueDate)}
                 </p>
               </div>
-              <span className={`inline-flex items-center gap-2 rounded-full px-4 py-2 text-xs font-semibold ${statusTheme[selectedInvoice.status]}`}>
-                <CircleDollarSign className="h-4 w-4" />
-                {selectedInvoice.status}
-              </span>
+              <StatusBadge status={selectedInvoice.status} />
             </div>
 
             <div className="mt-6 grid gap-6 md:grid-cols-2">

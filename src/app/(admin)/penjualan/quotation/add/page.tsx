@@ -596,6 +596,7 @@ export default function AddQuotationPage() {
     ...INITIAL_CUSTOMER_ERRORS,
   });
   const [customersLoading, setCustomersLoading] = useState(true);
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   const clearCustomerErrors = () => {
     setCustomerErrors({ ...INITIAL_CUSTOMER_ERRORS });
@@ -1068,45 +1069,46 @@ const submitQuotation = async (variant: "Draft" | "Confirmed" | "SendPDF") => {
       return;
     }
 
-    const form = new FormData();
-    form.append("quotationNumber", quotationNumber);
-    form.append("date", date);
-    form.append("validUntil", validUntil);
-    // ✅ Tidak ada perubahan di sini. Frontend sudah mengirim field yang benar.
-    form.append("projectDescription", projectDescription); 
-    form.append("customerId", String(selectedCustomer));
-    form.append("status", variant);
-
-    if (projectFile) {
-      form.append("projectFile", projectFile);
-    }
-
-    const itemsPayload = items.map((it, idx) => {
-      const existingImageUrl =
-        !it.image && it.imagePreview && !isBlobUrl(it.imagePreview)
-          ? it.imagePreview
-          : null;
-      return {
-        product: it.product,
-        description: it.description,
-        quantity: it.quantity,
-        unit: it.unit,
-        price: it.price,
-        imageKey: it.image ? `itemImage_${idx}` : null,
-        imageUrl: existingImageUrl,
-      };
-    });
-    form.append("items", JSON.stringify(itemsPayload));
-    
-    items.forEach((it, idx) => {
-      if (it.image) {
-        // ✅ Ini juga sudah benar. Kunci file (itemImage_0, itemImage_1, dst.)
-        //    cocok dengan yang didefinisikan di `imageKey`.
-        form.append(`itemImage_${idx}`, it.image, it.image.name);
-      }
-    });
-
+    setIsSubmitting(true);
     try {
+      const form = new FormData();
+      form.append("quotationNumber", quotationNumber);
+      form.append("date", date);
+      form.append("validUntil", validUntil);
+      // ✅ Tidak ada perubahan di sini. Frontend sudah mengirim field yang benar.
+      form.append("projectDescription", projectDescription); 
+      form.append("customerId", String(selectedCustomer));
+      form.append("status", variant);
+
+      if (projectFile) {
+        form.append("projectFile", projectFile);
+      }
+
+      const itemsPayload = items.map((it, idx) => {
+        const existingImageUrl =
+          !it.image && it.imagePreview && !isBlobUrl(it.imagePreview)
+            ? it.imagePreview
+            : null;
+        return {
+          product: it.product,
+          description: it.description,
+          quantity: it.quantity,
+          unit: it.unit,
+          price: it.price,
+          imageKey: it.image ? `itemImage_${idx}` : null,
+          imageUrl: existingImageUrl,
+        };
+      });
+      form.append("items", JSON.stringify(itemsPayload));
+      
+      items.forEach((it, idx) => {
+        if (it.image) {
+          // ✅ Ini juga sudah benar. Kunci file (itemImage_0, itemImage_1, dst.)
+          //    cocok dengan yang didefinisikan di `imageKey`.
+          form.append(`itemImage_${idx}`, it.image, it.image.name);
+        }
+      });
+
       const res = await fetch("/api/quotations", {
         method: "POST",
         body: form,
@@ -1116,8 +1118,22 @@ const submitQuotation = async (variant: "Draft" | "Confirmed" | "SendPDF") => {
         const ctype = res.headers.get("content-type") || "";
         if (ctype.includes("application/json")) {
           const t = await res.json();
-          console.error("Submit failed:", t);
-          toast.error(`Gagal menyimpan: ${t.message || 'Error tidak diketahui'}`);
+            console.error("Submit failed with error object:", t);
+            
+            if (t.errors && Object.keys(t.errors).length > 0) {
+              const fieldErrors = t.errors;
+              const firstErrorField = Object.keys(fieldErrors)[0];
+              const firstErrorMessage = Array.isArray(fieldErrors[firstErrorField]) 
+                ? fieldErrors[firstErrorField][0] 
+                : "Data tidak valid";
+              
+              toast.error(`Gagal menyimpan: ${firstErrorMessage}`);
+            } else if (t.message) {
+              toast.error(`Gagal menyimpan: ${t.message}`);
+            } else {
+              // Jika benar-benar kosong {}, berikan fallback yang manusiawi
+              toast.error("Gagal menyimpan: Terjadi kesalahan validasi data.");
+            }
         } else {
           const txt = await res.text();
           const redirectedToSignin = res.redirected || res.url.includes("/signin") || /<!DOCTYPE/i.test(txt);
@@ -1129,6 +1145,7 @@ const submitQuotation = async (variant: "Draft" | "Confirmed" | "SendPDF") => {
             toast.error("Gagal menyimpan: respons tidak valid dari server.");
           }
         }
+        setIsSubmitting(false);
         return;
       }
 
@@ -1137,6 +1154,7 @@ const submitQuotation = async (variant: "Draft" | "Confirmed" | "SendPDF") => {
     } catch (err) {
       console.error(err);
       toast.error("Terjadi kesalahan saat menyimpan quotation.");
+      setIsSubmitting(false);
     }
   };
 
@@ -1465,13 +1483,14 @@ const submitQuotation = async (variant: "Draft" | "Confirmed" | "SendPDF") => {
                             <input
                               type="number"
                               value={item.quantity}
-                              onChange={(e) =>
+                              onChange={(e) => {
+                                const val = e.target.value === "" ? 0 : Number(e.target.value);
                                 handleItemChange(
                                   item.id,
                                   "quantity",
-                                  Number(e.target.value)
-                                )
-                              }
+                                  isNaN(val) ? 0 : val
+                                );
+                              }}
                               className="w-full rounded-md border px-2 py-1 text-center shadow-sm focus:border-blue-500 focus:ring-blue-500"
                             />
                           </td>
@@ -1511,13 +1530,14 @@ const submitQuotation = async (variant: "Draft" | "Confirmed" | "SendPDF") => {
                             <input
                               type="number"
                               value={item.price}
-                              onChange={(e) =>
+                              onChange={(e) => {
+                                const val = e.target.value === "" ? 0 : Number(e.target.value);
                                 handleItemChange(
                                   item.id,
                                   "price",
-                                  Number(e.target.value)
-                                )
-                              }
+                                  isNaN(val) ? 0 : val
+                                );
+                              }}
                               className="w-full rounded-md border px-2 py-1 text-right shadow-sm focus:border-blue-500 focus:ring-blue-500"
                             />
                           </td>
@@ -1564,15 +1584,17 @@ const submitQuotation = async (variant: "Draft" | "Confirmed" | "SendPDF") => {
               {/* Tombol Batalkan */}
               <button
                 type="button"
+                disabled={isSubmitting}
                 onClick={handleCancel}
-                className="px-5 py-2 rounded-lg border border-gray-300 text-gray-700 hover:bg-gray-100 transition shadow-md"
+                className="px-5 py-2 rounded-lg border border-gray-300 text-gray-700 hover:bg-gray-100 transition shadow-md disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 Batalkan
               </button>
               <button
                 type="button"
+                disabled={isSubmitting}
                 onClick={() => { void handleReset(); }}
-                className="px-5 py-2 rounded-lg border border-red-200 text-red-600 hover:bg-red-50 transition shadow-md"
+                className="px-5 py-2 rounded-lg border border-red-200 text-red-600 hover:bg-red-50 transition shadow-md disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 Hapus
               </button>
@@ -1580,14 +1602,41 @@ const submitQuotation = async (variant: "Draft" | "Confirmed" | "SendPDF") => {
               {/* Tombol Simpan */}
               <button
                 type="button"
-                onClick={() => setDropdownOpen((s) => !s)}
-                className="bg-green-600 text-white px-5 py-2 rounded-lg flex items-center gap-2 hover:bg-green-700 transition shadow-lg"
+                disabled={isSubmitting}
+                onClick={() => !isSubmitting && setDropdownOpen((s) => !s)}
+                className={`relative overflow-hidden px-5 py-2 rounded-lg flex items-center gap-2 transition shadow-lg disabled:cursor-not-allowed ${
+                  isSubmitting 
+                    ? "bg-green-200 text-green-900" 
+                    : "bg-green-600 text-white hover:bg-green-700"
+                }`}
               >
-                Simpan
-                <ChevronDown className="w-4 h-4" />
+                {/* Progress Loading Effect */}
+                {isSubmitting && (
+                  <div 
+                    className="absolute inset-y-0 left-0 bg-green-600 transition-all duration-[3000ms] ease-out"
+                    style={{ width: "100%" }}
+                  />
+                )}
+                
+                <span className="relative z-10 flex items-center gap-2">
+                  {isSubmitting ? (
+                    <>
+                      <svg className="animate-spin -ml-1 h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                      </svg>
+                      <span className="text-white font-medium">Menyimpan...</span>
+                    </>
+                  ) : (
+                    <>
+                      Simpan
+                      <ChevronDown className="w-4 h-4" />
+                    </>
+                  )}
+                </span>
               </button>
 
-              {dropdownOpen && (
+              {dropdownOpen && !isSubmitting && (
                 <div 
                   // ✅ FIX: Diubah menjadi bottom-full agar muncul di atas tombol
                   className="absolute right-0 bottom-full mb-2 w-56 bg-white border rounded-lg shadow-xl z-10 text-sm overflow-hidden"
@@ -1717,19 +1766,32 @@ const submitQuotation = async (variant: "Draft" | "Confirmed" | "SendPDF") => {
                         Upload Foto
                       </button>
                       {productDraftPhoto ? (
-                        <>
-                          <span className="text-xs text-gray-600">{productDraftPhoto.name}</span>
-                          <button
-                            type="button"
-                            onClick={() => handleProductPhotoSelection(null)}
-                            className="text-xs font-medium text-red-600 hover:underline"
-                            disabled={savingProduct}
-                          >
-                            Hapus
-                          </button>
-                        </>
+                        <div className="flex items-center gap-3">
+                          <div className="relative h-12 w-12 rounded-lg border overflow-hidden bg-gray-50">
+                            <img
+                              src={URL.createObjectURL(productDraftPhoto)}
+                              alt="Draft"
+                              className="h-full w-full object-cover"
+                              onLoad={(e) => {
+                                // Optional: we could manage the object URL lifecycle better,
+                                // but for a modal it's usually fine until close.
+                              }}
+                            />
+                          </div>
+                          <div className="flex flex-col">
+                            <span className="text-xs font-medium text-gray-700 truncate max-w-[120px]">{productDraftPhoto.name}</span>
+                            <button
+                              type="button"
+                              onClick={() => handleProductPhotoSelection(null)}
+                              className="text-left text-[10px] font-medium text-red-600 hover:underline"
+                              disabled={savingProduct}
+                            >
+                              Hapus
+                            </button>
+                          </div>
+                        </div>
                       ) : (
-                        <span className="text-xs text-gray-400">Belum ada file.</span>
+                        <span className="text-xs text-gray-400 italic">Belum ada file.</span>
                       )}
                     </div>
                   </div>
