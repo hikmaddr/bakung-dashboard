@@ -28,10 +28,13 @@ enum QuotationStatus {
   Draft
   Sent
   Viewed
+  Confirmed
+  Accepted
   Approved
   Rejected
   Expired
   Converted
+  Canceled
 }
 
 enum SalesOrderStatus {
@@ -62,6 +65,7 @@ enum PaymentStatus {
 
 enum PurchaseStatus {
   Draft
+  Processing
   PendingApproval
   Ordered
   WaitingSupplier
