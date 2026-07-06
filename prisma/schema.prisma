@@ -667,6 +667,7 @@ model Payment {
   paidAt         DateTime
   refType        PaymentRefType
   refId          Int
+  isDP           Boolean        @default(false)
   notes          String?
   createdById    Int?
   createdAt      DateTime       @default(now())
