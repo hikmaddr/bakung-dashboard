@@ -18,7 +18,7 @@
         "seed:dummy-notifications": "node scripts/seedDummyNotifications.js",
         "fix:share-urls": "node scripts/normalize-share-urls.js",
         "postinstall": "prisma generate",
-        "vercel-build": "prisma db push --skip-generate && next build --webpack"
+        "vercel-build": "prisma db push --skip-generate --accept-data-loss && next build --webpack"
     },
     "dependencies": {
         "@fullcalendar/core": "^6.1.15",
