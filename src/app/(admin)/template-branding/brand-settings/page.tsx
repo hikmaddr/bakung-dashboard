@@ -1486,7 +1486,12 @@ function BrandSettingsPage() {
                                   modules: nextModules,
                                 };
                               });
-                              notifyBrandModulesUpdated();
+                              // Jangan dispatch "brand-modules:updated" di sini — event ini
+                              // ditangkap oleh listener di halaman yang sama (lihat useEffect
+                              // fetchProfiles silent) sehingga langsung menimpa formData yang
+                              // baru diubah dengan data lama dari server sebelum sempat disimpan.
+                              // Notifikasi global cukup dikirim setelah benar-benar tersimpan
+                              // (lihat handleSave/handleDelete).
                             }}
                             className={`text-left rounded-xl border p-4 transition ${
                               active ? "border-indigo-600 bg-indigo-50" : "border-gray-200 hover:border-gray-300"
@@ -2301,28 +2306,3 @@ function BrandSettingsPage() {
             <div className="flex justify-end gap-3">
               <Button variant="outline" onClick={() => setShowDeleteModal(false)}>
                 Cancel
-              </Button>
-              <Button
-                variant="destructive"
-                onClick={handleDelete}
-                disabled={deleting}
-              >
-                {deleting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                Delete
-              </Button>
-            </div>
-          </div>
-        </Modal>
-      </div>
-    </div>
-  );
-} // Close BrandSettingsPage function
-
-export default BrandSettingsPage;
-
-
-
-
-
-
-
